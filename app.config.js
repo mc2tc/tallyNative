@@ -1,0 +1,40 @@
+module.exports = () => ({
+  expo: {
+    scheme: 'tallynative',
+    name: 'tallyNative',
+    slug: 'tallynative',
+    version: '1.0.0',
+    orientation: 'portrait',
+    icon: './assets/icon.png',
+    userInterfaceStyle: 'light',
+    newArchEnabled: true,
+    splash: {
+      image: './assets/splash-icon.png',
+      resizeMode: 'contain',
+      backgroundColor: '#ffffff',
+    },
+    ios: {
+      supportsTablet: true,
+    },
+    android: {
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#ffffff',
+      },
+      edgeToEdgeEnabled: true,
+      predictiveBackGestureEnabled: false,
+    },
+    web: {
+      favicon: './assets/favicon.png',
+    },
+    extra: {
+      apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000',
+      eas: {
+        projectId: '5e59ab19-8416-4ad7-ad83-1afdf6b4df8f',
+      },
+    },
+    owner: 'mc2tc',
+    plugins: ['expo-router'],
+  },
+})
+
