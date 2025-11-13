@@ -1,0 +1,143 @@
+// API client with automatic token injection
+
+import Constants from 'expo-constants'
+import { Platform } from 'react-native'
+import { getFirebaseAuth } from '../config/firebase'
+import type { ApiError as ApiErrorType } from '../types/api'
+
+const configuredBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl
+const BASE_URL =
+  typeof configuredBaseUrl === 'string' && configuredBaseUrl.length > 0
+    ? configuredBaseUrl
+    : Platform.select({
+        ios: 'http://localhost:3000',
+        android: 'http://10.0.2.2:3000',
+        default: 'http://localhost:3000',
+      })
+
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public data?: ApiErrorType,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+async function getAuthToken(): Promise<string | null> {
+  const auth = getFirebaseAuth()
+  const user = auth.currentUser
+  if (!user) return null
+
+  try {
+    return await user.getIdToken(true) // Force refresh
+  } catch (error) {
+    console.error('Failed to get auth token:', error)
+    return null
+  }
+}
+
+async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const url = `${BASE_URL}${endpoint}`
+  const token = await getAuthToken()
+
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    })
+  } catch (error) {
+    // Network error (connection failed, timeout, etc.)
+    
+    // Check if it's a network error
+    if (error instanceof TypeError) {
+      if (error.message.includes('Network request failed') || error.message.includes('Failed to fetch')) {
+        throw new ApiError(
+          `Cannot connect to server at ${BASE_URL}. Make sure the Next.js server is running and accessible.`,
+          0, // 0 indicates network error
+        )
+      }
+    }
+    
+    // Re-throw other errors (they might be ApiError instances from response parsing)
+    throw error
+  }
+
+  let data: unknown
+  try {
+    const text = await response.text()
+    if (text) {
+      try {
+        data = JSON.parse(text)
+      } catch (parseError) {
+        // If JSON parsing fails, use the text as the error message
+        if (response.ok) {
+          throw new ApiError('Invalid JSON response from server', response.status)
+        }
+        throw new ApiError(
+          text || `Request failed (${response.status}). Unable to parse error details.`,
+          response.status,
+        )
+      }
+    }
+  } catch (parseError) {
+    if (response.ok) {
+      throw new ApiError('Invalid JSON response from server', response.status)
+    }
+    throw new ApiError(
+      `Request failed (${response.status}). Unable to parse error details.`,
+      response.status,
+    )
+  }
+
+  if (!response.ok) {
+    const errorData = data as ApiError
+    const message =
+      typeof errorData?.error === 'string'
+        ? errorData.error
+        : `Request failed (${response.status})`
+    throw new ApiError(message, response.status, errorData)
+  }
+
+  return data as T
+}
+
+export const api = {
+  get: <T>(endpoint: string, options?: RequestInit) =>
+    apiRequest<T>(endpoint, { ...options, method: 'GET' }),
+
+  post: <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
+    apiRequest<T>(endpoint, {
+      ...options,
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+
+  put: <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
+    apiRequest<T>(endpoint, {
+      ...options,
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+
+  delete: <T>(endpoint: string, options?: RequestInit) =>
+    apiRequest<T>(endpoint, { ...options, method: 'DELETE' }),
+}
+

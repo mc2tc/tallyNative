@@ -20,7 +20,11 @@ const configuredBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl
 const BASE_URL =
   typeof configuredBaseUrl === 'string' && configuredBaseUrl.length > 0
     ? configuredBaseUrl
-    : 'http://localhost:3000'
+    : Platform.select({
+        ios: 'http://localhost:3000',
+        android: 'http://10.0.2.2:3000',
+        default: 'http://localhost:3000',
+      })
 
 const Test = () => {
   const [a, setA] = useState('')

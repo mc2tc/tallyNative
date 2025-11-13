@@ -14,9 +14,11 @@ module.exports = () => ({
       backgroundColor: '#ffffff',
     },
     ios: {
+      bundleIdentifier: 'com.mc2tc.tallynative',
       supportsTablet: true,
     },
     android: {
+      package: 'com.mc2tc.tallynative',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',
@@ -34,7 +36,7 @@ module.exports = () => ({
       },
     },
     owner: 'mc2tc',
-    plugins: ['expo-router'],
+    plugins: [],
   },
 })
 
