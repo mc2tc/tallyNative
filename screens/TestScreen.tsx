@@ -79,7 +79,7 @@ export default function TestScreen({}: Props) {
   }
 
   return (
-    <AppBarLayout title="Test Sum API">
+    <AppBarLayout>
       <KeyboardAvoidingView
         style={styles.content}
         behavior={Platform.select({ ios: 'padding', android: undefined })}

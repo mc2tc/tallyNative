@@ -83,7 +83,7 @@ export default function FirestoreTestScreen({}: Props) {
   }
 
   return (
-    <AppBarLayout title="Test Firestore">
+    <AppBarLayout>
       <KeyboardAvoidingView
         style={styles.content}
         behavior={Platform.select({ ios: 'padding', android: undefined })}

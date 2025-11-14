@@ -1,10 +1,9 @@
 // Layout component that provides AppBar for authenticated screens
 
 import React from 'react'
-import { View, StyleSheet } from 'react-native'
+import { SafeAreaView, View, StyleSheet, TouchableOpacity } from 'react-native'
 import { useNavigation, DrawerActions } from '@react-navigation/native'
 import type { NavigationProp } from '@react-navigation/native'
-import { Appbar } from 'react-native-paper'
 import { MaterialIcons } from '@expo/vector-icons'
 
 interface AppBarLayoutProps {
@@ -12,38 +11,59 @@ interface AppBarLayoutProps {
   title?: string
 }
 
-export function AppBarLayout({ children, title = 'Tally Native' }: AppBarLayoutProps) {
+export function AppBarLayout({ children, title }: AppBarLayoutProps) {
   const navigation = useNavigation<NavigationProp<any>>()
 
   return (
-    <View style={styles.container}>
-      <Appbar.Header style={styles.appbar}>
-        <Appbar.Action
-          icon={() => <MaterialIcons name="more-vert" size={24} color="#333" />}
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.appbar}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.circleButton}
           onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-        />
-        <Appbar.Content title={title} titleStyle={styles.title} />
-      </Appbar.Header>
+        >
+          <MaterialIcons name="add-circle" size={36} color="#333333" />
+        </TouchableOpacity>
+        {title ? <View style={styles.titlePlaceholder} /> : <View style={styles.titlePlaceholder} />}
+      </View>
       <View style={styles.content}>{children}</View>
-    </View>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#fafafa',
+    paddingTop: 40,
   },
   appbar: {
     backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    elevation: 0,
-    zIndex: 1000,
+    borderColor: '#ff0000',
+    borderWidth: 1,
+    marginHorizontal: 8,
+    marginTop: 8,
+    borderRadius: 12,
+    padding: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  title: {
-    color: '#333333',
-    fontWeight: '600',
+  circleButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#ff0000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titlePlaceholder: {
+    flex: 1,
+    marginLeft: 12,
+    height: 24,
+    borderWidth: 1,
+    borderColor: '#ff0000',
+    borderRadius: 12,
   },
   content: {
     flex: 1,

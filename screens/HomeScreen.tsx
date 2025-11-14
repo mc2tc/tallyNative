@@ -9,15 +9,15 @@ import {
   View,
 } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
-import type { NativeStackScreenProps } from '@react-navigation/native-stack'
+import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 
-type Props = NativeStackScreenProps<AppDrawerParamList, 'Home'>
+type HomeScreenNavigation = DrawerNavigationProp<AppDrawerParamList>
 
-export default function HomeScreen({}: Props) {
-  const navigation = useNavigation()
+export default function HomeScreen() {
+  const navigation = useNavigation<HomeScreenNavigation>()
   const { user, businessUser, signOut } = useAuth()
 
   const handleSignOut = async () => {
@@ -31,7 +31,7 @@ export default function HomeScreen({}: Props) {
 
   if (!user || !businessUser) {
     return (
-      <AppBarLayout title="Tally Native">
+      <AppBarLayout>
         <View style={[styles.content, styles.center]}>
           <ActivityIndicator size="large" color="#666666" />
           <Text style={styles.loadingText}>Loading...</Text>
@@ -41,7 +41,7 @@ export default function HomeScreen({}: Props) {
   }
 
   return (
-    <AppBarLayout title="Tally Native">
+    <AppBarLayout>
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Welcome</Text>

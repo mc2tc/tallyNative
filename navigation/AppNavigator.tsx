@@ -3,12 +3,12 @@
 import React from 'react'
 import { createDrawerNavigator } from '@react-navigation/drawer'
 import { CustomDrawerContent } from './DrawerContent'
-import HomeScreen from '../screens/HomeScreen'
 import TestScreen from '../screens/TestScreen'
 import FirestoreTestScreen from '../screens/FirestoreTestScreen'
+import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
-  Home: undefined
+  MainTabs: undefined
   Test: undefined
   FirestoreTest: undefined
 }
@@ -18,6 +18,7 @@ const Drawer = createDrawerNavigator<AppDrawerParamList>()
 export function AppNavigator() {
   return (
     <Drawer.Navigator
+      initialRouteName="MainTabs"
       drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
         headerShown: false,
@@ -31,7 +32,7 @@ export function AppNavigator() {
         drawerInactiveTintColor: '#666666',
       }}
     >
-      <Drawer.Screen name="Home" component={HomeScreen} />
+      <Drawer.Screen name="MainTabs" component={MainTabNavigator} />
       <Drawer.Screen name="Test" component={TestScreen} />
       <Drawer.Screen name="FirestoreTest" component={FirestoreTestScreen} />
     </Drawer.Navigator>
