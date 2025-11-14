@@ -9,22 +9,24 @@ import { MaterialIcons } from '@expo/vector-icons'
 interface AppBarLayoutProps {
   children: React.ReactNode
   title?: string
+  debugBorders?: boolean
 }
 
-export function AppBarLayout({ children, title }: AppBarLayoutProps) {
+export function AppBarLayout({ children, title, debugBorders = false }: AppBarLayoutProps) {
   const navigation = useNavigation<NavigationProp<any>>()
+  const borderColor = debugBorders ? '#ff0000' : 'transparent'
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.appbar}>
+      <View style={[styles.appbar, { borderColor }]}>
         <TouchableOpacity
           activeOpacity={0.7}
-          style={styles.circleButton}
+          style={[styles.circleButton, { borderColor }]}
           onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
         >
           <MaterialIcons name="add-circle" size={36} color="#333333" />
         </TouchableOpacity>
-        {title ? <View style={styles.titlePlaceholder} /> : <View style={styles.titlePlaceholder} />}
+        <View style={[styles.titlePlaceholder, { borderColor }]} />
       </View>
       <View style={styles.content}>{children}</View>
     </SafeAreaView>
@@ -38,8 +40,7 @@ const styles = StyleSheet.create({
     paddingTop: 40,
   },
   appbar: {
-    backgroundColor: '#ffffff',
-    borderColor: '#ff0000',
+    backgroundColor: '#fafafa',
     borderWidth: 1,
     marginHorizontal: 8,
     marginTop: 8,
@@ -53,7 +54,6 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#ff0000',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -62,7 +62,6 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     height: 24,
     borderWidth: 1,
-    borderColor: '#ff0000',
     borderRadius: 12,
   },
   content: {

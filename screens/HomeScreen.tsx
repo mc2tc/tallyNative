@@ -1,93 +1,17 @@
 // Home screen
 
 import React from 'react'
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native'
-import { useNavigation } from '@react-navigation/native'
-import type { DrawerNavigationProp } from '@react-navigation/drawer'
+import { StyleSheet, Text, View } from 'react-native'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { useAuth } from '../lib/auth/AuthContext'
-import type { AppDrawerParamList } from '../navigation/AppNavigator'
-
-type HomeScreenNavigation = DrawerNavigationProp<AppDrawerParamList>
 
 export default function HomeScreen() {
-  const navigation = useNavigation<HomeScreenNavigation>()
-  const { user, businessUser, signOut } = useAuth()
-
-  const handleSignOut = async () => {
-    try {
-      await signOut()
-      // Navigation will be handled by RootNavigator based on auth state
-    } catch (error) {
-      // Error is already logged in AuthContext
-    }
-  }
-
-  if (!user || !businessUser) {
-    return (
-      <AppBarLayout>
-        <View style={[styles.content, styles.center]}>
-          <ActivityIndicator size="large" color="#666666" />
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
-      </AppBarLayout>
-    )
-  }
-
   return (
     <AppBarLayout>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Welcome</Text>
-          <Text style={styles.greeting}>
-            {businessUser.role === 'owner' ? '👑 Owner' : businessUser.role === 'super' ? '⭐ Super' : '👤 User'}
-          </Text>
-        </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoLabel}>Email</Text>
-          <Text style={styles.infoValue}>{user.email}</Text>
-        </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoLabel}>Role</Text>
-          <Text style={styles.infoValue}>{businessUser.role}</Text>
-        </View>
-
-        {businessUser.businessId && (
-          <View style={styles.infoCard}>
-            <Text style={styles.infoLabel}>Business ID</Text>
-            <Text style={styles.infoValue}>{businessUser.businessId}</Text>
-          </View>
-        )}
-
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => navigation.navigate('Test')}
-          >
-            <Text style={styles.actionButtonText}>Test Sum API</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => navigation.navigate('FirestoreTest')}
-          >
-            <Text style={styles.actionButtonText}>Test Firestore</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionButton, styles.signOutButton]}
-            onPress={handleSignOut}
-          >
-            <Text style={[styles.actionButtonText, styles.signOutButtonText]}>Sign Out</Text>
-          </TouchableOpacity>
+      <View style={styles.container}>
+        <Text style={styles.title}>Home</Text>
+        <Text style={styles.subtitle}>Primary dashboard content coming soon.</Text>
+        <View style={styles.placeholderBlock}>
+          <Text style={styles.placeholderText}>Wireframe placeholder</Text>
         </View>
       </View>
     </AppBarLayout>
@@ -95,81 +19,37 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: {
+  container: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f5f5f5',
     padding: 24,
   },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    marginTop: 20,
-    marginBottom: 32,
-    alignItems: 'center',
-  },
   title: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#333333',
     marginBottom: 8,
-    color: '#333333',
   },
-  greeting: {
-    fontSize: 18,
-    color: '#666666',
-    fontWeight: '600',
-  },
-  infoCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 4,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#999999',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  infoValue: {
+  subtitle: {
     fontSize: 16,
-    color: '#333333',
-    fontWeight: '500',
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 32,
   },
-  actions: {
-    marginTop: 24,
-    gap: 12,
-  },
-  actionButton: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 14,
-    borderRadius: 4,
+  placeholderBlock: {
+    width: '100%',
+    paddingVertical: 40,
+    borderWidth: 1,
+    borderColor: '#cccccc',
+    borderRadius: 12,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  actionButtonText: {
-    color: '#333333',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  signOutButton: {
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#999999',
-    marginTop: 8,
   },
-  signOutButtonText: {
+  placeholderText: {
     color: '#666666',
-  },
-  loadingText: {
-    marginTop: 16,
     fontSize: 16,
-    color: '#666666',
   },
 })
 
