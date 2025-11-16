@@ -136,6 +136,50 @@ The RN navigation tree should hide or disable screens when the corresponding per
 
 ---
 
+### 2.6 Business Context API (synced with backend response)
+
+Reference: `documentation/business-context.md`
+
+**Auth**
+- Endpoint will be wrapped with `verifyRequestUser` before RN launch; always send `Authorization: Bearer <Firebase ID token>`. No extra claims beyond standard authenticated flows.
+
+**Required + conditional fields**
+
+| Field | Required? | Notes |
+| --- | --- | --- |
+| `businessId` | ✅ | Firestore doc id |
+| `createdBy` | ✅ | email or uid for audit |
+| `context.primaryCurrency` | ✅ | 3-letter ISO (e.g. `GBP`) |
+| `context.supplyTypes` | ✅ | At least one value from allowed list |
+| `context.mainCategory` / `subCategory` | optional | Defaults to `Services` / `Professional Services`, but RN should send explicit picks |
+| `context.isVatRegistered` | optional | Defaults `false` |
+| `vatRegistrationNumber`, `vatRegistrationDate` | conditional | Only when `isVatRegistered` is true |
+| `registrationTimeline` | optional | Defaults `unknown` |
+| Turnover numbers | optional | Send numeric values when available |
+
+**Data formats**
+- Dates like `vatRegistrationDate` → ISO `YYYY-MM-DD`.
+- `registrationTimeline` enum → `next_3_months`, `next_6_months`, `next_12_months`, `unknown`.
+- Numeric values (`taxableTurnoverLast12Months`, `expectedTurnoverNext12Months`) → plain numbers.
+- `createdAt` / `updatedAt` are epoch millis set by server; RN doesn’t send them.
+
+**Canonical lists**
+- Allowed `mainCategory`, `subCategory`, and `supplyTypes` live in `docs/api/business-context.md`. Hard-code for now; backend can expose an endpoint mirroring `businessAccounts.ts` if we need runtime fetches.
+
+**Merge behavior & defaults**
+- API merges updates: omitted fields retain previous values.
+- `primaryCurrency` & `supplyTypes` missing → request rejected.
+- `mainCategory` / `subCategory` missing → default to `Services` / `Professional Services`.
+- Boolean/context flags like `keepReceiptsForVatReclaim`, `wantsThresholdMonitoring` → default `true`.
+- `isVatRegistered` defaults `false`; `registrationTimeline` defaults `unknown`.
+- For partial updates send only changed fields; rest stay intact.
+
+**Open follow-ups (if needed)**
+- Get notified once auth enforcement ships so QA can verify 401s without tokens.
+- Confirm whether we want the backend to surface the category list through an endpoint for future dynamic updates.
+
+---
+
 ### 3. Server-Side Summary (for RN dev reference)
 
 - **Next.js APIs used by RN:**

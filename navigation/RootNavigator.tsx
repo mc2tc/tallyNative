@@ -11,7 +11,7 @@ import { AppNavigator } from './AppNavigator'
 const Stack = createStackNavigator()
 
 export function RootNavigator() {
-  const { user, businessUser, loading, initialized } = useAuth()
+  const { user, businessUser, loading, initialized, businessContextComplete } = useAuth()
 
   if (!initialized || loading) {
     return (
@@ -24,10 +24,10 @@ export function RootNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user && businessUser ? (
-          <Stack.Screen name="App" component={AppNavigator} />
-        ) : (
+        {!user || !businessUser ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
+        ) : (
+          <Stack.Screen name="App" component={AppNavigator} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

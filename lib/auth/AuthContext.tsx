@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import {
-  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
@@ -10,9 +9,11 @@ import {
 } from 'firebase/auth'
 import { getFirebaseAuth } from '../config/firebase'
 import { authApi } from '../api/auth'
+import { businessContextApi } from '../api/businessContext'
 import { normalizePermissions } from '../utils/permissions'
 import type { AuthContextValue, BusinessUser } from '../types/auth'
 import type { BusinessMembership } from '../types/api'
+import { ApiError } from '../api/client'
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
@@ -22,6 +23,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [memberships, setMemberships] = useState<Record<string, BusinessMembership> | null>(null)
   const [loading, setLoading] = useState(true)
   const [initialized, setInitialized] = useState(false)
+  const [businessContextComplete, setBusinessContextComplete] = useState(true)
+
+  const evaluateBusinessContext = useCallback(async (businessId?: string) => {
+    if (!businessId) {
+      setBusinessContextComplete(false)
+      return
+    }
+    try {
+      await businessContextApi.getContext(businessId)
+      setBusinessContextComplete(true)
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 404) {
+          setBusinessContextComplete(false)
+          return
+        }
+      }
+      console.warn('Unable to verify business context status', error)
+      setBusinessContextComplete(true)
+    }
+  }, [])
 
   const refreshAuthState = useCallback(async () => {
     const auth = getFirebaseAuth()
@@ -70,14 +92,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           membership.role,
         )
 
-        setBusinessUser({
+        const nextBusinessUser: BusinessUser = {
           role: membership.role,
           businessId,
           permissions: normalizedPermissions,
           email: currentUser.email || '',
-        })
+        }
+        setBusinessUser(nextBusinessUser)
+        void evaluateBusinessContext(businessId)
       } else {
         setBusinessUser(null)
+        setBusinessContextComplete(true)
       }
     } catch (error) {
       console.error('Failed to refresh auth state:', error)
@@ -101,6 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setBusinessUser(null)
         setMemberships(null)
+        setBusinessContextComplete(true)
         setLoading(false)
       }
       setInitialized(true)
@@ -111,65 +137,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const auth = getFirebaseAuth()
-    setLoading(true)
-    try {
-      await signInWithEmailAndPassword(auth, email, password)
-      // Auth state will update via onAuthStateChanged
-    } catch (error) {
-      setLoading(false)
-      throw error
-    }
+    await signInWithEmailAndPassword(auth, email, password)
+    // Auth state will update via onAuthStateChanged
   }, [])
-
-  const signUp = useCallback(
-    async (
-      email: string,
-      password: string,
-      firstName: string,
-      lastName: string,
-      businessName?: string,
-    ) => {
-      const auth = getFirebaseAuth()
-      setLoading(true)
-      try {
-        // Create Firebase Auth account
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-
-        // Wait a moment for the token to be available, then force refresh
-        // This ensures we have a valid token before making the API call
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const token = await userCredential.user.getIdToken(true)
-        
-        if (!token) {
-          throw new Error('Failed to get authentication token after account creation')
-        }
-
-        // Bootstrap owner account via API
-        await authApi.bootstrapOwner({
-          owner: {
-            firstName,
-            lastName,
-            email,
-          },
-          businesses: businessName
-            ? [
-                {
-                  businessName,
-                },
-              ]
-            : undefined,
-          createPersonalBusiness: true,
-        })
-        // Auth state will refresh via onAuthStateChanged
-      } catch (error) {
-        setLoading(false)
-        // If API call fails, we should clean up the Firebase account
-        // But for now, just throw the error
-        throw error
-      }
-    },
-    [],
-  )
 
   const signOut = useCallback(async () => {
     const auth = getFirebaseAuth()
@@ -179,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       setBusinessUser(null)
       setMemberships(null)
+      setBusinessContextComplete(true)
     } catch (error) {
       console.error('Sign out error:', error)
       throw error
@@ -202,17 +173,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [refreshAuthState],
   )
 
+  const markBusinessContextComplete = useCallback(() => {
+    setBusinessContextComplete(true)
+  }, [])
+
   const value: AuthContextValue = {
     user,
     businessUser,
     memberships,
     loading,
     initialized,
+    businessContextComplete,
     signIn,
-    signUp,
     signOut,
     refreshAuthState,
     acceptInvite,
+    markBusinessContextComplete,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

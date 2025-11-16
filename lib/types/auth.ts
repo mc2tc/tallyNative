@@ -16,19 +16,14 @@ export type AuthState = {
   memberships: Record<string, BusinessMembership> | null
   loading: boolean
   initialized: boolean
+  businessContextComplete: boolean
 }
 
 export type AuthContextValue = AuthState & {
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (
-    email: string,
-    password: string,
-    firstName: string,
-    lastName: string,
-    businessName?: string,
-  ) => Promise<void>
   signOut: () => Promise<void>
   refreshAuthState: () => Promise<void>
   acceptInvite: (inviteId: string, firstName?: string, lastName?: string) => Promise<void>
+  markBusinessContextComplete: () => void
 }
 

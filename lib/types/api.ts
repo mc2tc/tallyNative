@@ -89,3 +89,41 @@ export type ApiError = {
   error: string
 }
 
+export type BusinessContextPayload = {
+  businessId: string
+  createdBy: string
+  context: {
+    isVatRegistered?: boolean
+    vatRegistrationNumber?: string | null
+    vatRegistrationDate?: string | null
+    vatScheme?: 'standard' | 'flat_rate' | 'cash_accounting' | 'retail' | 'margin' | 'other' | null
+    taxableTurnoverLast12Months?: number | null
+    expectedTurnoverNext12Months?: number | null
+    wantsThresholdMonitoring?: boolean
+    supplyTypes: string[]
+    partiallyExempt?: boolean
+    sellsToEU?: boolean
+    sellsOutsideEU?: boolean
+    importsGoods?: boolean
+    exportsGoods?: boolean
+    primaryCurrency: string
+    secondaryCurrencies?: string[]
+    keepReceiptsForVatReclaim?: boolean
+    plansToRegister?: boolean
+    registrationTimeline?: 'next_3_months' | 'next_6_months' | 'next_12_months' | 'unknown'
+    mainCategory?: string
+    subCategory?: string
+    businessType?: string
+  }
+}
+
+export type BusinessContextResponse = {
+  success: boolean
+  context: BusinessContextPayload['context'] & {
+    businessId: string
+    createdAt: number
+    updatedAt: number
+    createdBy: string
+  }
+}
+
