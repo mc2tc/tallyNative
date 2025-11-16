@@ -1,8 +1,8 @@
 // Transactions screen - upload receipt and process OCR
 import React, { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Button, Image, StyleSheet, Text, View, Alert } from 'react-native'
+import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker'
 import { AppBarLayout } from '../components/AppBarLayout'
-import * as ImagePicker from 'expo-image-picker'
 import { useAuth } from '../lib/auth/AuthContext'
 import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
 import { transactions2Api } from '../lib/api/transactions2'
@@ -17,15 +17,28 @@ export default function TransactionsScreen() {
 
 	const canCapture = useMemo(() => Boolean(businessId) && !busy, [businessId, busy])
 
-	const ensurePermissions = useCallback(async () => {
-		// Camera permission (for taking a photo)
-		const cam = await ImagePicker.requestCameraPermissionsAsync()
-		// Media library permission (for picking)
-		const lib = await ImagePicker.requestMediaLibraryPermissionsAsync()
-		if (cam.status !== 'granted' || lib.status !== 'granted') {
-			throw new Error('Camera and media library permissions are required.')
-		}
-	}, [])
+	const handleAsset = useCallback(
+		async (asset: Asset) => {
+			if (!businessId) return
+			if (!asset.uri) {
+				throw new Error('No image URI returned from picker')
+			}
+			setLastImageUri(asset.uri)
+			const downloadUrl = await uploadReceiptAndGetUrl({
+				businessId,
+				localUri: asset.uri,
+				fileNameHint: asset.fileName ?? undefined,
+				contentType: asset.type ?? undefined,
+			})
+			const response = await transactions2Api.processReceipt({
+				imageUrl: downloadUrl,
+				businessId,
+				classification: { kind: 'purchase' },
+			})
+			setResultSummary(`Created transaction ${response.transactionId}`)
+		},
+		[businessId],
+	)
 
 	const pickFromLibrary = useCallback(async () => {
 		try {
@@ -35,37 +48,22 @@ export default function TransactionsScreen() {
 			}
 			setBusy(true)
 			setResultSummary(null)
-			await ensurePermissions()
-			const result = await ImagePicker.launchImageLibraryAsync({
-				mediaTypes: ImagePicker.MediaTypeOptions.Images,
-				quality: 1,
-				allowsEditing: false,
-				exif: false,
+			const result = await launchImageLibrary({
+				mediaType: 'photo',
+				selectionLimit: 1,
+				includeBase64: false,
 			})
-			if (result.canceled || result.assets.length === 0) {
+			if (result.didCancel || !result.assets || result.assets.length === 0) {
 				return
 			}
-			const asset = result.assets[0]
-			setLastImageUri(asset.uri)
-			const downloadUrl = await uploadReceiptAndGetUrl({
-				businessId,
-				localUri: asset.uri,
-				fileNameHint: asset.fileName,
-				contentType: asset.mimeType,
-			})
-			const response = await transactions2Api.processReceipt({
-				imageUrl: downloadUrl,
-				businessId,
-				classification: { kind: 'purchase' },
-			})
-			setResultSummary(`Created transaction ${response.transactionId}`)
+			await handleAsset(result.assets[0])
 		} catch (e: unknown) {
 			const message = e instanceof Error ? e.message : 'Unexpected error'
 			Alert.alert('Upload failed', message)
 		} finally {
 			setBusy(false)
 		}
-	}, [businessId, ensurePermissions])
+	}, [businessId, handleAsset])
 
 	const takePhoto = useCallback(async () => {
 		try {
@@ -75,36 +73,22 @@ export default function TransactionsScreen() {
 			}
 			setBusy(true)
 			setResultSummary(null)
-			await ensurePermissions()
-			const result = await ImagePicker.launchCameraAsync({
-				quality: 1,
-				allowsEditing: false,
-				exif: false,
+			const result = await launchCamera({
+				mediaType: 'photo',
+				saveToPhotos: true,
+				includeBase64: false,
 			})
-			if (result.canceled || result.assets.length === 0) {
+			if (result.didCancel || !result.assets || result.assets.length === 0) {
 				return
 			}
-			const asset = result.assets[0]
-			setLastImageUri(asset.uri)
-			const downloadUrl = await uploadReceiptAndGetUrl({
-				businessId,
-				localUri: asset.uri,
-				fileNameHint: asset.fileName,
-				contentType: asset.mimeType,
-			})
-			const response = await transactions2Api.processReceipt({
-				imageUrl: downloadUrl,
-				businessId,
-				classification: { kind: 'purchase' },
-			})
-			setResultSummary(`Created transaction ${response.transactionId}`)
+			await handleAsset(result.assets[0])
 		} catch (e: unknown) {
 			const message = e instanceof Error ? e.message : 'Unexpected error'
 			Alert.alert('Capture failed', message)
 		} finally {
 			setBusy(false)
 		}
-	}, [businessId, ensurePermissions])
+	}, [businessId, handleAsset])
 
 	return (
 		<AppBarLayout>
@@ -178,5 +162,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 })
-
 

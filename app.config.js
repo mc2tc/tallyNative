@@ -36,17 +36,7 @@ module.exports = () => ({
       },
     },
     owner: 'mc2tc',
-    plugins: [
-      [
-        'expo-image-picker',
-        {
-          photosPermission:
-            'Allow $(PRODUCT_NAME) to access your photos for attaching receipts.',
-          cameraPermission:
-            'Allow $(PRODUCT_NAME) to use the camera to capture receipt images.',
-        },
-      ],
-    ],
+    plugins: [],
   },
 })
 
