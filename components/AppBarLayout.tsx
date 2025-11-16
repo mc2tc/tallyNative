@@ -24,7 +24,7 @@ export function AppBarLayout({ children, title, debugBorders = false }: AppBarLa
           style={[styles.circleButton, { borderColor }]}
           onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
         >
-          <MaterialIcons name="add-circle" size={36} color="#333333" />
+          <MaterialIcons name="more-vert" size={32} color="#333333" />
         </TouchableOpacity>
         <View style={[styles.titlePlaceholder, { borderColor }]} />
       </View>
