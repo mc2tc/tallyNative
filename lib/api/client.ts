@@ -27,13 +27,15 @@ export class ApiError extends Error {
   }
 }
 
-async function getAuthToken(): Promise<string | null> {
+async function getAuthToken(forceRefresh: boolean = false): Promise<string | null> {
   const auth = getFirebaseAuth()
   const user = auth.currentUser
   if (!user) return null
 
   try {
-    return await user.getIdToken(true) // Force refresh
+    // Only force refresh if explicitly requested (e.g., after 401)
+    // Otherwise use cached token to avoid excessive refresh calls
+    return await user.getIdToken(forceRefresh)
   } catch (error) {
     console.error('Failed to get auth token:', error)
     return null
@@ -45,7 +47,7 @@ async function apiRequest<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const url = `${BASE_URL}${endpoint}`
-  const token = await getAuthToken()
+  let token = await getAuthToken(false) // Use cached token first
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -56,13 +58,25 @@ async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${token}`
   }
 
-
   let response: Response
   try {
     response = await fetch(url, {
       ...options,
       headers,
     })
+    
+    // If we get a 401, try refreshing the token once
+    if (response.status === 401 && token) {
+      token = await getAuthToken(true) // Force refresh on 401
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+        // Retry the request with fresh token
+        response = await fetch(url, {
+          ...options,
+          headers,
+        })
+      }
+    }
   } catch (error) {
     // Network error (connection failed, timeout, etc.)
     

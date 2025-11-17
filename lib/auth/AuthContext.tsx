@@ -112,24 +112,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // but they'll see a message that API connectivity is needed
       setBusinessUser(null)
       setMemberships(null)
+      setBusinessContextComplete(true)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [evaluateBusinessContext])
 
   useEffect(() => {
     const auth = getFirebaseAuth()
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser)
-      if (firebaseUser) {
-        await refreshAuthState()
-      } else {
+      try {
+        setUser(firebaseUser)
+        if (firebaseUser) {
+          await refreshAuthState()
+        } else {
+          setBusinessUser(null)
+          setMemberships(null)
+          setBusinessContextComplete(true)
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error('Error in auth state change handler:', error)
+        // Ensure app can still initialize even if there's an error
         setBusinessUser(null)
         setMemberships(null)
         setBusinessContextComplete(true)
         setLoading(false)
+      } finally {
+        setInitialized(true)
       }
-      setInitialized(true)
     })
 
     return unsubscribe

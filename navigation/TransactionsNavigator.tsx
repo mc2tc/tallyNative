@@ -2,10 +2,12 @@ import React from 'react'
 import { createStackNavigator } from '@react-navigation/stack'
 import TransactionsScreen from '../screens/TransactionsScreen'
 import AddTransactionScreen from '../screens/AddTransactionScreen'
+import TransactionListScreen from '../screens/TransactionListScreen'
 
 export type TransactionsStackParamList = {
   TransactionsHome: undefined
   AddTransaction: undefined
+  TransactionList: undefined
 }
 
 const Stack = createStackNavigator<TransactionsStackParamList>()
@@ -15,6 +17,7 @@ export function TransactionsNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="TransactionsHome" component={TransactionsScreen} />
       <Stack.Screen name="AddTransaction" component={AddTransactionScreen} />
+      <Stack.Screen name="TransactionList" component={TransactionListScreen} />
     </Stack.Navigator>
   )
 }

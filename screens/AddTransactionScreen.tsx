@@ -104,7 +104,7 @@ export default function AddTransactionScreen() {
   return (
     <AppBarLayout>
       <View style={styles.container}>
-        <Text style={styles.title}>Add Transaction</Text>
+        <Text style={styles.title}>Add Transactions</Text>
         <Text style={styles.subtitle}>Capture a receipt to create a transaction.</Text>
         <View style={styles.actions}>
           <Button title="Choose photo" onPress={pickFromLibrary} disabled={!canCapture} />
