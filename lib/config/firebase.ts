@@ -1,7 +1,14 @@
 // Firebase configuration and initialization
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
-import { getAuth, type Auth } from 'firebase/auth'
+import { getAuth, type Auth, initializeAuth, type Persistence } from 'firebase/auth'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+// firebase/auth v12 does not ship TypeScript types for getReactNativePersistence yet,
+// so import it via require and cast the shape.
+const { getReactNativePersistence } = require('firebase/auth/react-native') as {
+  getReactNativePersistence: (storage: typeof AsyncStorage) => Persistence
+}
 
 // Firebase config - these should come from environment variables
 // For now, using placeholder values that need to be configured
@@ -19,10 +26,18 @@ let auth: Auth
 
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig)
-  auth = getAuth(app)
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
+  })
 } else {
   app = getApps()[0]
-  auth = getAuth(app)
+  try {
+    auth = getAuth(app)
+  } catch {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    })
+  }
 }
 
 export { app, auth }
