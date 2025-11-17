@@ -224,7 +224,9 @@ export default function SignUpScreen({ navigation }: Props) {
               },
             ]
           : undefined,
-        createPersonalBusiness: true,
+        // Temporarily disable automatic personal business creation so all flows
+        // (VAT profile, transactions, etc.) target the main business only.
+        createPersonalBusiness: false,
       })
 
       const trimmedBusinessName = businessName.trim()

@@ -8,8 +8,22 @@ import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
 import { transactions2Api } from '../lib/api/transactions2'
 
 export default function TransactionsScreen() {
-	const { businessUser } = useAuth()
-	const businessId = businessUser?.businessId
+	const { businessUser, memberships } = useAuth()
+
+	// Choose a businessId that prefers a non-personal business:
+	// 1) If businessUser.businessId exists and is not "personal", use that
+	// 2) Else, from all memberships pick the first whose id does NOT look like a personal business
+	// 3) Fallback: first membership id (if nothing else)
+	const membershipIds = Object.keys(memberships ?? {})
+	const nonPersonalMembershipId = membershipIds.find(
+		(id) => !id.toLowerCase().includes('personal'),
+	)
+
+	const businessId =
+		(businessUser?.businessId &&
+			!businessUser.businessId.toLowerCase().includes('personal')
+			? businessUser.businessId
+			: nonPersonalMembershipId) ?? membershipIds[0]
 
 	const [busy, setBusy] = useState(false)
 	const [lastImageUri, setLastImageUri] = useState<string | null>(null)
