@@ -19,8 +19,11 @@ export default function TransactionsScreen() {
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [bankRecords, setBankRecords] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [bankLoading, setBankLoading] = useState(true)
   const hasLoadedRef = useRef(false)
+  const bankHasLoadedRef = useRef(false)
 
   // Choose businessId (same logic as AddTransactionScreen)
   const membershipIds = Object.keys(memberships ?? {})
@@ -51,13 +54,20 @@ export default function TransactionsScreen() {
           setLoading(true)
           const response = await transactions2Api.getTransactions(businessId, {
             page: 1,
-            limit: 3,
+            limit: 20, // Fetch more to account for filtering
+            classificationKind: 'purchase',
+          })
+          // Filter by classification.kind === "purchase" (client-side fallback)
+          const purchaseTransactions = response.transactions.filter((tx) => {
+            const classification = tx.metadata.classification as { kind?: string } | undefined
+            return classification?.kind === 'purchase'
           })
           // Sort by transactionDate descending (most recent first)
-          const sorted = response.transactions.sort(
+          const sorted = purchaseTransactions.sort(
             (a, b) => b.summary.transactionDate - a.summary.transactionDate,
           )
-          setTransactions(sorted)
+          // Take the first 3
+          setTransactions(sorted.slice(0, 3))
           hasLoadedRef.current = true
         } catch (error) {
           console.error('Failed to fetch transactions:', error)
@@ -72,6 +82,53 @@ export default function TransactionsScreen() {
 
       fetchTransactions()
     }, [businessId, transactions.length]),
+  )
+
+  // Fetch bank records
+  useFocusEffect(
+    useCallback(() => {
+      if (!businessId) {
+        setBankLoading(false)
+        return
+      }
+
+      // If we already have bank records cached, don't refetch - just show cached data
+      if (bankHasLoadedRef.current && bankRecords.length > 0) {
+        return
+      }
+
+      const fetchBankRecords = async () => {
+        try {
+          setBankLoading(true)
+          const response = await transactions2Api.getTransactions(businessId, {
+            page: 1,
+            limit: 20, // Fetch more to account for filtering
+            classificationKind: 'bank-record',
+          })
+          // Filter by classification.kind === "bank-record" (client-side fallback)
+          const bankRecordTransactions = response.transactions.filter((tx) => {
+            const classification = tx.metadata.classification as { kind?: string } | undefined
+            return classification?.kind === 'bank-record'
+          })
+          // Sort by transactionDate descending (most recent first)
+          const sorted = bankRecordTransactions.sort(
+            (a, b) => b.summary.transactionDate - a.summary.transactionDate,
+          )
+          // Take the first 3
+          setBankRecords(sorted.slice(0, 3))
+          bankHasLoadedRef.current = true
+        } catch (error) {
+          console.error('Failed to fetch bank records:', error)
+          // If endpoint doesn't exist yet (404), just show empty state
+          setBankRecords([])
+          bankHasLoadedRef.current = true
+        } finally {
+          setBankLoading(false)
+        }
+      }
+
+      fetchBankRecords()
+    }, [businessId, bankRecords.length]),
   )
 
   const goToAddTransaction = useCallback(() => {
@@ -99,7 +156,7 @@ export default function TransactionsScreen() {
           onPress={goToAddTransaction}
           icon={({ color }) => (
             <MaterialCommunityIcons
-              name="receipt-text-plus"
+              name="plus"
               size={ADD_BUTTON_ICON_SIZE}
               color={GRAYSCALE_PRIMARY}
             />
@@ -123,6 +180,7 @@ export default function TransactionsScreen() {
         ) : transactions.length > 0 ? (
           <Card style={styles.transactionsCard}>
             <Card.Content style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Purchase Receipts</Text>
               {transactions.map((tx) => {
                 const isDefault = isDefaultCurrency(tx.summary.currency)
                 return (
@@ -135,6 +193,53 @@ export default function TransactionsScreen() {
                     <View style={styles.transactionIcon}>
                       <MaterialCommunityIcons
                         name="receipt-text"
+                        size={20}
+                        color={GRAYSCALE_PRIMARY}
+                      />
+                    </View>
+                    <View style={styles.transactionDetails}>
+                      <Text style={styles.thirdPartyName} numberOfLines={1}>
+                        {tx.summary.thirdPartyName}
+                      </Text>
+                      {!isDefault && (
+                        <Text style={styles.foreignCurrency}>
+                          {formatAmount(tx.summary.totalAmount, tx.summary.currency, false)}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.amount}>
+                      {formatAmount(tx.summary.totalAmount, tx.summary.currency, isDefault)}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
+              <TouchableOpacity onPress={goToAllTransactions} style={styles.seeAllButton}>
+                <Text style={styles.seeAllText}>See all</Text>
+              </TouchableOpacity>
+            </Card.Content>
+          </Card>
+        ) : null}
+
+        {bankLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={GRAYSCALE_PRIMARY} />
+          </View>
+        ) : bankRecords.length > 0 ? (
+          <Card style={styles.transactionsCard}>
+            <Card.Content style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Bank Records</Text>
+              {bankRecords.map((tx) => {
+                const isDefault = isDefaultCurrency(tx.summary.currency)
+                return (
+                  <TouchableOpacity
+                    key={tx.id}
+                    style={styles.transactionRow}
+                    onPress={() => goToTransactionDetail(tx)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.transactionIcon}>
+                      <MaterialCommunityIcons
+                        name="bank"
                         size={20}
                         color={GRAYSCALE_PRIMARY}
                       />
@@ -201,6 +306,14 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     padding: 16,
+  },
+  cardTitle: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   transactionRow: {
     flexDirection: 'row',

@@ -67,12 +67,13 @@ export const transactions2Api = {
 
 	getTransactions: async (
 		businessId: string,
-		options?: { page?: number; limit?: number },
+		options?: { page?: number; limit?: number; classificationKind?: string },
 	): Promise<TransactionsListResponse> => {
 		const params = new URLSearchParams({
 			businessId,
 			...(options?.page && { page: options.page.toString() }),
 			...(options?.limit && { limit: options.limit.toString() }),
+			...(options?.classificationKind && { classificationKind: options.classificationKind }),
 		})
 		return api.get<TransactionsListResponse>(
 			`/authenticated/transactions2/api/transactions?${params.toString()}`,
