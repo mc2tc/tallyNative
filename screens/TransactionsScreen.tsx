@@ -1,7 +1,7 @@
 // Transactions screen - upload receipt and process OCR
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { useNavigation } from '@react-navigation/native'
+import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { Button, Card } from 'react-native-paper'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
@@ -20,6 +20,7 @@ export default function TransactionsScreen() {
   const { businessUser, memberships } = useAuth()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const hasLoadedRef = useRef(false)
 
   // Choose businessId (same logic as AddTransactionScreen)
   const membershipIds = Object.keys(memberships ?? {})
@@ -32,36 +33,46 @@ export default function TransactionsScreen() {
       ? businessUser.businessId
       : nonPersonalMembershipId) ?? membershipIds[0]
 
-  useEffect(() => {
-    if (!businessId) {
-      setLoading(false)
-      return
-    }
-
-    const fetchTransactions = async () => {
-      try {
-        setLoading(true)
-        const response = await transactions2Api.getTransactions(businessId, {
-          page: 1,
-          limit: 3,
-        })
-        // Sort by transactionDate descending (most recent first)
-        const sorted = response.transactions.sort(
-          (a, b) => b.summary.transactionDate - a.summary.transactionDate,
-        )
-        setTransactions(sorted)
-      } catch (error) {
-        console.error('Failed to fetch transactions:', error)
-        // If endpoint doesn't exist yet (404), just show empty state
-        // Don't set transactions, so the card won't render
-        setTransactions([])
-      } finally {
+  // Fetch transactions only on first load or if we don't have cached data
+  useFocusEffect(
+    useCallback(() => {
+      if (!businessId) {
         setLoading(false)
+        return
       }
-    }
 
-    fetchTransactions()
-  }, [businessId])
+      // If we already have transactions cached, don't refetch - just show cached data
+      if (hasLoadedRef.current && transactions.length > 0) {
+        return
+      }
+
+      const fetchTransactions = async () => {
+        try {
+          setLoading(true)
+          const response = await transactions2Api.getTransactions(businessId, {
+            page: 1,
+            limit: 3,
+          })
+          // Sort by transactionDate descending (most recent first)
+          const sorted = response.transactions.sort(
+            (a, b) => b.summary.transactionDate - a.summary.transactionDate,
+          )
+          setTransactions(sorted)
+          hasLoadedRef.current = true
+        } catch (error) {
+          console.error('Failed to fetch transactions:', error)
+          // If endpoint doesn't exist yet (404), just show empty state
+          // Don't set transactions, so the card won't render
+          setTransactions([])
+          hasLoadedRef.current = true
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      fetchTransactions()
+    }, [businessId, transactions.length]),
+  )
 
   const goToAddTransaction = useCallback(() => {
     navigation.navigate('AddTransaction')
@@ -70,6 +81,13 @@ export default function TransactionsScreen() {
   const goToAllTransactions = useCallback(() => {
     navigation.navigate('TransactionList')
   }, [navigation])
+
+  const goToTransactionDetail = useCallback(
+    (transaction: Transaction) => {
+      navigation.navigate('TransactionDetail', { transaction })
+    },
+    [navigation],
+  )
 
   const isDefaultCurrency = (currency: string) => currency.toUpperCase() === DEFAULT_CURRENCY
 
@@ -108,7 +126,12 @@ export default function TransactionsScreen() {
               {transactions.map((tx) => {
                 const isDefault = isDefaultCurrency(tx.summary.currency)
                 return (
-                  <View key={tx.id} style={styles.transactionRow}>
+                  <TouchableOpacity
+                    key={tx.id}
+                    style={styles.transactionRow}
+                    onPress={() => goToTransactionDetail(tx)}
+                    activeOpacity={0.7}
+                  >
                     <View style={styles.transactionIcon}>
                       <MaterialCommunityIcons
                         name="receipt-text"
@@ -129,7 +152,7 @@ export default function TransactionsScreen() {
                     <Text style={styles.amount}>
                       {formatAmount(tx.summary.totalAmount, tx.summary.currency, isDefault)}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 )
               })}
               <TouchableOpacity onPress={goToAllTransactions} style={styles.seeAllButton}>

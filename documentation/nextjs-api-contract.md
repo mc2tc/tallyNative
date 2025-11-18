@@ -303,6 +303,40 @@ Authorization: Bearer <firebase-id-token>
 - `GET /api/businesses/{businessId}/reports` - Financial reports
 - etc.
 
+**Transactions2 API Endpoints:**
+
+The RN app uses the `/authenticated/transactions2/api/*` endpoints:
+
+- `GET /authenticated/transactions2/api/transactions?businessId={id}&page={page}&limit={limit}` - List transactions (already implemented)
+- `GET /authenticated/transactions2/api/transactions/{transactionId}?businessId={id}` - Get single transaction by ID (needs implementation)
+- `POST /authenticated/transactions2/api/receipts` - Process receipt OCR (already implemented)
+
+**Transaction Detail Endpoint Requirements:**
+
+For the transaction detail screen, implement:
+- **Endpoint:** `GET /authenticated/transactions2/api/transactions/{transactionId}?businessId={businessId}`
+- **Authentication:** Requires `Authorization: Bearer <firebase-id-token>` header
+- **Authorization:** Validate user has `view_transactions` permission for the `businessId`
+- **Response:** Returns a single `Transaction` object matching the type defined in `lib/api/transactions2.ts`:
+  ```typescript
+  type Transaction = {
+    id: string
+    metadata: TransactionMetadata
+    summary: TransactionSummary
+    accounting?: unknown
+    details?: unknown
+  }
+  ```
+- **Error Responses:**
+  - `401` - Unauthorized (missing/invalid token)
+  - `403` - Forbidden (no permission for this business)
+  - `404` - Transaction not found or user doesn't have access
+
+**Note:** Currently, the RN app passes the full transaction object via navigation params (which works for now), but implementing this endpoint will enable:
+1. Fetching fresh data when opening the detail screen
+2. Handling cases where transaction data might have been updated
+3. Supporting deep linking to transaction details
+
 **All should:**
 
 - Require `Authorization: Bearer <token>` header

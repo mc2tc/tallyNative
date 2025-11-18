@@ -1,11 +1,14 @@
 // Transaction list screen - full list with date grouping
-import React, { useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useNavigation } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import { transactions2Api, type Transaction } from '../lib/api/transactions2'
 import { formatAmount } from '../lib/utils/currency'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
+import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const DEFAULT_CURRENCY = 'GBP'
@@ -17,6 +20,7 @@ type TransactionGroup = {
 }
 
 export default function TransactionListScreen() {
+  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -99,10 +103,21 @@ export default function TransactionListScreen() {
 
   const isDefaultCurrency = (currency: string) => currency.toUpperCase() === DEFAULT_CURRENCY
 
+  const goToTransactionDetail = useCallback(
+    (transaction: Transaction) => {
+      navigation.navigate('TransactionDetail', { transaction })
+    },
+    [navigation],
+  )
+
   const renderTransaction = ({ item: tx }: { item: Transaction }) => {
     const isDefault = isDefaultCurrency(tx.summary.currency)
     return (
-      <View style={styles.transactionRow}>
+      <TouchableOpacity
+        style={styles.transactionRow}
+        onPress={() => goToTransactionDetail(tx)}
+        activeOpacity={0.7}
+      >
         <View style={styles.transactionIcon}>
           <MaterialCommunityIcons name="receipt-text" size={20} color={GRAYSCALE_PRIMARY} />
         </View>
@@ -119,7 +134,7 @@ export default function TransactionListScreen() {
         <Text style={styles.amount}>
           {formatAmount(tx.summary.totalAmount, tx.summary.currency, isDefault)}
         </Text>
-      </View>
+      </TouchableOpacity>
     )
   }
 

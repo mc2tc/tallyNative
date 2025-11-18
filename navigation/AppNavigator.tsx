@@ -8,7 +8,7 @@ import FirestoreTestScreen from '../screens/FirestoreTestScreen'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
-  MainTabs: undefined
+  MainTabs: { screen?: string; params?: any }
   Test: undefined
   FirestoreTest: undefined
 }
