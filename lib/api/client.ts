@@ -49,9 +49,9 @@ async function apiRequest<T>(
   const url = `${BASE_URL}${endpoint}`
   let token = await getAuthToken(false) // Use cached token first
 
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   }
 
   if (token) {
@@ -62,7 +62,7 @@ async function apiRequest<T>(
   try {
     response = await fetch(url, {
       ...options,
-      headers,
+      headers: headers as HeadersInit,
     })
     
     // If we get a 401, try refreshing the token once
@@ -73,7 +73,7 @@ async function apiRequest<T>(
         // Retry the request with fresh token
         response = await fetch(url, {
           ...options,
-          headers,
+          headers: headers as HeadersInit,
         })
       }
     }
@@ -122,7 +122,7 @@ async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    const errorData = data as ApiError
+    const errorData = data as ApiErrorType
     const message =
       typeof errorData?.error === 'string'
         ? errorData.error
@@ -148,6 +148,13 @@ export const api = {
     apiRequest<T>(endpoint, {
       ...options,
       method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+
+  patch: <T>(endpoint: string, body?: unknown, options?: RequestInit) =>
+    apiRequest<T>(endpoint, {
+      ...options,
+      method: 'PATCH',
       body: body ? JSON.stringify(body) : undefined,
     }),
 

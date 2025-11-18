@@ -78,6 +78,53 @@ export const transactions2Api = {
 			`/authenticated/transactions2/api/transactions?${params.toString()}`,
 		)
 	},
+
+	// Get a single transaction by ID
+	// Note: This endpoint should be implemented on the backend
+	getTransaction: async (transactionId: string, businessId: string): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.get<Transaction>(
+			`/authenticated/transactions2/api/transactions/${transactionId}?${params.toString()}`,
+		)
+	},
+
+	// Update a transaction item's debitAccount
+	updateItemDebitAccount: async (
+		transactionId: string,
+		businessId: string,
+		itemIndex: number,
+		debitAccount: string,
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<Transaction>(
+			`/authenticated/transactions2/api/transactions/${transactionId}?${params.toString()}`,
+			{
+				itemIndex,
+				debitAccount,
+			},
+		)
+	},
+
+	// Update a transaction's payment method
+	updatePaymentMethod: async (
+		transactionId: string,
+		businessId: string,
+		paymentMethod: string,
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<Transaction>(
+			`/authenticated/transactions2/api/transactions/${transactionId}?${params.toString()}`,
+			{
+				paymentMethod,
+			},
+		)
+	},
 }
 
 
