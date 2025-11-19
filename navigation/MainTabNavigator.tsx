@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { MaterialIcons } from '@expo/vector-icons'
 import HomeScreen from '../screens/HomeScreen'
 import { TransactionsNavigator } from './TransactionsNavigator'
-import ReportsScreen from '../screens/ReportsScreen'
+import { ReportsNavigator } from './ReportsNavigator'
 import SettingsScreen from '../screens/SettingsScreen'
 import ProfileScreen from '../screens/ProfileScreen'
 import HelpScreen from '../screens/HelpScreen'
@@ -55,7 +55,7 @@ export function MainTabNavigator() {
         component={TransactionsNavigator}
         options={{ title: 'Transactions' }}
       />
-      <Tab.Screen name="Reports" component={ReportsScreen} options={{ title: 'Reports' }} />
+      <Tab.Screen name="Reports" component={ReportsNavigator} options={{ title: 'Reports' }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
       <Tab.Screen
         name="Profile"
