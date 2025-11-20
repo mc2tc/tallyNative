@@ -1,5 +1,54 @@
 # Daily Development Summaries
 
+## 2025-11-19
+
+### Summary
+Delivered the first pass of financial reporting by wiring Profit & Loss, Balance Sheet, Cashflow, and the Reports dashboard into the live chart-accounts API with real-time values and consistent presentation.
+
+### Commits
+
+#### 1. Add financial reports with real-time values
+**Commit:** `d954834`  
+**Files Changed:** 8 files, 2,056 insertions(+), 26 deletions(-)
+
+**Changes:**
+- Implemented Profit & Loss screen with income/expense groupings, totals, and net profit
+- Implemented Balance Sheet screen with assets/liabilities/equity, retained earnings, and balance checks
+- Implemented Cashflow screen with operating/investing/financing sections (noted follow-up work)
+- Hooked ReportsScreen cards to live values for cashflow, profit, and assets
+- Extended chart accounts API client with `withValues`, date-range filters, and documentation
+
+**Files Modified:**
+- `docs/api/chart-accounts-with-values.md` - Added endpoint documentation (new)
+- `lib/api/chartAccounts.ts` - Added value support and filtering
+- `navigation/MainTabNavigator.tsx` - Linked reports navigator
+- `navigation/ReportsNavigator.tsx` - Added reports stack (new)
+- `screens/BalanceSheetReportScreen.tsx` - New detailed screen
+- `screens/CashflowReportScreen.tsx` - New detailed screen
+- `screens/ProfitLossReportScreen.tsx` - New detailed screen
+- `screens/ReportsScreen.tsx` - Dashboard hooked to live values
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 8 files
+- **Total Lines Added:** 2,056 insertions
+- **Total Lines Removed:** 26 deletions
+- **Net Change:** +2,030 lines
+
+### Key Features Added
+1. Profit & Loss report with totals and net profit
+2. Balance Sheet with retained earnings and balance validation
+3. Cashflow report with activity breakdown (WIP refinements noted)
+4. Reports dashboard showing live summary metrics
+
+### Notes
+- WIP: Cashflow categorization and additional logic still pending
+- WIP: Need a date range picker to let users change report periods
+
+---
+
 ## 2025-11-18
 
 ### Summary
