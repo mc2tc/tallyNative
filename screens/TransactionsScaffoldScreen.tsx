@@ -1,7 +1,10 @@
 import React, { useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useNavigation } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
+import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -11,6 +14,7 @@ const SURFACE_BACKGROUND = '#f6f6f6'
 type PipelineColumn = {
   title: string
   actions: string[]
+  transactions?: TransactionStub[]
 }
 
 type TransactionStub = {
@@ -18,6 +22,7 @@ type TransactionStub = {
   title: string
   amount: string
   subtitle?: string
+  verificationItems?: Array<{ label: string; confirmed?: boolean }>
 }
 
 const defaultTransactions: TransactionStub[] = [
@@ -26,48 +31,88 @@ const defaultTransactions: TransactionStub[] = [
   { id: '3', title: 'Apple.com/bill', amount: '£8.99', subtitle: 'Receipt • Missing account' },
 ]
 
+const needsVerificationTransactions: TransactionStub[] = [
+  {
+    id: 'nv1',
+    title: 'Pret A Manger',
+    amount: '£12.40',
+    verificationItems: [
+      { label: 'Payment type', confirmed: false },
+      { label: 'Debit Accounts', confirmed: false },
+    ],
+  },
+  {
+    id: 'nv2',
+    title: 'Uber BV',
+    amount: '£24.10',
+    verificationItems: [
+      { label: 'Payment type', confirmed: false },
+      { label: 'Debit Accounts', confirmed: false },
+    ],
+  },
+  {
+    id: 'nv3',
+    title: 'Apple.com/bill',
+    amount: '£8.99',
+    verificationItems: [
+      { label: 'Payment type', confirmed: false },
+      { label: 'Debit Accounts', confirmed: false },
+    ],
+  },
+]
+
+const verifiedNeedsMatchTransactions: TransactionStub[] = [
+  { id: 'vnm1', title: 'Pret A Manger', amount: '£12.40' },
+  { id: 'vnm2', title: 'Uber BV', amount: '£24.10' },
+  { id: 'vnm3', title: 'Apple.com/bill', amount: '£8.99' },
+]
+
 const receiptColumns: PipelineColumn[] = [
   {
     title: 'Needs Verification',
     actions: ['View all'],
+    transactions: needsVerificationTransactions,
   },
   {
     title: 'Verified, Needs Match',
     actions: ['View all'],
+    transactions: verifiedNeedsMatchTransactions,
   },
-  {
-    title: 'Receipt Exceptions',
-    actions: ['View all'],
-  },
+]
+
+const unmatchedBankRecordsTransactions: TransactionStub[] = [
+  { id: 'ubr1', title: 'HSBC Direct Debit', amount: '£120.00' },
+  { id: 'ubr2', title: 'Barclays Transfer', amount: '£450.50' },
+  { id: 'ubr3', title: 'NatWest Payment', amount: '£89.99' },
 ]
 
 const bankColumns: PipelineColumn[] = [
   {
     title: 'Unmatched Bank Records',
     actions: ['View all'],
-  },
-  {
-    title: 'Bank Suggestions',
-    actions: ['View all'],
+    transactions: unmatchedBankRecordsTransactions,
   },
   {
     title: 'Bank Exceptions',
-    actions: ['View all'],
+    actions: ['View all', '+ Add rules'],
   },
+]
+
+const unmatchedCardRecordsTransactions: TransactionStub[] = [
+  { id: 'ucr1', title: 'Amex Corporate Card', amount: '£89.50' },
+  { id: 'ucr2', title: 'Visa Business Card', amount: '£234.00' },
+  { id: 'ucr3', title: 'Mastercard Company', amount: '£156.75' },
 ]
 
 const cardsColumns: PipelineColumn[] = [
   {
-    title: 'Corporate Cards',
+    title: 'Unmatched Card Records',
     actions: ['View all'],
-  },
-  {
-    title: 'Cards Awaiting Receipts',
-    actions: ['View all'],
+    transactions: unmatchedCardRecordsTransactions,
   },
   {
     title: 'Card Exceptions',
-    actions: ['View all'],
+    actions: ['View all', '+ Add rules'],
   },
 ]
 
@@ -80,25 +125,38 @@ const sectionNav: Array<{ key: SectionKey; label: string }> = [
   { key: 'reporting', label: 'Reporting Ready' },
 ]
 
+const bankAccounts = [
+  { id: 'acc1', lastFour: '1234' },
+  { id: 'acc2', lastFour: '5678' },
+]
+
+const cards = [
+  { id: 'card1', lastFour: '9012' },
+  { id: 'card2', lastFour: '3456' },
+]
+
 export default function TransactionsScaffoldScreen() {
+  const navigation = useNavigation<StackNavigationProp<ScaffoldStackParamList>>()
   const [activeSection, setActiveSection] = useState<SectionKey>('receipts')
   const [navAtEnd, setNavAtEnd] = useState(false)
+  const [selectedBankAccount, setSelectedBankAccount] = useState<string | null>(bankAccounts[0]?.id || null)
+  const [selectedCard, setSelectedCard] = useState<string | null>(cards[0]?.id || null)
 
   return (
     <AppBarLayout>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <Text style={styles.heroTitle}>Transactions</Text>
         <View style={styles.heroActionsRow}>
-          <TouchableOpacity activeOpacity={0.8} style={[styles.ctaButton, styles.primaryCta]}>
-            <View style={styles.ctaContent}>
-              <MaterialIcons name="autorenew" size={18} color={GRAYSCALE_PRIMARY} />
-              <Text style={styles.ctaText}>Sync</Text>
-            </View>
-          </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.8} style={[styles.ctaButton, styles.secondaryCta]}>
             <View style={styles.ctaContent}>
               <MaterialIcons name="add" size={18} color={GRAYSCALE_PRIMARY} />
               <Text style={styles.ctaText}>Add</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.8} style={[styles.ctaButton, styles.primaryCta]}>
+            <View style={styles.ctaContent}>
+              <MaterialIcons name="autorenew" size={18} color={GRAYSCALE_PRIMARY} />
+              <Text style={styles.ctaText}>Reconcile</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -134,57 +192,103 @@ export default function TransactionsScaffoldScreen() {
           {!navAtEnd && <View pointerEvents="none" style={styles.navFadeRight} />}
         </View>
 
-        {renderSection(activeSection)}
+        {activeSection === 'bank' && (
+          <View style={styles.bankAccountNavWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.bankAccountNav}
+            >
+              {bankAccounts.map((account) => {
+                const isActive = selectedBankAccount === account.id
+                return (
+                  <TouchableOpacity
+                    key={account.id}
+                    style={[styles.bankAccountButton, isActive && styles.bankAccountButtonActive]}
+                    activeOpacity={0.8}
+                    onPress={() => setSelectedBankAccount(account.id)}
+                  >
+                    <Text style={[styles.bankAccountText, isActive && styles.bankAccountTextActive]}>
+                      •••• {account.lastFour}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {activeSection === 'cards' && (
+          <View style={styles.bankAccountNavWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.bankAccountNav}
+            >
+              {cards.map((card) => {
+                const isActive = selectedCard === card.id
+                return (
+                  <TouchableOpacity
+                    key={card.id}
+                    style={[styles.bankAccountButton, isActive && styles.bankAccountButtonActive]}
+                    activeOpacity={0.8}
+                    onPress={() => setSelectedCard(card.id)}
+                  >
+                    <Text style={[styles.bankAccountText, isActive && styles.bankAccountTextActive]}>
+                      •••• {card.lastFour}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {renderSection(activeSection, navigation)}
       </ScrollView>
     </AppBarLayout>
   )
 }
 
-function renderSection(section: SectionKey) {
+function renderSection(section: SectionKey, navigation: StackNavigationProp<ScaffoldStackParamList>) {
   switch (section) {
     case 'receipts':
-      return <PipelineRow columns={receiptColumns} />
+      return <PipelineRow columns={receiptColumns} navigation={navigation} />
     case 'bank':
-      return <PipelineRow columns={bankColumns} />
+      return <PipelineRow columns={bankColumns} navigation={navigation} />
     case 'cards':
-      return (
-        <>
-          <PipelineRow columns={cardsColumns} />
-          <View style={styles.integrationCard}>
-            <Text style={styles.sectionHeader}>Connected Apps / Integrations</Text>
-            <Text style={styles.bodyText}>
-              capture.mechanism = integration • source = system_generated
-            </Text>
-            <Text style={styles.bodyText}>
-              Show newest items and their verification / reconciliation state.
-            </Text>
-            <TouchableOpacity activeOpacity={0.8} style={styles.primaryCta}>
-              <Text style={styles.ctaText}>Review feed</Text>
-            </TouchableOpacity>
-          </View>
-        </>
-      )
+      return <PipelineRow columns={cardsColumns} navigation={navigation} />
     case 'reporting':
+      const reportingItems = [
+        { id: 'rr1', title: 'Deliveroo', amount: '£58.20', subtitle: 'Receipt • Matched' },
+        { id: 'rr2', title: 'HSBC Feed', amount: '£1,120.00', subtitle: 'Bank record • Posted' },
+        { id: 'rr3', title: 'Stripe Payout', amount: '£820.45', subtitle: 'Integration • Locked' },
+      ]
       return (
         <View style={styles.reportingCard}>
-          <Text style={styles.sectionHeader}>Reporting Ready (all sources)</Text>
-          <Text style={styles.bodyText}>
-            Criteria: verification ∈ {'{verified, exception}'} AND reconciliation ∈ {'{matched, exception}'}
-          </Text>
-          <Text style={styles.metric}>Total amount ready: £XX,XXX</Text>
-          <CardList
-            items={[
-              { id: 'rr1', title: 'Deliveroo', amount: '£58.20', subtitle: 'Receipt • Matched' },
-              { id: 'rr2', title: 'HSBC Feed', amount: '£1,120.00', subtitle: 'Bank record • Posted' },
-              { id: 'rr3', title: 'Stripe Payout', amount: '£820.45', subtitle: 'Integration • Locked' },
-            ]}
-          />
-          <View style={styles.dualActions}>
-            <TouchableOpacity activeOpacity={0.8} style={styles.outlineButton}>
-              <Text style={styles.outlineButtonText}>View transactions</Text>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.sectionHeader}>Reporting Ready (all sources)</Text>
+            <TouchableOpacity activeOpacity={0.6} style={styles.infoButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
             </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.8} style={styles.outlineButton}>
-              <Text style={styles.outlineButtonText}>Go to reports</Text>
+          </View>
+          <CardList items={reportingItems} />
+          <View style={styles.pipelineActions}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.linkButton}
+              onPress={() =>
+                navigation.navigate('ScaffoldViewAll', {
+                  section: 'reporting',
+                  title: 'Reporting Ready (all sources)',
+                  items: reportingItems,
+                })
+              }
+            >
+              <Text style={styles.linkButtonText}>View all</Text>
+            </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.7} style={styles.linkButton}>
+              <Text style={styles.linkButtonText}>Go to reports</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -194,17 +298,42 @@ function renderSection(section: SectionKey) {
   }
 }
 
-function PipelineRow({ columns }: { columns: PipelineColumn[] }) {
+function PipelineRow({
+  columns,
+  navigation,
+}: {
+  columns: PipelineColumn[]
+  navigation: StackNavigationProp<ScaffoldStackParamList>
+}) {
+  const handleViewAll = (column: PipelineColumn) => {
+    const items = column.transactions || defaultTransactions
+    navigation.navigate('ScaffoldViewAll', {
+      section: column.title,
+      title: column.title,
+      items,
+    })
+  }
+
   return (
     <View style={styles.pipelineColumnStack}>
       {columns.map((column) => (
         <View key={column.title} style={styles.pipelineCard}>
-          <Text style={styles.pipelineTitle}>{column.title}</Text>
-          <CardList items={defaultTransactions} />
+          <View style={styles.pipelineTitleRow}>
+            <Text style={styles.pipelineTitle}>{column.title}</Text>
+            <TouchableOpacity activeOpacity={0.6} style={styles.infoButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
+            </TouchableOpacity>
+          </View>
+          <CardList items={column.transactions || defaultTransactions} />
           {column.actions.length > 0 ? (
             <View style={styles.pipelineActions}>
               {column.actions.map((action) => (
-                <TouchableOpacity key={action} activeOpacity={0.7} style={styles.linkButton}>
+                <TouchableOpacity
+                  key={action}
+                  activeOpacity={0.7}
+                  style={styles.linkButton}
+                  onPress={() => action === 'View all' && handleViewAll(column)}
+                >
                   <Text style={styles.linkButtonText}>{action}</Text>
                 </TouchableOpacity>
               ))}
@@ -223,7 +352,24 @@ function CardList({ items }: { items: TransactionStub[] }) {
         <View key={item.id} style={styles.cardListItem}>
           <View style={styles.cardTextGroup}>
             <Text style={styles.cardTitle}>{item.title}</Text>
-            {item.subtitle ? <Text style={styles.cardSubtitle}>{item.subtitle}</Text> : null}
+            {item.verificationItems ? (
+              <View style={styles.verificationItems}>
+                {item.verificationItems.map((verification, idx) => (
+                  <View key={idx} style={styles.verificationItem}>
+                    <Text style={styles.verificationBullet}>•</Text>
+                    <Text style={styles.verificationLabel}>{verification.label}</Text>
+                    <MaterialIcons
+                      name="check"
+                      size={14}
+                      color={verification.confirmed ? GRAYSCALE_PRIMARY : '#d0d0d0'}
+                      style={styles.verificationCheck}
+                    />
+                  </View>
+                ))}
+              </View>
+            ) : item.subtitle ? (
+              <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
+            ) : null}
           </View>
           <Text style={styles.cardAmount}>{item.amount}</Text>
         </View>
@@ -271,6 +417,36 @@ const styles = StyleSheet.create({
   },
   navButtonTextActive: {
     color: GRAYSCALE_PRIMARY,
+  },
+  bankAccountNavWrapper: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  bankAccountNav: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  bankAccountButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+    backgroundColor: '#ffffff',
+  },
+  bankAccountButtonActive: {
+    borderColor: '#4a4a4a',
+    backgroundColor: '#f0f0f0',
+  },
+  bankAccountText: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+    fontWeight: '500',
+  },
+  bankAccountTextActive: {
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '600',
   },
   container: {
     flex: 1,
@@ -321,6 +497,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
   },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   pipelineColumnStack: {
     flexDirection: 'column',
     gap: 16,
@@ -334,15 +516,27 @@ const styles = StyleSheet.create({
     borderColor: '#efefef',
     padding: 16,
   },
+  pipelineTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   pipelineTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
-    marginBottom: 12,
+    flex: 1,
+  },
+  infoButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   pipelineActions: {
     marginTop: 12,
-    gap: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   linkButton: {
     paddingVertical: 8,
@@ -379,6 +573,29 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 12,
     color: GRAYSCALE_SECONDARY,
+  },
+  verificationItems: {
+    marginTop: 4,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    alignItems: 'center',
+  },
+  verificationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  verificationBullet: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+  },
+  verificationLabel: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+  },
+  verificationCheck: {
+    marginLeft: 2,
   },
   cardAmount: {
     fontSize: 14,

@@ -6,10 +6,10 @@ import { MaterialIcons } from '@expo/vector-icons'
 import HomeScreen from '../screens/HomeScreen'
 import { TransactionsNavigator } from './TransactionsNavigator'
 import { ReportsNavigator } from './ReportsNavigator'
+import { ScaffoldNavigator } from './ScaffoldNavigator'
 import SettingsScreen from '../screens/SettingsScreen'
 import ProfileScreen from '../screens/ProfileScreen'
 import HelpScreen from '../screens/HelpScreen'
-import TransactionsScaffoldScreen from '../screens/TransactionsScaffoldScreen'
 
 export type MainTabParamList = {
   Home: undefined
@@ -60,7 +60,7 @@ export function MainTabNavigator() {
       />
       <Tab.Screen
         name="TransactionsScaffold"
-        component={TransactionsScaffoldScreen}
+        component={ScaffoldNavigator}
         options={{ title: 'Transactions v2' }}
       />
       <Tab.Screen name="Reports" component={ReportsNavigator} options={{ title: 'Reports' }} />
