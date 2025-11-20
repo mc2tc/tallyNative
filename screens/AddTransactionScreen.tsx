@@ -1,13 +1,27 @@
 // Add transaction screen - upload receipt and process OCR
 import React, { useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, Button, Image, StyleSheet, Text, View, Alert } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  Button,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native'
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker'
-import { AppBarLayout } from '../components/AppBarLayout'
+import { MaterialIcons } from '@expo/vector-icons'
+import { useNavigation } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../lib/auth/AuthContext'
 import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
+import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import { transactions2Api } from '../lib/api/transactions2'
 
 export default function AddTransactionScreen() {
+  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
 
   // Choose a businessId that prefers a non-personal business:
@@ -27,6 +41,14 @@ export default function AddTransactionScreen() {
   const [resultSummary, setResultSummary] = useState<string | null>(null)
 
   const canCapture = useMemo(() => Boolean(businessId) && !busy, [businessId, busy])
+
+  const handleGoBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack()
+      return
+    }
+    navigation.navigate('TransactionsHome')
+  }, [navigation])
 
   const handleAsset = useCallback(
     async (asset: Asset) => {
@@ -102,33 +124,66 @@ export default function AddTransactionScreen() {
   }, [businessId, handleAsset])
 
   return (
-    <AppBarLayout>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.container}>
-        <Text style={styles.title}>Add Transaction</Text>
-        <Text style={styles.subtitle}>Capture a receipt to create a transaction.</Text>
-        <View style={styles.actions}>
-          <Button title="Choose photo" onPress={pickFromLibrary} disabled={!canCapture} />
-          <View style={styles.spacer} />
-          <Button title="Take photo" onPress={takePhoto} disabled={!canCapture} />
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={handleGoBack} style={styles.backButton} activeOpacity={0.7}>
+            <MaterialIcons name="arrow-back" size={24} color="#4a4a4a" />
+          </TouchableOpacity>
         </View>
-        {busy ? <ActivityIndicator style={styles.progress} /> : null}
-        {lastImageUri ? <Image source={{ uri: lastImageUri }} style={styles.preview} /> : null}
-        {resultSummary ? <Text style={styles.result}>{resultSummary}</Text> : null}
-        {!businessId ? (
-          <Text style={styles.warning}>Sign in and ensure a business context is available.</Text>
-        ) : null}
+        <View style={styles.content}>
+          <Text style={styles.title}>Add Transaction</Text>
+          <Text style={styles.subtitle}>Capture a receipt to create a transaction.</Text>
+          <View style={styles.actions}>
+            <Button title="Choose photo" onPress={pickFromLibrary} disabled={!canCapture} />
+            <View style={styles.spacer} />
+            <Button title="Take photo" onPress={takePhoto} disabled={!canCapture} />
+          </View>
+          {busy ? <ActivityIndicator style={styles.progress} /> : null}
+          {lastImageUri ? <Image source={{ uri: lastImageUri }} style={styles.preview} /> : null}
+          {resultSummary ? <Text style={styles.result}>{resultSummary}</Text> : null}
+          {!businessId ? (
+            <Text style={styles.warning}>Sign in and ensure a business context is available.</Text>
+          ) : null}
+        </View>
       </View>
-    </AppBarLayout>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
   container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 16,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    marginRight: 12,
+  },
+  content: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f5f5f5',
-    padding: 24,
+    paddingBottom: 16,
   },
   title: {
     fontSize: 24,

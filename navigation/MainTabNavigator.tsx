@@ -9,10 +9,12 @@ import { ReportsNavigator } from './ReportsNavigator'
 import SettingsScreen from '../screens/SettingsScreen'
 import ProfileScreen from '../screens/ProfileScreen'
 import HelpScreen from '../screens/HelpScreen'
+import TransactionsScaffoldScreen from '../screens/TransactionsScaffoldScreen'
 
 export type MainTabParamList = {
   Home: undefined
   Transactions: undefined
+  TransactionsScaffold: undefined
   Reports: undefined
   Settings: undefined
   Profile: undefined
@@ -24,6 +26,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>()
 const iconMap: Record<keyof MainTabParamList, keyof typeof MaterialIcons.glyphMap> = {
   Home: 'home',
   Transactions: 'receipt',
+  TransactionsScaffold: 'dashboard',
   Reports: 'assessment',
   Settings: 'settings',
   Profile: 'account-circle',
@@ -54,6 +57,11 @@ export function MainTabNavigator() {
         name="Transactions"
         component={TransactionsNavigator}
         options={{ title: 'Transactions' }}
+      />
+      <Tab.Screen
+        name="TransactionsScaffold"
+        component={TransactionsScaffoldScreen}
+        options={{ title: 'Transactions v2' }}
       />
       <Tab.Screen name="Reports" component={ReportsNavigator} options={{ title: 'Reports' }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
