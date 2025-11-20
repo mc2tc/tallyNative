@@ -256,6 +256,60 @@ export default function TransactionsScaffoldScreen() {
         }
       })
 
+  // Get last 3 receipts that are now Reporting Ready (to show pipeline progress)
+  const recentReportingReadyReceipts: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        const metadata = tx.metadata as {
+          capture?: { source?: string; mechanism?: string }
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const capture = metadata.capture
+        const verification = metadata.verification
+        const reconciliation = metadata.reconciliation
+
+        // Check if this is a receipt
+        const isReceipt =
+          capture?.source === 'purchase_invoice_ocr' ||
+          capture?.mechanism === 'ocr' ||
+          capture?.source?.includes('purchase')
+
+        if (!isReceipt) {
+          return false
+        }
+
+        // Check if it's reporting ready
+        const isReportingReady =
+          verification?.status !== 'unverified' &&
+          (reconciliation?.status === 'matched' ||
+            reconciliation?.status === 'reconciled' ||
+            reconciliation?.status === 'exception')
+
+        return isReportingReady
+      })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Get last 3
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isReportingReady: true,
+          originalTransaction: tx,
+        }
+      })
+
   // Update receiptColumns with real data
   const receiptColumnsWithData: PipelineColumn[] = [
     {
@@ -267,6 +321,11 @@ export default function TransactionsScaffoldScreen() {
       title: 'Verified, Needs Match',
       actions: ['View all'],
       transactions: verifiedNeedsMatchTransactions,
+    },
+    {
+      title: 'Reporting Ready',
+      actions: ['View all'],
+      transactions: recentReportingReadyReceipts,
     },
   ]
 
