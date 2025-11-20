@@ -126,6 +126,20 @@ export const transactions2Api = {
 			},
 		)
 	},
+
+	// Confirm verification - sets paymentBreakdown userConfirmed and verification status
+	confirmVerification: async (
+		transactionId: string,
+		businessId: string,
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<Transaction>(
+			`/authenticated/transactions2/api/transactions/${transactionId}/verify?${params.toString()}`,
+			{},
+		)
+	},
 }
 
 

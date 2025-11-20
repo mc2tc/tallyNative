@@ -5,6 +5,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
+import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import type { Transaction } from '../lib/api/transactions2'
 import { transactions2Api } from '../lib/api/transactions2'
 import { chartAccountsApi } from '../lib/api/chartAccounts'
@@ -15,7 +16,9 @@ import { ApiError } from '../lib/api/client'
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const DEFAULT_CURRENCY = 'GBP'
 
-type TransactionDetailRouteProp = RouteProp<TransactionsStackParamList, 'TransactionDetail'>
+type TransactionDetailRouteProp =
+  | RouteProp<TransactionsStackParamList, 'TransactionDetail'>
+  | RouteProp<ScaffoldStackParamList, 'TransactionDetail'>
 
 type TransactionItem = {
   name: string
@@ -56,11 +59,37 @@ export default function TransactionDetailScreen() {
   const [availablePaymentMethods, setAvailablePaymentMethods] = useState<PaymentMethodOption[]>([])
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false)
   const [updatingPaymentMethod, setUpdatingPaymentMethod] = useState(false)
+  const [confirmingVerification, setConfirmingVerification] = useState(false)
   const paymentMethodSlideAnim = React.useRef(new Animated.Value(0)).current
   const slideAnim = React.useRef(new Animated.Value(0)).current
   const insets = useSafeAreaInsets()
 
   const businessId = transaction.metadata.businessId
+
+  // Check if transaction needs verification
+  const metadata = transaction.metadata as { verification?: { status?: string } }
+  const isUnverified = metadata.verification?.status === 'unverified'
+
+  const handleConfirmVerification = useCallback(async () => {
+    setConfirmingVerification(true)
+    try {
+      const updatedTransaction = await transactions2Api.confirmVerification(
+        transaction.id,
+        businessId,
+      )
+      setTransaction(updatedTransaction)
+      Alert.alert('Success', 'Transaction verified successfully')
+    } catch (error) {
+      console.error('Failed to confirm verification:', error)
+      let errorMessage = 'Failed to confirm verification. Please try again.'
+      if (error instanceof ApiError) {
+        errorMessage = error.message
+      }
+      Alert.alert('Error', errorMessage)
+    } finally {
+      setConfirmingVerification(false)
+    }
+  }, [transaction.id, businessId])
 
   const handleGoBack = useCallback(() => {
     navigation.goBack()
@@ -350,6 +379,23 @@ export default function TransactionDetailScreen() {
                 <Text style={styles.itemAmount}>{formatItemAmount(item.amount)}</Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {isUnverified && (
+          <View style={styles.confirmButtonContainer}>
+            <TouchableOpacity
+              style={[styles.confirmButton, confirmingVerification && styles.confirmButtonDisabled]}
+              onPress={handleConfirmVerification}
+              activeOpacity={0.8}
+              disabled={confirmingVerification}
+            >
+              {confirmingVerification ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.confirmButtonText}>Confirm and save</Text>
+              )}
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -746,6 +792,27 @@ const styles = StyleSheet.create({
   },
   optionLoader: {
     marginLeft: 8,
+  },
+  confirmButtonContainer: {
+    marginTop: 24,
+    marginBottom: 24,
+    paddingHorizontal: 24,
+  },
+  confirmButton: {
+    backgroundColor: GRAYSCALE_PRIMARY,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmButtonDisabled: {
+    opacity: 0.6,
+  },
+  confirmButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 })
 

@@ -1,10 +1,13 @@
-import React, { useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { useNavigation } from '@react-navigation/native'
+import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
+import { useAuth } from '../lib/auth/AuthContext'
+import { transactions2Api, type Transaction } from '../lib/api/transactions2'
+import { formatAmount } from '../lib/utils/currency'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -14,7 +17,7 @@ const SURFACE_BACKGROUND = '#f6f6f6'
 type PipelineColumn = {
   title: string
   actions: string[]
-  transactions?: TransactionStub[]
+  transactions?: Array<TransactionStub & { originalTransaction?: Transaction }>
 }
 
 type TransactionStub = {
@@ -25,60 +28,57 @@ type TransactionStub = {
   verificationItems?: Array<{ label: string; confirmed?: boolean }>
 }
 
-const defaultTransactions: TransactionStub[] = [
-  { id: '1', title: 'Pret A Manger', amount: '£12.40', subtitle: 'Receipt • Needs verification' },
-  { id: '2', title: 'Uber BV', amount: '£24.10', subtitle: 'Receipt • Awaiting match' },
-  { id: '3', title: 'Apple.com/bill', amount: '£8.99', subtitle: 'Receipt • Missing account' },
-]
+// Helper function to parse transaction into TransactionStub
+function parseTransaction(tx: Transaction): TransactionStub | null {
+  const metadata = tx.metadata as {
+    capture?: { source?: string; mechanism?: string }
+    verification?: { status?: string }
+  }
+  const capture = metadata.capture
+  const verification = metadata.verification
+  const accounting = tx.accounting as
+    | {
+        paymentBreakdown?: Array<{ userConfirmed?: boolean }>
+      }
+    | undefined
+  const details = tx.details as
+    | {
+        itemList?: Array<{ debitAccountConfirmed?: boolean }>
+      }
+    | undefined
 
-const needsVerificationTransactions: TransactionStub[] = [
-  {
-    id: 'nv1',
-    title: 'Pret A Manger',
-    amount: '£12.40',
-    verificationItems: [
-      { label: 'Payment type', confirmed: false },
-      { label: 'Debit Accounts', confirmed: false },
-    ],
-  },
-  {
-    id: 'nv2',
-    title: 'Uber BV',
-    amount: '£24.10',
-    verificationItems: [
-      { label: 'Payment type', confirmed: false },
-      { label: 'Debit Accounts', confirmed: false },
-    ],
-  },
-  {
-    id: 'nv3',
-    title: 'Apple.com/bill',
-    amount: '£8.99',
-    verificationItems: [
-      { label: 'Payment type', confirmed: false },
-      { label: 'Debit Accounts', confirmed: false },
-    ],
-  },
-]
+  // Check if this is a receipt (purchase_invoice_ocr or similar)
+  const isReceipt =
+    capture?.source === 'purchase_invoice_ocr' ||
+    capture?.mechanism === 'ocr' ||
+    capture?.source?.includes('purchase')
 
-const verifiedNeedsMatchTransactions: TransactionStub[] = [
-  { id: 'vnm1', title: 'Pret A Manger', amount: '£12.40' },
-  { id: 'vnm2', title: 'Uber BV', amount: '£24.10' },
-  { id: 'vnm3', title: 'Apple.com/bill', amount: '£8.99' },
-]
+  if (!isReceipt) {
+    return null
+  }
 
-const receiptColumns: PipelineColumn[] = [
-  {
-    title: 'Needs Verification',
-    actions: ['View all'],
-    transactions: needsVerificationTransactions,
-  },
-  {
-    title: 'Verified, Needs Match',
-    actions: ['View all'],
-    transactions: verifiedNeedsMatchTransactions,
-  },
-]
+  const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+
+  // Check verification status
+  const isUnverified = verification?.status === 'unverified'
+
+  if (isUnverified) {
+    // Return simple transaction card - verification details will be shown on click
+    return {
+      id: tx.id,
+      title: tx.summary.thirdPartyName,
+      amount,
+    }
+  }
+
+  // For verified transactions, return without verification items
+  return {
+    id: tx.id,
+    title: tx.summary.thirdPartyName,
+    amount,
+  }
+}
+
 
 const unmatchedBankRecordsTransactions: TransactionStub[] = [
   { id: 'ubr1', title: 'HSBC Direct Debit', amount: '£120.00' },
@@ -137,10 +137,89 @@ const cards = [
 
 export default function TransactionsScaffoldScreen() {
   const navigation = useNavigation<StackNavigationProp<ScaffoldStackParamList>>()
+  const { businessUser, memberships } = useAuth()
   const [activeSection, setActiveSection] = useState<SectionKey>('receipts')
   const [navAtEnd, setNavAtEnd] = useState(false)
   const [selectedBankAccount, setSelectedBankAccount] = useState<string | null>(bankAccounts[0]?.id || null)
   const [selectedCard, setSelectedCard] = useState<string | null>(cards[0]?.id || null)
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Choose businessId (same logic as TransactionsScreen)
+  const membershipIds = Object.keys(memberships ?? {})
+  const nonPersonalMembershipId = membershipIds.find(
+    (id) => !id.toLowerCase().includes('personal'),
+  )
+  const businessId =
+    (businessUser?.businessId && !businessUser.businessId.toLowerCase().includes('personal')
+      ? businessUser.businessId
+      : nonPersonalMembershipId) ?? membershipIds[0]
+
+  // Fetch transactions
+  useFocusEffect(
+    useCallback(() => {
+      if (!businessId) {
+        setLoading(false)
+        return
+      }
+
+      const fetchTransactions = async () => {
+        try {
+          setLoading(true)
+          const response = await transactions2Api.getTransactions(businessId, {
+            page: 1,
+            limit: 100, // Fetch more to categorize properly
+            classificationKind: 'purchase',
+          })
+          setAllTransactions(response.transactions)
+        } catch (error) {
+          console.error('Failed to fetch transactions:', error)
+          setAllTransactions([])
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      fetchTransactions()
+    }, [businessId]),
+  )
+
+  // Parse and categorize transactions
+  const parsedTransactions = allTransactions
+    .map((tx) => ({ original: tx, parsed: parseTransaction(tx) }))
+    .filter((item): item is { original: Transaction; parsed: TransactionStub } => item.parsed !== null)
+
+  const needsVerificationTransactions = parsedTransactions
+    .filter((item) => {
+      const metadata = item.original.metadata as {
+        verification?: { status?: string }
+      }
+      return metadata.verification?.status === 'unverified'
+    })
+    .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
+
+  const verifiedNeedsMatchTransactions = parsedTransactions
+    .filter((item) => {
+      const metadata = item.original.metadata as {
+        verification?: { status?: string }
+      }
+      return metadata.verification?.status !== 'unverified'
+    })
+    .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
+
+  // Update receiptColumns with real data
+  const receiptColumnsWithData: PipelineColumn[] = [
+    {
+      title: 'Needs Verification',
+      actions: ['View all'],
+      transactions: needsVerificationTransactions,
+    },
+    {
+      title: 'Verified, Needs Match',
+      actions: ['View all'],
+      transactions: verifiedNeedsMatchTransactions,
+    },
+  ]
 
   return (
     <AppBarLayout>
@@ -244,13 +323,17 @@ export default function TransactionsScaffoldScreen() {
           </View>
         )}
 
-        {renderSection(activeSection, navigation)}
+        {renderSection(activeSection, navigation, receiptColumnsWithData)}
       </ScrollView>
     </AppBarLayout>
   )
 }
 
-function renderSection(section: SectionKey, navigation: StackNavigationProp<ScaffoldStackParamList>) {
+function renderSection(
+  section: SectionKey,
+  navigation: StackNavigationProp<ScaffoldStackParamList>,
+  receiptColumns: PipelineColumn[],
+) {
   switch (section) {
     case 'receipts':
       return <PipelineRow columns={receiptColumns} navigation={navigation} />
@@ -306,7 +389,7 @@ function PipelineRow({
   navigation: StackNavigationProp<ScaffoldStackParamList>
 }) {
   const handleViewAll = (column: PipelineColumn) => {
-    const items = column.transactions || defaultTransactions
+    const items = column.transactions || []
     navigation.navigate('ScaffoldViewAll', {
       section: column.title,
       title: column.title,
@@ -324,7 +407,7 @@ function PipelineRow({
               <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
             </TouchableOpacity>
           </View>
-          <CardList items={column.transactions || defaultTransactions} />
+          <CardList items={column.transactions || []} navigation={navigation} />
           {column.actions.length > 0 ? (
             <View style={styles.pipelineActions}>
               {column.actions.map((action) => (
@@ -345,34 +428,34 @@ function PipelineRow({
   )
 }
 
-function CardList({ items }: { items: TransactionStub[] }) {
+function CardList({
+  items,
+  navigation,
+}: {
+  items: Array<TransactionStub & { originalTransaction?: Transaction }>
+  navigation?: StackNavigationProp<ScaffoldStackParamList>
+}) {
+  const handleCardPress = (item: TransactionStub & { originalTransaction?: Transaction }) => {
+    if (item.originalTransaction && navigation) {
+      navigation.navigate('TransactionDetail', { transaction: item.originalTransaction })
+    }
+  }
+
   return (
     <View style={styles.cardList}>
       {items.map((item) => (
-        <View key={item.id} style={styles.cardListItem}>
+        <TouchableOpacity
+          key={item.id}
+          style={styles.cardListItem}
+          onPress={() => handleCardPress(item)}
+          activeOpacity={0.7}
+          disabled={!item.originalTransaction || !navigation}
+        >
           <View style={styles.cardTextGroup}>
             <Text style={styles.cardTitle}>{item.title}</Text>
-            {item.verificationItems ? (
-              <View style={styles.verificationItems}>
-                {item.verificationItems.map((verification, idx) => (
-                  <View key={idx} style={styles.verificationItem}>
-                    <Text style={styles.verificationBullet}>•</Text>
-                    <Text style={styles.verificationLabel}>{verification.label}</Text>
-                    <MaterialIcons
-                      name="check"
-                      size={14}
-                      color={verification.confirmed ? GRAYSCALE_PRIMARY : '#d0d0d0'}
-                      style={styles.verificationCheck}
-                    />
-                  </View>
-                ))}
-              </View>
-            ) : item.subtitle ? (
-              <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
-            ) : null}
           </View>
           <Text style={styles.cardAmount}>{item.amount}</Text>
-        </View>
+        </TouchableOpacity>
       ))}
     </View>
   )
