@@ -128,6 +128,8 @@ export const transactions2Api = {
 	},
 
 	// Confirm verification - sets paymentBreakdown userConfirmed and verification status
+	// If paymentBreakdown contains only entries of type "cash", also sets reconciliation.status to "reconciled"
+	// (since cash transactions don't need to be reconciled against bank records)
 	confirmVerification: async (
 		transactionId: string,
 		businessId: string,

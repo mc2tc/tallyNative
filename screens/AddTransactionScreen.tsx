@@ -18,10 +18,15 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../lib/auth/AuthContext'
 import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
+import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import { transactions2Api } from '../lib/api/transactions2'
 
+type AddTransactionNavigationProp =
+  | StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>
+  | StackNavigationProp<ScaffoldStackParamList, 'AddTransaction'>
+
 export default function AddTransactionScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<AddTransactionNavigationProp>()
   const { businessUser, memberships } = useAuth()
 
   // Choose a businessId that prefers a non-personal business:
@@ -45,9 +50,7 @@ export default function AddTransactionScreen() {
   const handleGoBack = useCallback(() => {
     if (navigation.canGoBack()) {
       navigation.goBack()
-      return
     }
-    navigation.navigate('TransactionsHome')
   }, [navigation])
 
   const handleAsset = useCallback(

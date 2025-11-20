@@ -3,6 +3,7 @@ import { createStackNavigator } from '@react-navigation/stack'
 import TransactionsScaffoldScreen from '../screens/TransactionsScaffoldScreen'
 import ScaffoldViewAllScreen from '../screens/ScaffoldViewAllScreen'
 import TransactionDetailScreen from '../screens/TransactionDetailScreen'
+import AddTransactionScreen from '../screens/AddTransactionScreen'
 import type { Transaction } from '../lib/api/transactions2'
 
 export type ScaffoldStackParamList = {
@@ -19,6 +20,7 @@ export type ScaffoldStackParamList = {
     }>
   }
   TransactionDetail: { transaction: Transaction }
+  AddTransaction: undefined
 }
 
 const Stack = createStackNavigator<ScaffoldStackParamList>()
@@ -29,6 +31,7 @@ export function ScaffoldNavigator() {
       <Stack.Screen name="ScaffoldHome" component={TransactionsScaffoldScreen} />
       <Stack.Screen name="ScaffoldViewAll" component={ScaffoldViewAllScreen} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
+      <Stack.Screen name="AddTransaction" component={AddTransactionScreen} />
     </Stack.Navigator>
   )
 }

@@ -26,6 +26,7 @@ type TransactionStub = {
   amount: string
   subtitle?: string
   verificationItems?: Array<{ label: string; confirmed?: boolean }>
+  isReportingReady?: boolean
 }
 
 // Helper function to parse transaction into TransactionStub
@@ -33,12 +34,14 @@ function parseTransaction(tx: Transaction): TransactionStub | null {
   const metadata = tx.metadata as {
     capture?: { source?: string; mechanism?: string }
     verification?: { status?: string }
+    reconciliation?: { status?: string }
   }
   const capture = metadata.capture
   const verification = metadata.verification
+  const reconciliation = metadata.reconciliation
   const accounting = tx.accounting as
     | {
-        paymentBreakdown?: Array<{ userConfirmed?: boolean }>
+        paymentBreakdown?: Array<{ userConfirmed?: boolean; type?: string }>
       }
     | undefined
   const details = tx.details as
@@ -71,11 +74,22 @@ function parseTransaction(tx: Transaction): TransactionStub | null {
     }
   }
 
+  // For verified transactions, check if it's reporting ready
+  // A transaction is reporting ready if:
+  // - verification status is verified/exception AND
+  // - reconciliation status is matched/reconciled/exception
+  const isReportingReady =
+    verification?.status !== 'unverified' &&
+    (reconciliation?.status === 'matched' ||
+      reconciliation?.status === 'reconciled' ||
+      reconciliation?.status === 'exception')
+
   // For verified transactions, return without verification items
   return {
     id: tx.id,
     title: tx.summary.thirdPartyName,
     amount,
+    isReportingReady,
   }
 }
 
@@ -198,14 +212,49 @@ export default function TransactionsScaffoldScreen() {
     })
     .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
 
+  // Verified transactions that need matching (not reporting ready)
   const verifiedNeedsMatchTransactions = parsedTransactions
     .filter((item) => {
       const metadata = item.original.metadata as {
         verification?: { status?: string }
       }
-      return metadata.verification?.status !== 'unverified'
+      return (
+        metadata.verification?.status !== 'unverified' && !item.parsed.isReportingReady
+      )
     })
     .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
+
+  // Reporting ready transactions (all sources, verified and reconciled/matched/exception)
+  const reportingReadyTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const verification = metadata.verification
+        const reconciliation = metadata.reconciliation
+
+        // A transaction is reporting ready if:
+        // - verification status is verified/exception AND
+        // - reconciliation status is matched/reconciled/exception
+        return (
+          verification?.status !== 'unverified' &&
+          (reconciliation?.status === 'matched' ||
+            reconciliation?.status === 'reconciled' ||
+            reconciliation?.status === 'exception')
+        )
+      })
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isReportingReady: true,
+          originalTransaction: tx,
+        }
+      })
 
   // Update receiptColumns with real data
   const receiptColumnsWithData: PipelineColumn[] = [
@@ -226,7 +275,11 @@ export default function TransactionsScaffoldScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <Text style={styles.heroTitle}>Transactions</Text>
         <View style={styles.heroActionsRow}>
-          <TouchableOpacity activeOpacity={0.8} style={[styles.ctaButton, styles.secondaryCta]}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.ctaButton, styles.secondaryCta]}
+            onPress={() => navigation.navigate('AddTransaction')}
+          >
             <View style={styles.ctaContent}>
               <MaterialIcons name="add" size={18} color={GRAYSCALE_PRIMARY} />
               <Text style={styles.ctaText}>Add</Text>
@@ -323,7 +376,7 @@ export default function TransactionsScaffoldScreen() {
           </View>
         )}
 
-        {renderSection(activeSection, navigation, receiptColumnsWithData)}
+        {renderSection(activeSection, navigation, receiptColumnsWithData, reportingReadyTransactions)}
       </ScrollView>
     </AppBarLayout>
   )
@@ -333,6 +386,7 @@ function renderSection(
   section: SectionKey,
   navigation: StackNavigationProp<ScaffoldStackParamList>,
   receiptColumns: PipelineColumn[],
+  reportingReadyTransactions: Array<TransactionStub & { originalTransaction?: Transaction }>,
 ) {
   switch (section) {
     case 'receipts':
@@ -342,11 +396,6 @@ function renderSection(
     case 'cards':
       return <PipelineRow columns={cardsColumns} navigation={navigation} />
     case 'reporting':
-      const reportingItems = [
-        { id: 'rr1', title: 'Deliveroo', amount: '£58.20', subtitle: 'Receipt • Matched' },
-        { id: 'rr2', title: 'HSBC Feed', amount: '£1,120.00', subtitle: 'Bank record • Posted' },
-        { id: 'rr3', title: 'Stripe Payout', amount: '£820.45', subtitle: 'Integration • Locked' },
-      ]
       return (
         <View style={styles.reportingCard}>
           <View style={styles.cardTitleRow}>
@@ -355,7 +404,7 @@ function renderSection(
               <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
             </TouchableOpacity>
           </View>
-          <CardList items={reportingItems} />
+          <CardList items={reportingReadyTransactions} navigation={navigation} />
           <View style={styles.pipelineActions}>
             <TouchableOpacity
               activeOpacity={0.7}
@@ -364,7 +413,7 @@ function renderSection(
                 navigation.navigate('ScaffoldViewAll', {
                   section: 'reporting',
                   title: 'Reporting Ready (all sources)',
-                  items: reportingItems,
+                  items: reportingReadyTransactions,
                 })
               }
             >
