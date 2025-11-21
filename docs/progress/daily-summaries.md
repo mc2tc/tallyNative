@@ -1,5 +1,58 @@
 # Daily Development Summaries
 
+## 2025-11-21
+
+### Summary
+Enhanced the AddTransactionScreen with improved layout, file picker integration, and wireframe design. Added support for choosing files from the device file system, implemented a 2x2 grid layout for four transaction input methods, and converted the design to a wireframe style with grayscale colors.
+
+### Commits
+
+#### 1. Enhance AddTransactionScreen with file picker, improved layout, and wireframe design
+**Commit:** `3b5e622`  
+**Files Changed:** 3 files, 176 insertions(+), 16 deletions(-)
+
+**Changes:**
+- Added expo-document-picker dependency for file system access on Android/iOS
+- Implemented 2x2 grid layout for four transaction input methods (Choose photo, Take photo, Choose from Files, Manual Input)
+- Added "Choose from Files" button with full file browser support (shows Downloads, Documents, etc.)
+- Added "Manual Input" button with placeholder handler for future implementation
+- Converted to wireframe design with grayscale colors (replaced black buttons with gray #666666)
+- Added informational note about email-based ingestion feature (coming soon)
+- Updated subtitle from "Capture a receipt..." to "Choose how you'd like to add transactions"
+- Improved button styling with consistent spacing and responsive grid layout
+- File picker validates selected files are images before processing
+
+**Files Modified:**
+- `package.json` - Added expo-document-picker dependency
+- `package-lock.json` - Updated package lock file
+- `screens/AddTransactionScreen.tsx` - Major UI improvements and new functionality
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 3 files
+- **Total Lines Added:** 176 insertions
+- **Total Lines Removed:** 16 deletions
+- **Net Change:** +160 lines
+
+### Key Features Added
+1. File system file picker integration (Android/iOS)
+2. Improved 2x2 grid layout for transaction input methods
+3. "Choose from Files" button with full file browser access
+4. "Manual Input" button (placeholder for future implementation)
+5. Wireframe design conversion (grayscale color scheme)
+6. Email-based ingestion informational note
+7. Enhanced button styling and responsive layout
+
+### Notes
+- File picker shows full file browser with categories like Downloads on Android
+- Manual Input button currently shows alert - needs to be wired to actual manual input screen
+- Email-based ingestion feature is documented but not yet implemented
+- All buttons maintain wireframe design (black, white, grayscale only)
+
+---
+
 ## 2025-11-20
 
 ### Summary
