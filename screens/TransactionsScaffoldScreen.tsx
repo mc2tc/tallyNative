@@ -4,7 +4,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
-import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
+import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
 import { transactions2Api, type Transaction } from '../lib/api/transactions2'
 import { formatAmount } from '../lib/utils/currency'
@@ -150,7 +150,7 @@ const cards = [
 ]
 
 export default function TransactionsScaffoldScreen() {
-  const navigation = useNavigation<StackNavigationProp<ScaffoldStackParamList>>()
+  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
   const [activeSection, setActiveSection] = useState<SectionKey>('receipts')
   const [navAtEnd, setNavAtEnd] = useState(false)
@@ -443,7 +443,7 @@ export default function TransactionsScaffoldScreen() {
 
 function renderSection(
   section: SectionKey,
-  navigation: StackNavigationProp<ScaffoldStackParamList>,
+  navigation: StackNavigationProp<TransactionsStackParamList>,
   receiptColumns: PipelineColumn[],
   reportingReadyTransactions: Array<TransactionStub & { originalTransaction?: Transaction }>,
 ) {
@@ -494,7 +494,7 @@ function PipelineRow({
   navigation,
 }: {
   columns: PipelineColumn[]
-  navigation: StackNavigationProp<ScaffoldStackParamList>
+  navigation: StackNavigationProp<TransactionsStackParamList>
 }) {
   const handleViewAll = (column: PipelineColumn) => {
     const items = column.transactions || []
@@ -541,7 +541,7 @@ function CardList({
   navigation,
 }: {
   items: Array<TransactionStub & { originalTransaction?: Transaction }>
-  navigation?: StackNavigationProp<ScaffoldStackParamList>
+  navigation?: StackNavigationProp<TransactionsStackParamList>
 }) {
   const handleCardPress = (item: TransactionStub & { originalTransaction?: Transaction }) => {
     if (item.originalTransaction && navigation) {

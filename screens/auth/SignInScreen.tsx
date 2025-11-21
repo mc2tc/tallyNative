@@ -28,16 +28,21 @@ export default function SignInScreen({}: Props) {
   const { signIn } = useAuth()
 
   const handleSignIn = async () => {
+    console.log('Sign In button pressed')
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please enter both email and password')
       return
     }
 
+    console.log('Starting sign in process...')
     setIsLoading(true)
     try {
+      console.log('Calling signIn function...')
       await signIn(email.trim(), password)
+      console.log('Sign in completed successfully')
       // Navigation will be handled by RootNavigator based on auth state
     } catch (error) {
+      console.error('Sign in error:', error)
       let message = 'Failed to sign in. Please try again.'
       if (error instanceof ApiError) {
         message = error.message
@@ -49,10 +54,15 @@ export default function SignInScreen({}: Props) {
           message = 'Incorrect password'
         } else if (error.message.includes('invalid-email')) {
           message = 'Invalid email address'
+        } else if (error.message.includes('auth/invalid-credential')) {
+          message = 'Invalid email or password'
+        } else if (error.message.includes('auth/network-request-failed')) {
+          message = 'Network error. Please check your connection.'
         } else {
-          message = error.message
+          message = error.message || 'An unexpected error occurred'
         }
       }
+      console.error('Sign in failed with message:', message)
       Alert.alert('Sign In Failed', message)
     } finally {
       setIsLoading(false)
@@ -97,8 +107,12 @@ export default function SignInScreen({}: Props) {
 
         <TouchableOpacity
           style={[styles.button, isLoading && styles.buttonDisabled]}
-          onPress={handleSignIn}
+          onPress={() => {
+            console.log('Button pressed - calling handleSignIn')
+            handleSignIn()
+          }}
           disabled={isLoading}
+          activeOpacity={0.7}
         >
           {isLoading ? (
             <ActivityIndicator color="#333333" />

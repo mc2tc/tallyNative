@@ -25,7 +25,7 @@ type ScaffoldViewAllRouteParams = {
 }
 
 type ScaffoldViewAllRouteProp = RouteProp<
-  { ScaffoldViewAll: ScaffoldViewAllRouteParams },
+  { ScaffoldViewAll: ScaffoldViewAllRouteParams } | { [key: string]: any },
   'ScaffoldViewAll'
 >
 
