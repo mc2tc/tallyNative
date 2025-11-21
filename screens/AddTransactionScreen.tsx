@@ -3,7 +3,6 @@ import React, { useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Button,
   Image,
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native'
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker'
+import * as DocumentPicker from 'expo-document-picker'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
@@ -126,6 +126,66 @@ export default function AddTransactionScreen() {
     }
   }, [businessId, handleAsset])
 
+  const pickFromFiles = useCallback(async () => {
+    try {
+      if (!businessId) {
+        Alert.alert('No business selected', 'Sign in or select a business to continue.')
+        return
+      }
+      setBusy(true)
+      setResultSummary(null)
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      })
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return
+      }
+      const file = result.assets[0]
+      if (!file.uri) {
+        throw new Error('No file URI returned from picker')
+      }
+      // Validate that the selected file is an image
+      const mimeType = file.mimeType?.toLowerCase() ?? ''
+      const fileName = file.name?.toLowerCase() ?? ''
+      const isImage =
+        mimeType.startsWith('image/') ||
+        fileName.endsWith('.jpg') ||
+        fileName.endsWith('.jpeg') ||
+        fileName.endsWith('.png') ||
+        fileName.endsWith('.gif') ||
+        fileName.endsWith('.webp') ||
+        fileName.endsWith('.bmp')
+      if (!isImage) {
+        Alert.alert('Invalid file type', 'Please select an image file.')
+        return
+      }
+      setLastImageUri(file.uri)
+      const downloadUrl = await uploadReceiptAndGetUrl({
+        businessId,
+        localUri: file.uri,
+        fileNameHint: file.name ?? undefined,
+        contentType: file.mimeType ?? undefined,
+      })
+      const response = await transactions2Api.processReceipt({
+        imageUrl: downloadUrl,
+        businessId,
+        classification: { kind: 'purchase' },
+      })
+      setResultSummary(`Created transaction ${response.transactionId}`)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unexpected error'
+      Alert.alert('File selection failed', message)
+    } finally {
+      setBusy(false)
+    }
+  }, [businessId])
+
+  const handleManualInput = useCallback(() => {
+    // TODO: Navigate to manual input screen or show manual input form
+    Alert.alert('Manual Input', 'Manual input feature coming soon.')
+  }, [])
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.container}>
@@ -136,11 +196,55 @@ export default function AddTransactionScreen() {
         </View>
         <View style={styles.content}>
           <Text style={styles.title}>Add Transaction</Text>
-          <Text style={styles.subtitle}>Capture a receipt to create a transaction.</Text>
-          <View style={styles.actions}>
-            <Button title="Choose photo" onPress={pickFromLibrary} disabled={!canCapture} />
-            <View style={styles.spacer} />
-            <Button title="Take photo" onPress={takePhoto} disabled={!canCapture} />
+          <Text style={styles.subtitle}>Choose how you'd like to add transactions.</Text>
+          <View style={styles.buttonGrid}>
+            <TouchableOpacity
+              onPress={pickFromLibrary}
+              disabled={!canCapture}
+              style={[styles.button, !canCapture && styles.buttonDisabled]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                Choose photo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={takePhoto}
+              disabled={!canCapture}
+              style={[styles.button, !canCapture && styles.buttonDisabled]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                Take photo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={pickFromFiles}
+              disabled={!canCapture}
+              style={[styles.button, !canCapture && styles.buttonDisabled]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                Choose from Files
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleManualInput}
+              disabled={!canCapture}
+              style={[styles.button, !canCapture && styles.buttonDisabled]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                Manual Input
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.infoNote}>
+            <Text style={styles.infoNoteTitle}>Email-Based Ingestion</Text>
+            <Text style={styles.infoNoteText}>
+              You can forward receipt emails, bank statements, and credit card statements to a
+              dedicated Tally email address for automatic processing. This feature is coming soon.
+            </Text>
           </View>
           {busy ? <ActivityIndicator style={styles.progress} /> : null}
           {lastImageUri ? <Image source={{ uri: lastImageUri }} style={styles.preview} /> : null}
@@ -157,11 +261,11 @@ export default function AddTransactionScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#ffffff',
   },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#ffffff',
     paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 24,
@@ -191,20 +295,65 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#333333',
+    color: '#000000',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666666',
+    color: '#000000',
     textAlign: 'center',
   },
-  actions: {
+  buttonGrid: {
     flexDirection: 'row',
-    marginTop: 16,
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: 24,
+    width: '100%',
+    maxWidth: 400,
   },
-  spacer: {
-    width: 12,
+  button: {
+    backgroundColor: '#666666',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 8,
+    width: '48%',
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
+  },
+  buttonDisabled: {
+    backgroundColor: '#e0e0e0',
+  },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  buttonTextDisabled: {
+    color: '#999999',
+  },
+  infoNote: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    width: '100%',
+    maxWidth: 400,
+  },
+  infoNoteTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 8,
+  },
+  infoNoteText: {
+    fontSize: 13,
+    color: '#666666',
+    lineHeight: 18,
   },
   progress: {
     marginTop: 16,
@@ -218,12 +367,12 @@ const styles = StyleSheet.create({
   result: {
     marginTop: 12,
     fontSize: 14,
-    color: '#2e7d32',
+    color: '#000000',
   },
   warning: {
     marginTop: 12,
     fontSize: 13,
-    color: '#b26a00',
+    color: '#000000',
     textAlign: 'center',
   },
 })
