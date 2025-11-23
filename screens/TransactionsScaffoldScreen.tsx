@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
@@ -8,6 +8,9 @@ import type { TransactionsStackParamList } from '../navigation/TransactionsNavig
 import { useAuth } from '../lib/auth/AuthContext'
 import { transactions2Api, type Transaction } from '../lib/api/transactions2'
 import { formatAmount } from '../lib/utils/currency'
+import { api } from '../lib/api/client'
+import { bankAccountsApi, type BankAccount } from '../lib/api/bankAccounts'
+import { creditCardsApi, type CreditCard } from '../lib/api/creditCards'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -130,32 +133,33 @@ const cardsColumns: PipelineColumn[] = [
   },
 ]
 
-type SectionKey = 'receipts' | 'bank' | 'cards' | 'reporting'
+type SectionKey = 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting'
 
-const sectionNav: Array<{ key: SectionKey; label: string }> = [
-  { key: 'receipts', label: 'Receipts Pipeline' },
-  { key: 'bank', label: 'Bank Pipeline' },
-  { key: 'cards', label: 'Cards Pipeline' },
+// Base section nav - will be filtered based on available accounts/cards
+const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
+  { key: 'receipts', label: 'Purchase Receipts' },
+  { key: 'bank', label: 'Bank Transactions' },
+  { key: 'cards', label: 'Credit Card Transactions' },
+  { key: 'sales', label: 'Sales Pipeline' },
+  { key: 'internal', label: 'Internal Transactions' },
   { key: 'reporting', label: 'Reporting Ready' },
 ]
 
-const bankAccounts = [
-  { id: 'acc1', lastFour: '1234' },
-  { id: 'acc2', lastFour: '5678' },
-]
-
-const cards = [
-  { id: 'card1', lastFour: '9012' },
-  { id: 'card2', lastFour: '3456' },
-]
+// Helper function to extract last 4 digits from account/card number
+function getLastFour(number: string): string {
+  const digits = number.replace(/\D/g, '')
+  return digits.slice(-4) || ''
+}
 
 export default function TransactionsScaffoldScreen() {
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
   const [activeSection, setActiveSection] = useState<SectionKey>('receipts')
   const [navAtEnd, setNavAtEnd] = useState(false)
-  const [selectedBankAccount, setSelectedBankAccount] = useState<string | null>(bankAccounts[0]?.id || null)
-  const [selectedCard, setSelectedCard] = useState<string | null>(cards[0]?.id || null)
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([])
+  const [selectedBankAccount, setSelectedBankAccount] = useState<string | null>(null)
+  const [selectedCard, setSelectedCard] = useState<string | null>(null)
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -168,6 +172,38 @@ export default function TransactionsScaffoldScreen() {
     (businessUser?.businessId && !businessUser.businessId.toLowerCase().includes('personal')
       ? businessUser.businessId
       : nonPersonalMembershipId) ?? membershipIds[0]
+
+  // Fetch bank accounts and credit cards
+  useFocusEffect(
+    useCallback(() => {
+      if (!businessId) return
+
+      const fetchAccountsAndCards = async () => {
+        try {
+          const [accounts, cards] = await Promise.all([
+            bankAccountsApi.getBankAccounts(businessId),
+            creditCardsApi.getCreditCards(businessId),
+          ])
+          setBankAccounts(accounts)
+          setCreditCards(cards)
+          
+          // Set selected account/card to first one if available and not already set
+          if (accounts.length > 0 && !selectedBankAccount) {
+            setSelectedBankAccount(accounts[0].accountNumber)
+          }
+          if (cards.length > 0 && !selectedCard) {
+            setSelectedCard(cards[0].cardNumber)
+          }
+        } catch (error) {
+          console.error('Failed to fetch accounts/cards:', error)
+          setBankAccounts([])
+          setCreditCards([])
+        }
+      }
+
+      fetchAccountsAndCards()
+    }, [businessId]),
+  )
 
   // Fetch transactions
   useFocusEffect(
@@ -310,6 +346,114 @@ export default function TransactionsScaffoldScreen() {
         }
       })
 
+  // Get last 3 bank transactions that are now Reporting Ready (to show pipeline progress)
+  const recentReportingReadyBank: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        const metadata = tx.metadata as {
+          capture?: { source?: string; mechanism?: string }
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const capture = metadata.capture
+        const verification = metadata.verification
+        const reconciliation = metadata.reconciliation
+
+        // Check if this is a receipt (we want to exclude receipts for bank pipeline)
+        const isReceipt =
+          capture?.source === 'purchase_invoice_ocr' ||
+          capture?.mechanism === 'ocr' ||
+          capture?.source?.includes('purchase')
+
+        if (isReceipt) {
+          return false
+        }
+
+        // Check if it's reporting ready
+        const isReportingReady =
+          verification?.status !== 'unverified' &&
+          (reconciliation?.status === 'matched' ||
+            reconciliation?.status === 'reconciled' ||
+            reconciliation?.status === 'exception')
+
+        return isReportingReady
+      })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Get last 3
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isReportingReady: true,
+          originalTransaction: tx,
+        }
+      })
+
+  // Get last 3 card transactions that are now Reporting Ready (to show pipeline progress)
+  const recentReportingReadyCards: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        const metadata = tx.metadata as {
+          capture?: { source?: string; mechanism?: string }
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const capture = metadata.capture
+        const verification = metadata.verification
+        const reconciliation = metadata.reconciliation
+
+        // Check if this is a receipt (we want to exclude receipts for cards pipeline)
+        const isReceipt =
+          capture?.source === 'purchase_invoice_ocr' ||
+          capture?.mechanism === 'ocr' ||
+          capture?.source?.includes('purchase')
+
+        if (isReceipt) {
+          return false
+        }
+
+        // Check if it's reporting ready
+        const isReportingReady =
+          verification?.status !== 'unverified' &&
+          (reconciliation?.status === 'matched' ||
+            reconciliation?.status === 'reconciled' ||
+            reconciliation?.status === 'exception')
+
+        return isReportingReady
+      })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Get last 3
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isReportingReady: true,
+          originalTransaction: tx,
+        }
+      })
+
   // Update receiptColumns with real data
   const receiptColumnsWithData: PipelineColumn[] = [
     {
@@ -329,28 +473,120 @@ export default function TransactionsScaffoldScreen() {
     },
   ]
 
+  // Update bankColumns with real data
+  const bankColumnsWithData: PipelineColumn[] = [
+    {
+      title: 'Unmatched Bank Records',
+      actions: ['View all'],
+      transactions: unmatchedBankRecordsTransactions,
+    },
+    {
+      title: 'Reporting Ready',
+      actions: ['View all'],
+      transactions: recentReportingReadyBank,
+    },
+    {
+      title: 'Bank Exceptions',
+      actions: ['View all', '+ Add rules'],
+    },
+  ]
+
+  // Update cardsColumns with real data
+  const cardsColumnsWithData: PipelineColumn[] = [
+    {
+      title: 'Unmatched Card Records',
+      actions: ['View all'],
+      transactions: unmatchedCardRecordsTransactions,
+    },
+    {
+      title: 'Reporting Ready',
+      actions: ['View all'],
+      transactions: recentReportingReadyCards,
+    },
+    {
+      title: 'Card Exceptions',
+      actions: ['View all', '+ Add rules'],
+    },
+  ]
+
+  // Handler for Add button with context
+  const handleAddClick = () => {
+    const context = {
+      pipelineSection: activeSection,
+      ...(activeSection === 'bank' && selectedBankAccount && { bankAccountId: selectedBankAccount }),
+      ...(activeSection === 'cards' && selectedCard && { cardId: selectedCard }),
+    }
+    
+    // Navigate to AddTransaction screen with context
+    navigation.navigate('AddTransaction', { context })
+  }
+
+  // Handler for Reconcile button with context
+  const handleReconcileClick = async () => {
+    try {
+      const context = {
+        pipelineSection: activeSection,
+        ...(activeSection === 'bank' && selectedBankAccount && { bankAccountId: selectedBankAccount }),
+        ...(activeSection === 'cards' && selectedCard && { cardId: selectedCard }),
+      }
+      
+      // Send signal to backend
+      await api.post('/authenticated/transactions2/api/actions/reconcile-clicked', {
+        businessId,
+        context,
+        timestamp: Date.now(),
+      })
+      
+      // TODO: Navigate to reconcile screen or trigger reconcile action
+    } catch (error) {
+      console.error('Failed to send reconcile click signal:', error)
+    }
+  }
+
+  // Filter section nav to only show bank/cards if they exist
+  const sectionNav = baseSectionNav.filter((section) => {
+    if (section.key === 'bank') {
+      return bankAccounts.length > 0
+    }
+    if (section.key === 'cards') {
+      return creditCards.length > 0
+    }
+    return true
+  })
+
+  // If current section is bank/cards but no accounts/cards exist, switch to receipts
+  useEffect(() => {
+    if (activeSection === 'bank' && bankAccounts.length === 0) {
+      setActiveSection('receipts')
+    }
+    if (activeSection === 'cards' && creditCards.length === 0) {
+      setActiveSection('receipts')
+    }
+  }, [activeSection, bankAccounts.length, creditCards.length])
+
+  // Update selected account/card if current selection no longer exists
+  useEffect(() => {
+    if (bankAccounts.length > 0 && selectedBankAccount) {
+      const accountExists = bankAccounts.some((acc) => acc.accountNumber === selectedBankAccount)
+      if (!accountExists) {
+        setSelectedBankAccount(bankAccounts[0].accountNumber)
+      }
+    }
+  }, [bankAccounts, selectedBankAccount])
+
+  useEffect(() => {
+    if (creditCards.length > 0 && selectedCard) {
+      const cardExists = creditCards.some((card) => card.cardNumber === selectedCard)
+      if (!cardExists) {
+        setSelectedCard(creditCards[0].cardNumber)
+      }
+    }
+  }, [creditCards, selectedCard])
+
   return (
     <AppBarLayout>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <Text style={styles.heroTitle}>Transactions</Text>
-        <View style={styles.heroActionsRow}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={[styles.ctaButton, styles.secondaryCta]}
-            onPress={() => navigation.navigate('AddTransaction')}
-          >
-            <View style={styles.ctaContent}>
-              <MaterialIcons name="add" size={18} color={GRAYSCALE_PRIMARY} />
-              <Text style={styles.ctaText}>Add</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.8} style={[styles.ctaButton, styles.primaryCta]}>
-            <View style={styles.ctaContent}>
-              <MaterialIcons name="autorenew" size={18} color={GRAYSCALE_PRIMARY} />
-              <Text style={styles.ctaText}>Reconcile</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
 
         <View style={styles.sectionNavWrapper}>
           <ScrollView
@@ -383,7 +619,7 @@ export default function TransactionsScaffoldScreen() {
           {!navAtEnd && <View pointerEvents="none" style={styles.navFadeRight} />}
         </View>
 
-        {activeSection === 'bank' && (
+        {activeSection === 'bank' && bankAccounts.length > 0 && (
           <View style={styles.bankAccountNavWrapper}>
             <ScrollView
               horizontal
@@ -391,16 +627,17 @@ export default function TransactionsScaffoldScreen() {
               contentContainerStyle={styles.bankAccountNav}
             >
               {bankAccounts.map((account) => {
-                const isActive = selectedBankAccount === account.id
+                const isActive = selectedBankAccount === account.accountNumber
+                const lastFour = getLastFour(account.accountNumber)
                 return (
                   <TouchableOpacity
-                    key={account.id}
+                    key={account.accountNumber}
                     style={[styles.bankAccountButton, isActive && styles.bankAccountButtonActive]}
                     activeOpacity={0.8}
-                    onPress={() => setSelectedBankAccount(account.id)}
+                    onPress={() => setSelectedBankAccount(account.accountNumber)}
                   >
                     <Text style={[styles.bankAccountText, isActive && styles.bankAccountTextActive]}>
-                      •••• {account.lastFour}
+                      •••• {lastFour}
                     </Text>
                   </TouchableOpacity>
                 )
@@ -409,24 +646,25 @@ export default function TransactionsScaffoldScreen() {
           </View>
         )}
 
-        {activeSection === 'cards' && (
+        {activeSection === 'cards' && creditCards.length > 0 && (
           <View style={styles.bankAccountNavWrapper}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.bankAccountNav}
             >
-              {cards.map((card) => {
-                const isActive = selectedCard === card.id
+              {creditCards.map((card) => {
+                const isActive = selectedCard === card.cardNumber
+                const lastFour = getLastFour(card.cardNumber)
                 return (
                   <TouchableOpacity
-                    key={card.id}
+                    key={card.cardNumber}
                     style={[styles.bankAccountButton, isActive && styles.bankAccountButtonActive]}
                     activeOpacity={0.8}
-                    onPress={() => setSelectedCard(card.id)}
+                    onPress={() => setSelectedCard(card.cardNumber)}
                   >
                     <Text style={[styles.bankAccountText, isActive && styles.bankAccountTextActive]}>
-                      •••• {card.lastFour}
+                      •••• {lastFour}
                     </Text>
                   </TouchableOpacity>
                 )
@@ -435,7 +673,34 @@ export default function TransactionsScaffoldScreen() {
           </View>
         )}
 
-        {renderSection(activeSection, navigation, receiptColumnsWithData, reportingReadyTransactions)}
+        {activeSection !== 'reporting' && (
+          <View style={styles.heroActionsRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.ctaButton, styles.secondaryCta]}
+              onPress={handleAddClick}
+            >
+              <View style={styles.ctaContent}>
+                <MaterialIcons name="add" size={18} color={GRAYSCALE_PRIMARY} />
+                <Text style={styles.ctaText}>Add</Text>
+              </View>
+            </TouchableOpacity>
+            {activeSection !== 'receipts' && (
+              <TouchableOpacity 
+                activeOpacity={0.8} 
+                style={[styles.ctaButton, styles.primaryCta]}
+                onPress={handleReconcileClick}
+              >
+                <View style={styles.ctaContent}>
+                  <MaterialIcons name="autorenew" size={18} color={GRAYSCALE_PRIMARY} />
+                  <Text style={styles.ctaText}>Reconcile</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {renderSection(activeSection, navigation, receiptColumnsWithData, bankColumnsWithData, cardsColumnsWithData, reportingReadyTransactions)}
       </ScrollView>
     </AppBarLayout>
   )
@@ -445,6 +710,8 @@ function renderSection(
   section: SectionKey,
   navigation: StackNavigationProp<TransactionsStackParamList>,
   receiptColumns: PipelineColumn[],
+  bankColumns: PipelineColumn[],
+  cardsColumns: PipelineColumn[],
   reportingReadyTransactions: Array<TransactionStub & { originalTransaction?: Transaction }>,
 ) {
   switch (section) {
@@ -454,6 +721,10 @@ function renderSection(
       return <PipelineRow columns={bankColumns} navigation={navigation} />
     case 'cards':
       return <PipelineRow columns={cardsColumns} navigation={navigation} />
+    case 'sales':
+      return null // TODO: Add Sales Pipeline screen
+    case 'internal':
+      return null // TODO: Add Internal Transactions screen
     case 'reporting':
       return (
         <View style={styles.reportingCard}>
@@ -657,6 +928,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginTop: 16,
     marginBottom: 16,
   },
   ctaButton: {

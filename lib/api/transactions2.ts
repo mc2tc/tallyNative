@@ -19,6 +19,32 @@ export type ReceiptOcrResponse = {
 	transaction: unknown
 }
 
+export type UnifiedTransactionRequest = {
+	businessId: string
+	transactionType: 'purchase' | 'sale' | 'bank_transaction' | 'credit_card_transaction' | 'internal'
+	inputMethod: 'ocr_image' | 'ocr_pdf' | 'manual'
+	fileUrl?: string
+	transactionData?: any
+	captureSource?: string
+	captureMechanism?: string
+}
+
+export type UnifiedTransactionResponse = {
+	success: boolean
+	transactionId: string
+	transaction: unknown
+	message?: string
+	transactionType?: string
+	inputMethod?: string
+	captureMetadata?: {
+		source?: string
+		mechanism?: string
+	}
+	transactionKind?: string
+	logged?: boolean
+	logId?: string
+}
+
 export type TransactionSummary = {
 	thirdPartyName: string
 	totalAmount: number
@@ -140,6 +166,16 @@ export const transactions2Api = {
 		return api.patch<Transaction>(
 			`/authenticated/transactions2/api/transactions/${transactionId}/verify?${params.toString()}`,
 			{},
+		)
+	},
+
+	// Unified transaction endpoint - supports all transaction types and input methods
+	createTransaction: async (
+		payload: UnifiedTransactionRequest,
+	): Promise<UnifiedTransactionResponse> => {
+		return api.post<UnifiedTransactionResponse>(
+			'/authenticated/transactions2/api/transactions',
+			payload,
 		)
 	},
 }

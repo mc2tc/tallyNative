@@ -20,7 +20,7 @@ export type ScaffoldStackParamList = {
     }>
   }
   TransactionDetail: { transaction: Transaction }
-  AddTransaction: undefined
+  AddTransaction: { context?: { pipelineSection?: string; bankAccountId?: string; cardId?: string } }
 }
 
 const Stack = createStackNavigator<ScaffoldStackParamList>()

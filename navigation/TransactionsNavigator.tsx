@@ -17,7 +17,7 @@ type TransactionStub = {
 
 export type TransactionsStackParamList = {
   TransactionsHome: undefined
-  AddTransaction: undefined
+  AddTransaction: { context?: { pipelineSection?: string; bankAccountId?: string; cardId?: string } }
   TransactionList: undefined
   TransactionDetail: { transaction: Transaction }
   ScaffoldViewAll: {

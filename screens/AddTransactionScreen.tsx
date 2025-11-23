@@ -12,7 +12,7 @@ import {
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker'
 import * as DocumentPicker from 'expo-document-picker'
 import { MaterialIcons } from '@expo/vector-icons'
-import { useNavigation } from '@react-navigation/native'
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -25,9 +25,22 @@ type AddTransactionNavigationProp =
   | StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>
   | StackNavigationProp<ScaffoldStackParamList, 'AddTransaction'>
 
+type AddTransactionRouteProp =
+  | RouteProp<TransactionsStackParamList, 'AddTransaction'>
+  | RouteProp<ScaffoldStackParamList, 'AddTransaction'>
+
+// Helper function to extract last 4 digits from account/card number
+function getLastFour(number: string): string {
+  const digits = number.replace(/\D/g, '')
+  return digits.slice(-4) || ''
+}
+
 export default function AddTransactionScreen() {
   const navigation = useNavigation<AddTransactionNavigationProp>()
+  const route = useRoute<AddTransactionRouteProp>()
   const { businessUser, memberships } = useAuth()
+  
+  const context = route.params?.context
 
   // Choose a businessId that prefers a non-personal business:
   // 1) If businessUser.businessId exists and is not "personal", use that
@@ -53,12 +66,33 @@ export default function AddTransactionScreen() {
     }
   }, [navigation])
 
+  // Determine transaction type from context
+  const getTransactionType = useCallback((): 'purchase' | 'sale' | 'bank_transaction' | 'credit_card_transaction' | 'internal' => {
+    if (!context?.pipelineSection) return 'purchase'
+    
+    switch (context.pipelineSection) {
+      case 'receipts':
+        return 'purchase'
+      case 'sales':
+        return 'sale'
+      case 'bank':
+        return 'bank_transaction'
+      case 'cards':
+        return 'credit_card_transaction'
+      case 'internal':
+        return 'internal'
+      default:
+        return 'purchase'
+    }
+  }, [context])
+
   const handleAsset = useCallback(
-    async (asset: Asset) => {
+    async (asset: Asset, actionType: string, isPdf: boolean = false) => {
       if (!businessId) return
       if (!asset.uri) {
-        throw new Error('No image URI returned from picker')
+        throw new Error('No file URI returned from picker')
       }
+      
       setLastImageUri(asset.uri)
       const downloadUrl = await uploadReceiptAndGetUrl({
         businessId,
@@ -66,14 +100,36 @@ export default function AddTransactionScreen() {
         fileNameHint: asset.fileName ?? undefined,
         contentType: asset.type ?? undefined,
       })
-      const response = await transactions2Api.processReceipt({
-        imageUrl: downloadUrl,
-        businessId,
-        classification: { kind: 'purchase' },
-      })
-      setResultSummary(`Created transaction ${response.transactionId}`)
+      
+      const transactionType = getTransactionType()
+      const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
+      
+      try {
+        const response = await transactions2Api.createTransaction({
+          businessId,
+          transactionType,
+          inputMethod,
+          fileUrl: downloadUrl,
+        })
+        
+        if (response.success) {
+          setResultSummary(`Created transaction ${response.transactionId}`)
+        } else if (response.logged) {
+          // Transaction type/input method not yet implemented (501)
+          Alert.alert(
+            'Not Yet Available',
+            response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
+          )
+        } else {
+          throw new Error(response.message || 'Failed to create transaction')
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to create transaction'
+        Alert.alert('Error', message)
+        throw error
+      }
     },
-    [businessId],
+    [businessId, getTransactionType],
   )
 
   const pickFromLibrary = useCallback(async () => {
@@ -92,7 +148,7 @@ export default function AddTransactionScreen() {
       if (result.didCancel || !result.assets || result.assets.length === 0) {
         return
       }
-      await handleAsset(result.assets[0])
+      await handleAsset(result.assets[0], 'choose-photo')
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Unexpected error'
       Alert.alert('Upload failed', message)
@@ -117,7 +173,7 @@ export default function AddTransactionScreen() {
       if (result.didCancel || !result.assets || result.assets.length === 0) {
         return
       }
-      await handleAsset(result.assets[0])
+      await handleAsset(result.assets[0], 'take-photo')
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Unexpected error'
       Alert.alert('Capture failed', message)
@@ -145,7 +201,7 @@ export default function AddTransactionScreen() {
       if (!file.uri) {
         throw new Error('No file URI returned from picker')
       }
-      // Validate that the selected file is an image
+      // Validate that the selected file is an image or PDF
       const mimeType = file.mimeType?.toLowerCase() ?? ''
       const fileName = file.name?.toLowerCase() ?? ''
       const isImage =
@@ -156,10 +212,13 @@ export default function AddTransactionScreen() {
         fileName.endsWith('.gif') ||
         fileName.endsWith('.webp') ||
         fileName.endsWith('.bmp')
-      if (!isImage) {
-        Alert.alert('Invalid file type', 'Please select an image file.')
+      const isPdf = mimeType === 'application/pdf' || fileName.endsWith('.pdf')
+      
+      if (!isImage && !isPdf) {
+        Alert.alert('Invalid file type', 'Please select an image or PDF file.')
         return
       }
+      
       setLastImageUri(file.uri)
       const downloadUrl = await uploadReceiptAndGetUrl({
         businessId,
@@ -167,24 +226,59 @@ export default function AddTransactionScreen() {
         fileNameHint: file.name ?? undefined,
         contentType: file.mimeType ?? undefined,
       })
-      const response = await transactions2Api.processReceipt({
-        imageUrl: downloadUrl,
-        businessId,
-        classification: { kind: 'purchase' },
-      })
-      setResultSummary(`Created transaction ${response.transactionId}`)
+      
+      const transactionType = getTransactionType()
+      const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
+      
+      try {
+        const response = await transactions2Api.createTransaction({
+          businessId,
+          transactionType,
+          inputMethod,
+          fileUrl: downloadUrl,
+        })
+        
+        if (response.success) {
+          setResultSummary(`Created transaction ${response.transactionId}`)
+        } else if (response.logged) {
+          // Transaction type/input method not yet implemented (501)
+          Alert.alert(
+            'Not Yet Available',
+            response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
+          )
+        } else {
+          throw new Error(response.message || 'Failed to create transaction')
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to create transaction'
+        Alert.alert('Error', message)
+        throw error
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Unexpected error'
       Alert.alert('File selection failed', message)
     } finally {
       setBusy(false)
     }
-  }, [businessId])
+  }, [businessId, getTransactionType])
 
-  const handleManualInput = useCallback(() => {
+  const handleManualInput = useCallback(async () => {
+    const transactionType = getTransactionType()
+    
     // TODO: Navigate to manual input screen or show manual input form
-    Alert.alert('Manual Input', 'Manual input feature coming soon.')
-  }, [])
+    // When implemented, use:
+    // await transactions2Api.createTransaction({
+    //   businessId,
+    //   transactionType,
+    //   inputMethod: 'manual',
+    //   transactionData: { ... }
+    // })
+    
+    Alert.alert(
+      'Manual Input',
+      `Manual input for ${transactionType} transactions is coming soon.`
+    )
+  }, [getTransactionType, businessId])
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -193,6 +287,25 @@ export default function AddTransactionScreen() {
           <TouchableOpacity onPress={handleGoBack} style={styles.backButton} activeOpacity={0.7}>
             <MaterialIcons name="arrow-back" size={24} color="#4a4a4a" />
           </TouchableOpacity>
+          {context?.pipelineSection && (
+            <Text style={styles.contextLabel}>
+              {context.pipelineSection === 'receipts' ? 'Purchase Receipts' :
+               context.pipelineSection === 'bank' ? (
+                 context.bankAccountId 
+                   ? `Bank Transactions •••• ${getLastFour(context.bankAccountId)}`
+                   : 'Bank Transactions'
+               ) :
+               context.pipelineSection === 'cards' ? (
+                 context.cardId
+                   ? `Credit Card Transactions •••• ${getLastFour(context.cardId)}`
+                   : 'Credit Card Transactions'
+               ) :
+               context.pipelineSection === 'sales' ? 'Sales Pipeline' :
+               context.pipelineSection === 'internal' ? 'Internal Transactions' :
+               context.pipelineSection === 'reporting' ? 'Reporting Ready' :
+               context.pipelineSection}
+            </Text>
+          )}
         </View>
         <View style={styles.content}>
           <Text style={styles.title}>Add Transaction</Text>
@@ -274,6 +387,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingBottom: 16,
+  },
+  contextLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#4a4a4a',
+    marginLeft: 12,
   },
   backButton: {
     width: 44,
