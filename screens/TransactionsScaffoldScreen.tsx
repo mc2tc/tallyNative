@@ -11,6 +11,7 @@ import { formatAmount } from '../lib/utils/currency'
 import { api } from '../lib/api/client'
 import { bankAccountsApi, type BankAccount } from '../lib/api/bankAccounts'
 import { creditCardsApi, type CreditCard } from '../lib/api/creditCards'
+import { bankStatementRulesApi, type BankStatementRule } from '../lib/api/bankStatementRules'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -21,6 +22,7 @@ type PipelineColumn = {
   title: string
   actions: string[]
   transactions?: Array<TransactionStub & { originalTransaction?: Transaction }>
+  rules?: BankStatementRule[]
 }
 
 type TransactionStub = {
@@ -97,41 +99,40 @@ function parseTransaction(tx: Transaction): TransactionStub | null {
 }
 
 
-const unmatchedBankRecordsTransactions: TransactionStub[] = [
-  { id: 'ubr1', title: 'HSBC Direct Debit', amount: '£120.00' },
-  { id: 'ubr2', title: 'Barclays Transfer', amount: '£450.50' },
-  { id: 'ubr3', title: 'NatWest Payment', amount: '£89.99' },
-]
+// Helper function to check if transaction is a receipt
+function isReceiptTransaction(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    capture?: { source?: string; mechanism?: string }
+  }
+  const capture = metadata.capture
+  return (
+    capture?.source === 'purchase_invoice_ocr' ||
+    capture?.mechanism === 'ocr' ||
+    capture?.source?.includes('purchase') ||
+    false
+  )
+}
 
-const bankColumns: PipelineColumn[] = [
-  {
-    title: 'Unmatched Bank Records',
-    actions: ['View all'],
-    transactions: unmatchedBankRecordsTransactions,
-  },
-  {
-    title: 'Bank Exceptions',
-    actions: ['View all', '+ Add rules'],
-  },
-]
+// Helper function to check if transaction is a bank transaction (statement entry)
+function isBankTransaction(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    classification?: { kind?: string }
+  }
+  return metadata.classification?.kind === 'statement_entry'
+}
 
-const unmatchedCardRecordsTransactions: TransactionStub[] = [
-  { id: 'ucr1', title: 'Amex Corporate Card', amount: '£89.50' },
-  { id: 'ucr2', title: 'Visa Business Card', amount: '£234.00' },
-  { id: 'ucr3', title: 'Mastercard Company', amount: '£156.75' },
-]
+// Helper function to check if transaction has accounting entries
+function hasAccountingEntries(tx: Transaction): boolean {
+  const accounting = tx.accounting as {
+    debits?: unknown[]
+    credits?: unknown[]
+  } | undefined
+  return (
+    (accounting?.debits?.length ?? 0) > 0 ||
+    (accounting?.credits?.length ?? 0) > 0
+  )
+}
 
-const cardsColumns: PipelineColumn[] = [
-  {
-    title: 'Unmatched Card Records',
-    actions: ['View all'],
-    transactions: unmatchedCardRecordsTransactions,
-  },
-  {
-    title: 'Card Exceptions',
-    actions: ['View all', '+ Add rules'],
-  },
-]
 
 type SectionKey = 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting'
 
@@ -162,6 +163,7 @@ export default function TransactionsScaffoldScreen() {
   const [selectedCard, setSelectedCard] = useState<string | null>(null)
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
 
   // Choose businessId (same logic as TransactionsScreen)
   const membershipIds = Object.keys(memberships ?? {})
@@ -203,6 +205,23 @@ export default function TransactionsScaffoldScreen() {
 
       fetchAccountsAndCards()
     }, [businessId]),
+  )
+
+  // Fetch bank statement rules
+  useFocusEffect(
+    useCallback(() => {
+      const fetchRules = async () => {
+        try {
+          const response = await bankStatementRulesApi.getRules()
+          setBankStatementRules(response.rules)
+        } catch (error) {
+          console.error('Failed to fetch bank statement rules:', error)
+          setBankStatementRules([])
+        }
+      }
+
+      fetchRules()
+    }, []),
   )
 
   // Fetch transactions
@@ -346,37 +365,115 @@ export default function TransactionsScaffoldScreen() {
         }
       })
 
-  // Get last 3 bank transactions that are now Reporting Ready (to show pipeline progress)
-  const recentReportingReadyBank: Array<TransactionStub & { originalTransaction: Transaction }> =
+  // Bank transactions that need verification (no reconciliation required)
+  // Condition: Has accounting entries (rule matched) but is not yet verified
+  const bankNeedsVerificationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
-        const metadata = tx.metadata as {
-          capture?: { source?: string; mechanism?: string }
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-        }
-        const capture = metadata.capture
-        const verification = metadata.verification
-        const reconciliation = metadata.reconciliation
-
-        // Check if this is a receipt (we want to exclude receipts for bank pipeline)
-        const isReceipt =
-          capture?.source === 'purchase_invoice_ocr' ||
-          capture?.mechanism === 'ocr' ||
-          capture?.source?.includes('purchase')
-
-        if (isReceipt) {
+        // Must be a bank transaction
+        if (!isBankTransaction(tx)) {
           return false
         }
 
-        // Check if it's reporting ready
-        const isReportingReady =
-          verification?.status !== 'unverified' &&
-          (reconciliation?.status === 'matched' ||
-            reconciliation?.status === 'reconciled' ||
-            reconciliation?.status === 'exception')
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+        }
+        
+        // Check if it has accounting entries (rule matched)
+        const hasEntries = hasAccountingEntries(tx)
+        
+        // Check verification status
+        const verificationStatus = metadata.verification?.status
+        const isVerified = verificationStatus === 'verified'
+        const isException = verificationStatus === 'exception'
 
-        return isReportingReady
+        // Needs verification if: has accounting entries AND not verified/exception
+        return hasEntries && !isVerified && !isException
+      })
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          originalTransaction: tx,
+        }
+      })
+
+  // Bank transactions that need reconciliation
+  // Condition: Transaction has no accounting entries (no rule matched) and is not yet reconciled
+  // IMPORTANT: Transactions with accounting entries that are verified should NOT appear here
+  // They should go to "Reporting Ready" instead
+  const bankNeedsReconciliationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        // Must be a bank transaction
+        if (!isBankTransaction(tx)) {
+          return false
+        }
+
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const reconciliationStatus = metadata.reconciliation?.status
+
+        // Check if it has accounting entries
+        const hasEntries = hasAccountingEntries(tx)
+        
+        // Check if reconciled
+        const isReconciled =
+          reconciliationStatus === 'matched' ||
+          reconciliationStatus === 'reconciled' ||
+          reconciliationStatus === 'exception'
+
+        // Needs reconciliation if:
+        // - No accounting entries (no rule matched) - skip verification, go straight to reconciliation
+        // - AND not yet reconciled
+        // IMPORTANT: Do NOT include verified transactions with accounting entries here
+        return !hasEntries && !isReconciled
+      })
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          originalTransaction: tx,
+        }
+      })
+
+  // Get last 3 bank transactions that are now Reporting Ready (to show pipeline progress)
+  // Condition: Transaction is both verified AND reconciled (or verified with accounting entries that don't require reconciliation)
+  const recentReportingReadyBank: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        // Must be a bank transaction
+        if (!isBankTransaction(tx)) {
+          return false
+        }
+
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const verificationStatus = metadata.verification?.status
+        const reconciliationStatus = metadata.reconciliation?.status
+
+        // Check if verified (including exception)
+        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+        
+        // Check if reconciled
+        const isReconciled =
+          reconciliationStatus === 'matched' ||
+          reconciliationStatus === 'reconciled' ||
+          reconciliationStatus === 'exception'
+
+        // Check if has accounting entries
+        const hasEntries = hasAccountingEntries(tx)
+
+        // Reporting ready if: verified AND (reconciled OR has accounting entries)
+        return isVerified && (isReconciled || hasEntries)
       })
       .sort((a, b) => {
         // Sort by updatedAt (most recent first), fallback to createdAt
@@ -400,26 +497,80 @@ export default function TransactionsScaffoldScreen() {
         }
       })
 
+  // Card transactions that need verification (no reconciliation required)
+  const cardNeedsVerificationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+        }
+        
+        // Exclude receipts
+        if (isReceiptTransaction(tx)) {
+          return false
+        }
+
+        // Check if it needs verification
+        return metadata.verification?.status === 'unverified'
+      })
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          originalTransaction: tx,
+        }
+      })
+
+  // Card transactions that need reconciliation (verified but not reporting ready)
+  const cardNeedsReconciliationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const verification = metadata.verification
+        const reconciliation = metadata.reconciliation
+
+        // Exclude receipts
+        if (isReceiptTransaction(tx)) {
+          return false
+        }
+
+        // Verified but not reporting ready
+        const isVerified = verification?.status !== 'unverified'
+        const isReportingReady =
+          reconciliation?.status === 'matched' ||
+          reconciliation?.status === 'reconciled' ||
+          reconciliation?.status === 'exception'
+
+        return isVerified && !isReportingReady
+      })
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          originalTransaction: tx,
+        }
+      })
+
   // Get last 3 card transactions that are now Reporting Ready (to show pipeline progress)
   const recentReportingReadyCards: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
         const metadata = tx.metadata as {
-          capture?: { source?: string; mechanism?: string }
           verification?: { status?: string }
           reconciliation?: { status?: string }
         }
-        const capture = metadata.capture
         const verification = metadata.verification
         const reconciliation = metadata.reconciliation
 
-        // Check if this is a receipt (we want to exclude receipts for cards pipeline)
-        const isReceipt =
-          capture?.source === 'purchase_invoice_ocr' ||
-          capture?.mechanism === 'ocr' ||
-          capture?.source?.includes('purchase')
-
-        if (isReceipt) {
+        // Exclude receipts (we want only card transactions)
+        if (isReceiptTransaction(tx)) {
           return false
         }
 
@@ -476,9 +627,14 @@ export default function TransactionsScaffoldScreen() {
   // Update bankColumns with real data
   const bankColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Unmatched Bank Records',
+      title: 'Needs Verification (no reconciliation required)',
       actions: ['View all'],
-      transactions: unmatchedBankRecordsTransactions,
+      transactions: bankNeedsVerificationTransactions,
+    },
+    {
+      title: 'Needs Reconciliation',
+      actions: ['View all'],
+      transactions: bankNeedsReconciliationTransactions,
     },
     {
       title: 'Reporting Ready',
@@ -486,17 +642,23 @@ export default function TransactionsScaffoldScreen() {
       transactions: recentReportingReadyBank,
     },
     {
-      title: 'Bank Exceptions',
+      title: 'Auto Bank Rules',
       actions: ['View all', '+ Add rules'],
+      rules: bankStatementRules,
     },
   ]
 
   // Update cardsColumns with real data
   const cardsColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Unmatched Card Records',
+      title: 'Needs Verification (no reconciliation required)',
       actions: ['View all'],
-      transactions: unmatchedCardRecordsTransactions,
+      transactions: cardNeedsVerificationTransactions,
+    },
+    {
+      title: 'Needs Reconciliation',
+      actions: ['View all'],
+      transactions: cardNeedsReconciliationTransactions,
     },
     {
       title: 'Reporting Ready',
@@ -504,7 +666,7 @@ export default function TransactionsScaffoldScreen() {
       transactions: recentReportingReadyCards,
     },
     {
-      title: 'Card Exceptions',
+      title: 'Auto Card Rules',
       actions: ['View all', '+ Add rules'],
     },
   ]
@@ -685,7 +847,7 @@ export default function TransactionsScaffoldScreen() {
                 <Text style={styles.ctaText}>Add</Text>
               </View>
             </TouchableOpacity>
-            {activeSection !== 'receipts' && (
+            {activeSection === 'cards' && (
               <TouchableOpacity 
                 activeOpacity={0.8} 
                 style={[styles.ctaButton, styles.primaryCta]}
@@ -700,7 +862,15 @@ export default function TransactionsScaffoldScreen() {
           </View>
         )}
 
-        {renderSection(activeSection, navigation, receiptColumnsWithData, bankColumnsWithData, cardsColumnsWithData, reportingReadyTransactions)}
+        {renderSection(
+          activeSection,
+          navigation,
+          receiptColumnsWithData,
+          bankColumnsWithData,
+          cardsColumnsWithData,
+          reportingReadyTransactions,
+          handleReconcileClick,
+        )}
       </ScrollView>
     </AppBarLayout>
   )
@@ -713,12 +883,13 @@ function renderSection(
   bankColumns: PipelineColumn[],
   cardsColumns: PipelineColumn[],
   reportingReadyTransactions: Array<TransactionStub & { originalTransaction?: Transaction }>,
+  handleReconcileClick?: () => void,
 ) {
   switch (section) {
     case 'receipts':
       return <PipelineRow columns={receiptColumns} navigation={navigation} />
     case 'bank':
-      return <PipelineRow columns={bankColumns} navigation={navigation} />
+      return <PipelineRow columns={bankColumns} navigation={navigation} handleReconcileClick={handleReconcileClick} />
     case 'cards':
       return <PipelineRow columns={cardsColumns} navigation={navigation} />
     case 'sales':
@@ -763,9 +934,11 @@ function renderSection(
 function PipelineRow({
   columns,
   navigation,
+  handleReconcileClick,
 }: {
   columns: PipelineColumn[]
   navigation: StackNavigationProp<TransactionsStackParamList>
+  handleReconcileClick?: () => void
 }) {
   const handleViewAll = (column: PipelineColumn) => {
     const items = column.transactions || []
@@ -773,8 +946,11 @@ function PipelineRow({
       section: column.title,
       title: column.title,
       items,
+      showReconcileButton: column.title === 'Needs Reconciliation',
     })
   }
+
+  const isNeedsReconciliation = (columnTitle: string) => columnTitle === 'Needs Reconciliation'
 
   return (
     <View style={styles.pipelineColumnStack}>
@@ -786,8 +962,12 @@ function PipelineRow({
               <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
             </TouchableOpacity>
           </View>
-          <CardList items={column.transactions || []} navigation={navigation} />
-          {column.actions.length > 0 ? (
+          {column.rules ? (
+            <RulesList rules={column.rules} navigation={navigation} />
+          ) : (
+            <CardList items={column.transactions || []} navigation={navigation} />
+          )}
+          {column.actions.length > 0 || (isNeedsReconciliation(column.title) && handleReconcileClick) ? (
             <View style={styles.pipelineActions}>
               {column.actions.map((action) => (
                 <TouchableOpacity
@@ -799,6 +979,18 @@ function PipelineRow({
                   <Text style={styles.linkButtonText}>{action}</Text>
                 </TouchableOpacity>
               ))}
+              {isNeedsReconciliation(column.title) && handleReconcileClick && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  style={styles.reconcileButton}
+                  onPress={handleReconcileClick}
+                >
+                  <View style={styles.reconcileButtonContent}>
+                    <MaterialIcons name="autorenew" size={16} color={GRAYSCALE_PRIMARY} />
+                    <Text style={styles.reconcileButtonText}>Reconcile</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </View>
           ) : null}
         </View>
@@ -834,6 +1026,41 @@ function CardList({
             <Text style={styles.cardTitle}>{item.title}</Text>
           </View>
           <Text style={styles.cardAmount}>{item.amount}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  )
+}
+
+function RulesList({
+  rules,
+  navigation,
+}: {
+  rules: BankStatementRule[]
+  navigation: StackNavigationProp<TransactionsStackParamList>
+}) {
+  const handleRulePress = (rule: BankStatementRule) => {
+    navigation.navigate('BankStatementRuleDetail', { rule })
+  }
+
+  return (
+    <View style={styles.cardList}>
+      {rules.map((rule) => (
+        <TouchableOpacity
+          key={rule.id}
+          style={styles.cardListItem}
+          onPress={() => handleRulePress(rule)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.cardTextGroup}>
+            <Text style={styles.cardTitle}>{rule.title}</Text>
+            {rule.description && (
+              <Text style={styles.cardSubtitle} numberOfLines={2}>
+                {rule.description}
+              </Text>
+            )}
+          </View>
+          <MaterialIcons name="chevron-right" size={20} color={GRAYSCALE_SECONDARY} />
         </TouchableOpacity>
       ))}
     </View>
@@ -1008,6 +1235,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: GRAYSCALE_PRIMARY,
     fontWeight: '500',
+  },
+  reconcileButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+    backgroundColor: CARD_BACKGROUND,
+  },
+  reconcileButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reconcileButtonText: {
+    fontSize: 13,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '600',
   },
   cardList: {
     gap: 8,

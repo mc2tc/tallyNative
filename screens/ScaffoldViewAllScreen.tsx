@@ -1,9 +1,11 @@
 // View all screen for scaffold pipeline sections
-import React from 'react'
+import React, { useCallback } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import { MaterialIcons } from '@expo/vector-icons'
+import { api } from '../lib/api/client'
+import { useAuth } from '../lib/auth/AuthContext'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -22,6 +24,7 @@ type ScaffoldViewAllRouteParams = {
   section: string
   title: string
   items: TransactionStub[]
+  showReconcileButton?: boolean
 }
 
 type ScaffoldViewAllRouteProp = RouteProp<
@@ -32,11 +35,41 @@ type ScaffoldViewAllRouteProp = RouteProp<
 export default function ScaffoldViewAllScreen() {
   const navigation = useNavigation()
   const route = useRoute<ScaffoldViewAllRouteProp>()
-  const { title, items } = route.params || { title: 'View All', items: [] }
+  const { businessUser, memberships } = useAuth()
+  const { title, items, showReconcileButton } = route.params || { title: 'View All', items: [], showReconcileButton: false }
+
+  // Choose businessId (same logic as TransactionsScaffoldScreen)
+  const membershipIds = Object.keys(memberships ?? {})
+  const nonPersonalMembershipId = membershipIds.find(
+    (id) => !id.toLowerCase().includes('personal'),
+  )
+  const businessId =
+    (businessUser?.businessId && !businessUser.businessId.toLowerCase().includes('personal')
+      ? businessUser.businessId
+      : nonPersonalMembershipId) ?? membershipIds[0]
 
   const handleGoBack = () => {
     navigation.goBack()
   }
+
+  const handleReconcileClick = useCallback(async () => {
+    try {
+      const context = {
+        pipelineSection: 'bank',
+      }
+      
+      // Send signal to backend
+      await api.post('/authenticated/transactions2/api/actions/reconcile-clicked', {
+        businessId,
+        context,
+        timestamp: Date.now(),
+      })
+      
+      // TODO: Navigate to reconcile screen or trigger reconcile action
+    } catch (error) {
+      console.error('Failed to send reconcile click signal:', error)
+    }
+  }, [businessId])
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -82,6 +115,20 @@ export default function ScaffoldViewAllScreen() {
           </View>
         )}
       </ScrollView>
+      {showReconcileButton && (
+        <View style={styles.bottomActions}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.reconcileButton}
+            onPress={handleReconcileClick}
+          >
+            <View style={styles.reconcileButtonContent}>
+              <MaterialIcons name="autorenew" size={18} color={GRAYSCALE_PRIMARY} />
+              <Text style={styles.reconcileButtonText}>Reconcile</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   )
 }
@@ -188,6 +235,32 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: GRAYSCALE_SECONDARY,
+  },
+  bottomActions: {
+    padding: 20,
+    paddingBottom: 40,
+    backgroundColor: SURFACE_BACKGROUND,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e5e5',
+    alignItems: 'flex-end',
+  },
+  reconcileButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+    backgroundColor: CARD_BACKGROUND,
+  },
+  reconcileButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reconcileButtonText: {
+    fontSize: 14,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '600',
   },
 })
 

@@ -5,7 +5,9 @@ import AddTransactionScreen from '../screens/AddTransactionScreen'
 import TransactionListScreen from '../screens/TransactionListScreen'
 import TransactionDetailScreen from '../screens/TransactionDetailScreen'
 import ScaffoldViewAllScreen from '../screens/ScaffoldViewAllScreen'
+import BankStatementRuleDetailScreen from '../screens/BankStatementRuleDetailScreen'
 import type { Transaction } from '../lib/api/transactions2'
+import type { BankStatementRule } from '../lib/api/bankStatementRules'
 
 type TransactionStub = {
   id: string
@@ -24,7 +26,9 @@ export type TransactionsStackParamList = {
     section: string
     title: string
     items: TransactionStub[]
+    showReconcileButton?: boolean
   }
+  BankStatementRuleDetail: { rule: BankStatementRule }
 }
 
 const Stack = createStackNavigator<TransactionsStackParamList>()
@@ -37,6 +41,7 @@ export function TransactionsNavigator() {
       <Stack.Screen name="TransactionList" component={TransactionListScreen} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
       <Stack.Screen name="ScaffoldViewAll" component={ScaffoldViewAllScreen} />
+      <Stack.Screen name="BankStatementRuleDetail" component={BankStatementRuleDetailScreen} />
     </Stack.Navigator>
   )
 }
