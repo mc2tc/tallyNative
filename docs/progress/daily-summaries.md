@@ -1,5 +1,71 @@
 # Daily Development Summaries
 
+## 2025-11-24
+
+### Summary
+Updated Bank Transactions and Credit Card Transactions sections with proper workflow states based on backend specifications. Implemented Auto Bank Rules feature with API integration, rule detail screens, and improved reconciliation button placement. Added comprehensive documentation for bank transaction workflows and rules API.
+
+### Commits
+
+#### 1. feat: Update Bank Transactions workflow and implement Auto Bank Rules
+**Commit:** `a505981`  
+**Files Changed:** 8 files, 1,480 insertions(+), 75 deletions(-)
+
+**Changes:**
+- Updated Bank Transactions section with three workflow states: Needs Verification (no reconciliation required), Needs Reconciliation, and Reporting Ready
+- Implemented bank transaction filtering logic based on `classification.kind === 'statement_entry'` and accounting entries presence
+- "Needs Verification" shows bank transactions with accounting entries (rule matched) that are not yet verified
+- "Needs Reconciliation" shows bank transactions without accounting entries (no rule matched) that need to be matched with Purchase Receipts
+- "Reporting Ready" shows verified transactions that are either reconciled OR have accounting entries (standalone transactions like bank fees)
+- Updated Credit Card Transactions section with similar three-column structure matching Bank Transactions
+- Removed dummy data from both Bank and Card sections - now using real transaction filtering
+- Added Auto Bank Rules card that displays all bank statement rules from backend API
+- Created BankStatementRuleDetailScreen showing rule details: description, keywords, accounting treatment, category, and business expense status
+- Moved Reconcile button from hero actions row to bottom right of "Needs Reconciliation" card (vertically aligned with "View all" button)
+- Added Reconcile button to ScaffoldViewAllScreen when viewing "Needs Reconciliation" section
+- Created bankStatementRules API client for fetching bank statement rules
+- Added comprehensive documentation files for backend team specifications
+
+**Files Modified:**
+- `docs/api/BANK_STATEMENT_RULES_API.md` - API documentation for bank statement rules (new)
+- `docs/api/BANK_TRANSACTION_WORKFLOW_STATES.md` - Workflow states documentation (new)
+- `docs/api/REACT_NATIVE_TRANSACTIONS2_INTEGRATION.md` - Integration guide (new)
+- `lib/api/bankStatementRules.ts` - API client for bank statement rules (new)
+- `navigation/TransactionsNavigator.tsx` - Added BankStatementRuleDetail route
+- `screens/BankStatementRuleDetailScreen.tsx` - Rule detail screen (new)
+- `screens/ScaffoldViewAllScreen.tsx` - Added Reconcile button for Needs Reconciliation section
+- `screens/TransactionsScaffoldScreen.tsx` - Major refactor with proper workflow state logic and Auto Bank Rules integration
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 8 files
+- **Total Lines Added:** 1,480 insertions
+- **Total Lines Removed:** 75 deletions
+- **Net Change:** +1,405 lines
+
+### Key Features Added
+1. Bank Transactions workflow states matching backend specifications (Needs Verification, Needs Reconciliation, Reporting Ready)
+2. Bank transaction filtering based on classification.kind and accounting entries
+3. Credit Card Transactions section updated with same structure as Bank Transactions
+4. Auto Bank Rules card with API integration displaying all bank statement rules
+5. BankStatementRuleDetailScreen for viewing individual rule details
+6. Reconcile button repositioned to Needs Reconciliation card (bottom right, aligned with View all)
+7. Reconcile button added to View All screen for Needs Reconciliation section
+8. Documentation files for bank transaction workflow and rules API
+
+### Notes
+- Bank transaction workflow logic now correctly matches backend specification in BANK_TRANSACTION_WORKFLOW_STATES.md
+- Transactions with accounting entries that are verified go directly to "Reporting Ready" (not "Needs Reconciliation")
+- Transactions without accounting entries skip verification and go directly to "Needs Reconciliation"
+- Auto Bank Rules displays default rules (Cash Withdrawal, Bank Fee) from backend API
+- Rule detail screen shows keywords as tags, accounting treatment as table, and business expense badge
+- All dummy data removed from Bank and Card sections - using real transaction data filtering
+- Reconcile button only appears for bank section's "Needs Reconciliation" card, not for other sections
+
+---
+
 ## 2025-11-21
 
 ### Summary

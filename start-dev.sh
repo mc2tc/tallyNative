@@ -15,3 +15,4 @@ adb reverse tcp:8081 tcp:8081
 echo "Starting Metro bundler..."
 npx expo start --dev-client
 
+ expo start --clear
