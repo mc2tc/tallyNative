@@ -3,7 +3,7 @@
 ## 2025-11-25
 
 ### Summary
-Fixed transaction filtering to include all transaction sources (purchase receipts, bank statements, credit card statements) by removing classificationKind filter. Added pull-to-refresh functionality and updated transaction filtering helpers to correctly distinguish between bank and credit card transactions using capture.source. Investigated issue where credit card transactions are not appearing in Reports screen - identified as likely backend issue with chart accounts API calculation.
+Fixed transaction filtering to include all transaction sources (purchase receipts, bank statements, credit card statements) by removing classificationKind filter. Added pull-to-refresh functionality and updated transaction filtering helpers to correctly distinguish between bank and credit card transactions using capture.source. Implemented reconciliation API integration, removed Reconciled card (reconciled transactions now go directly to Reporting Ready), added drag-and-drop reconciliation feature, and limited all pipeline cards to show only 3 transactions with "View all" functionality.
 
 ### Commits
 
@@ -28,12 +28,36 @@ Fixed transaction filtering to include all transaction sources (purchase receipt
 
 ---
 
+#### 2. feat: Add reconciliation API integration and drag-and-drop reconciliation feature
+**Commit:** `3c4d262`  
+**Files Changed:** 5 files, 1587 insertions(+), 47 deletions(-)
+
+**Changes:**
+- Integrated reconciliation API endpoints (`/reconcile/bank` and `/reconcile/credit-card`) from TRANSACTIONS2_RECONCILIATION_API.md
+- Removed "Reconciled" card from Bank Transactions and Credit Card Transactions sections
+- Updated Reporting Ready filters to include reconciled transactions directly (reconciled transactions now go straight to Reporting Ready)
+- Limited all pipeline cards to show only 3 transactions (most recent), with "View all" button to view complete list
+- Created DragDropReconciliationScreen for manual drag-and-drop matching of bank/CC transactions with purchase receipts
+- Added "Drag to Match" button to Needs Reconciliation "View all" screen
+- Fixed section tracking to properly pass bank/cards section through navigation chain
+- Updated purchase receipt cards to show detailed information (title, description, date, amount) and only show receipts with reconciliation.status === 'unreconciled'
+- Improved reconciliation button placement and loading states
+
+**Files Modified:**
+- `docs/api/TRANSACTIONS2_RECONCILIATION_API.md` - Reconciliation API documentation (new)
+- `lib/api/transactions2.ts` - Added reconciliationApi with reconcileBank and reconcileCreditCard functions
+- `screens/DragDropReconciliationScreen.tsx` - New drag-and-drop reconciliation screen (new)
+- `screens/ScaffoldViewAllScreen.tsx` - Added "Drag to Match" button and section tracking
+- `screens/TransactionsScaffoldScreen.tsx` - Updated workflow logic, removed Reconciled card, added 3-item limits, improved section tracking
+
+---
+
 ### Statistics
-- **Total Commits:** 1
-- **Total Files Changed:** 4 files
-- **Total Lines Added:** 342 insertions
-- **Total Lines Removed:** 52 deletions
-- **Net Change:** +290 lines
+- **Total Commits:** 2
+- **Total Files Changed:** 9 files
+- **Total Lines Added:** 1929 insertions
+- **Total Lines Removed:** 99 deletions
+- **Net Change:** +1830 lines
 
 ### Key Features Added
 1. Pull-to-refresh functionality on TransactionsScaffoldScreen
@@ -41,6 +65,12 @@ Fixed transaction filtering to include all transaction sources (purchase receipt
 3. Updated transaction type detection using capture.source instead of classification.kind
 4. Increased transaction fetch capacity (200 limit)
 5. Credit card statement integration documentation
+6. Reconciliation API integration with bank and credit card endpoints
+7. Removed Reconciled card - reconciled transactions now go directly to Reporting Ready
+8. All pipeline cards limited to 3 most recent transactions with "View all" functionality
+9. Drag-and-drop reconciliation screen for manual matching
+10. Enhanced purchase receipt cards with detailed information (title, description, date, amount)
+11. Improved section tracking (bank vs cards) through navigation chain
 
 ### Notes
 - Transaction filtering now correctly distinguishes between bank and credit card transactions using `metadata.capture.source`
@@ -48,6 +78,11 @@ Fixed transaction filtering to include all transaction sources (purchase receipt
 - Credit card transactions: `capture.source === 'credit_card_statement_ocr'`
 - **Issue Identified:** Credit card transactions not appearing in Reports screen appears to be a backend issue. The backend chart accounts API (`/api/businesses/{businessId}/chart-accounts?withValues=true`) calculates values server-side and should include `credit_card_statement_ocr` transactions when they're "Reporting Ready" (verified AND (reconciled OR has accounting entries)), but currently may only be including purchase receipts and bank statements. RN-side filtering logic is correct and includes all transaction sources.
 - Pull-to-refresh allows users to manually refresh transaction list without restarting the app
+- Reconciled transactions (reconciliation.status === 'matched', 'reconciled', or 'exception') now appear directly in Reporting Ready instead of a separate Reconciled card
+- All pipeline cards show only the 3 most recent transactions sorted by updatedAt (or createdAt as fallback)
+- Drag-and-drop reconciliation screen allows users to manually match bank/CC transactions with purchase receipts by dragging
+- Purchase receipts only show in drag-drop screen when reconciliation.status === 'unreconciled'
+- Drag gesture activates on vertical movement (8px) to avoid conflicts with horizontal ScrollView scrolling
 
 ---
 
