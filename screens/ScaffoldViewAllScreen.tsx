@@ -132,7 +132,7 @@ export default function ScaffoldViewAllScreen() {
         <View style={styles.bottomActions}>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.reconcileButton, styles.secondaryButton]}
+            style={styles.reconcileButton}
             onPress={() => setShowDragDrop(true)}
           >
             <View style={styles.reconcileButtonContent}>
@@ -272,12 +272,13 @@ const styles = StyleSheet.create({
     color: GRAYSCALE_SECONDARY,
   },
   bottomActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     padding: 20,
     paddingBottom: 40,
     backgroundColor: SURFACE_BACKGROUND,
     borderTopWidth: 1,
     borderTopColor: '#e5e5e5',
-    alignItems: 'flex-end',
   },
   reconcileButton: {
     paddingVertical: 12,
@@ -296,9 +297,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: GRAYSCALE_PRIMARY,
     fontWeight: '600',
-  },
-  secondaryButton: {
-    marginRight: 12,
   },
 })
 

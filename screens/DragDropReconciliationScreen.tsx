@@ -539,10 +539,10 @@ export default function DragDropReconciliationScreen({
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Drag to Reconcile</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
+          <TouchableOpacity onPress={onClose} style={styles.backButton} activeOpacity={0.7}>
+            <MaterialIcons name="arrow-back" size={24} color={GRAYSCALE_PRIMARY} />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Needs Reconciliation</Text>
         </View>
 
         {loading ? (
@@ -625,9 +625,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e5e5',
   },
@@ -635,9 +635,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
+    flex: 1,
   },
-  closeButton: {
-    padding: 4,
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    marginRight: 12,
   },
   loadingContainer: {
     flex: 1,
