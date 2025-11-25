@@ -1,5 +1,56 @@
 # Daily Development Summaries
 
+## 2025-11-25
+
+### Summary
+Fixed transaction filtering to include all transaction sources (purchase receipts, bank statements, credit card statements) by removing classificationKind filter. Added pull-to-refresh functionality and updated transaction filtering helpers to correctly distinguish between bank and credit card transactions using capture.source. Investigated issue where credit card transactions are not appearing in Reports screen - identified as likely backend issue with chart accounts API calculation.
+
+### Commits
+
+#### 1. fix: Update transaction filtering to include all sources and add pull-to-refresh
+**Commit:** `25362c8`  
+**Files Changed:** 4 files, 342 insertions(+), 52 deletions(-)
+
+**Changes:**
+- Removed `classificationKind: 'purchase'` filter from transactions2Api.getTransactions call to fetch all transaction types
+- Added `RefreshControl` to TransactionsScaffoldScreen ScrollView for manual pull-to-refresh functionality
+- Updated `isBankTransaction` helper function to filter by `metadata.capture.source === 'bank_statement_ocr'` instead of checking classification.kind
+- Added new `isCreditCardTransaction` helper function to filter by `metadata.capture.source === 'credit_card_statement_ocr'`
+- Increased transaction fetch limit from 100 to 200 to ensure all transaction types are included
+- Added comprehensive credit card statement integration documentation
+- Updated daily summaries with 2025-11-24 entry
+
+**Files Modified:**
+- `docs/api/CREDIT_CARD_STATEMENT_INTEGRATION.md` - Credit card integration guide (new)
+- `docs/progress/daily-summaries.md` - Added 2025-11-24 summary entry
+- `screens/TransactionsScaffoldScreen.tsx` - Updated transaction filtering and added RefreshControl
+- `start-dev.sh` - Minor update
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 4 files
+- **Total Lines Added:** 342 insertions
+- **Total Lines Removed:** 52 deletions
+- **Net Change:** +290 lines
+
+### Key Features Added
+1. Pull-to-refresh functionality on TransactionsScaffoldScreen
+2. Correct filtering for all transaction sources (purchase receipts, bank statements, credit card statements)
+3. Updated transaction type detection using capture.source instead of classification.kind
+4. Increased transaction fetch capacity (200 limit)
+5. Credit card statement integration documentation
+
+### Notes
+- Transaction filtering now correctly distinguishes between bank and credit card transactions using `metadata.capture.source`
+- Bank transactions: `capture.source === 'bank_statement_ocr'`
+- Credit card transactions: `capture.source === 'credit_card_statement_ocr'`
+- **Issue Identified:** Credit card transactions not appearing in Reports screen appears to be a backend issue. The backend chart accounts API (`/api/businesses/{businessId}/chart-accounts?withValues=true`) calculates values server-side and should include `credit_card_statement_ocr` transactions when they're "Reporting Ready" (verified AND (reconciled OR has accounting entries)), but currently may only be including purchase receipts and bank statements. RN-side filtering logic is correct and includes all transaction sources.
+- Pull-to-refresh allows users to manually refresh transaction list without restarting the app
+
+---
+
 ## 2025-11-24
 
 ### Summary
