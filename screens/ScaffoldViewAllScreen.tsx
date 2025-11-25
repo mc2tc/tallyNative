@@ -1,11 +1,12 @@
 // View all screen for scaffold pipeline sections
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { api } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
+import DragDropReconciliationScreen from './DragDropReconciliationScreen'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -25,6 +26,7 @@ type ScaffoldViewAllRouteParams = {
   title: string
   items: TransactionStub[]
   showReconcileButton?: boolean
+  pipelineSection?: string // Parent section: 'bank', 'cards', etc.
 }
 
 type ScaffoldViewAllRouteProp = RouteProp<
@@ -36,7 +38,18 @@ export default function ScaffoldViewAllScreen() {
   const navigation = useNavigation()
   const route = useRoute<ScaffoldViewAllRouteProp>()
   const { businessUser, memberships } = useAuth()
-  const { title, items, showReconcileButton } = route.params || { title: 'View All', items: [], showReconcileButton: false }
+  const { title, items, showReconcileButton, section, pipelineSection } = route.params || { 
+    title: 'View All', 
+    items: [], 
+    showReconcileButton: false,
+    section: '',
+    pipelineSection: ''
+  }
+  
+  // Determine if this is bank or cards section based on pipelineSection (more reliable than title)
+  const isBankSection = pipelineSection === 'bank' || title.toLowerCase().includes('bank')
+  const isCardsSection = pipelineSection === 'cards' || title.toLowerCase().includes('card') || title.toLowerCase().includes('credit')
+  const [showDragDrop, setShowDragDrop] = useState(false)
 
   // Choose businessId (same logic as TransactionsScaffoldScreen)
   const membershipIds = Object.keys(memberships ?? {})
@@ -119,16 +132,38 @@ export default function ScaffoldViewAllScreen() {
         <View style={styles.bottomActions}>
           <TouchableOpacity
             activeOpacity={0.8}
+            style={[styles.reconcileButton, styles.secondaryButton]}
+            onPress={() => setShowDragDrop(true)}
+          >
+            <View style={styles.reconcileButtonContent}>
+              <MaterialIcons name="swap-horiz" size={18} color={GRAYSCALE_PRIMARY} />
+              <Text style={styles.reconcileButtonText}>Drag to Match</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.8}
             style={styles.reconcileButton}
             onPress={handleReconcileClick}
           >
             <View style={styles.reconcileButtonContent}>
               <MaterialIcons name="autorenew" size={18} color={GRAYSCALE_PRIMARY} />
-              <Text style={styles.reconcileButtonText}>Reconcile</Text>
+              <Text style={styles.reconcileButtonText}>Auto Reconcile</Text>
             </View>
           </TouchableOpacity>
         </View>
       )}
+      <DragDropReconciliationScreen
+        visible={showDragDrop}
+        onClose={() => setShowDragDrop(false)}
+        section={
+          pipelineSection === 'bank' ? 'bank' 
+          : pipelineSection === 'cards' ? 'cards'
+          : isBankSection ? 'bank'
+          : isCardsSection ? 'cards'
+          : 'bank'
+        }
+        businessId={businessId}
+      />
     </SafeAreaView>
   )
 }
@@ -261,6 +296,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: GRAYSCALE_PRIMARY,
     fontWeight: '600',
+  },
+  secondaryButton: {
+    marginRight: 12,
   },
 })
 

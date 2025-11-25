@@ -180,4 +180,36 @@ export const transactions2Api = {
 	},
 }
 
+export type ReconciliationMatch = {
+	bankTransactionId?: string
+	creditCardTransactionId?: string
+	purchaseReceiptId: string
+	confidence: number
+	matchReason: string
+}
+
+export type ReconciliationResponse = {
+	success: boolean
+	matched: number
+	matches: ReconciliationMatch[]
+}
+
+export const reconciliationApi = {
+	// Reconcile bank transactions with purchase receipts
+	reconcileBank: async (businessId: string): Promise<ReconciliationResponse> => {
+		return api.post<ReconciliationResponse>(
+			'/authenticated/transactions2/api/reconcile/bank',
+			{ businessId },
+		)
+	},
+
+	// Reconcile credit card transactions with purchase receipts
+	reconcileCreditCard: async (businessId: string): Promise<ReconciliationResponse> => {
+		return api.post<ReconciliationResponse>(
+			'/authenticated/transactions2/api/reconcile/credit-card',
+			{ businessId },
+		)
+	},
+}
+
 

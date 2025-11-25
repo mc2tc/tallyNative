@@ -6,9 +6,8 @@ import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
-import { transactions2Api, type Transaction } from '../lib/api/transactions2'
+import { transactions2Api, reconciliationApi, type Transaction } from '../lib/api/transactions2'
 import { formatAmount } from '../lib/utils/currency'
-import { api } from '../lib/api/client'
 import { bankAccountsApi, type BankAccount } from '../lib/api/bankAccounts'
 import { creditCardsApi, type CreditCard } from '../lib/api/creditCards'
 import { bankStatementRulesApi, type BankStatementRule } from '../lib/api/bankStatementRules'
@@ -172,6 +171,7 @@ export default function TransactionsScaffoldScreen() {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
+  const [reconciling, setReconciling] = useState(false)
 
   // Choose businessId (same logic as TransactionsScreen)
   const membershipIds = Object.keys(memberships ?? {})
@@ -276,6 +276,17 @@ export default function TransactionsScaffoldScreen() {
       }
       return metadata.verification?.status === 'unverified'
     })
+    .sort((a, b) => {
+      // Sort by updatedAt (most recent first), fallback to createdAt
+      const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+        (a.original.metadata as { createdAt?: number }).createdAt ||
+        0
+      const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+        (b.original.metadata as { createdAt?: number }).createdAt ||
+        0
+      return bDate - aDate
+    })
+    .slice(0, 3) // Show only 3 most recent
     .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
 
   // Verified transactions that need matching (not reporting ready)
@@ -288,10 +299,22 @@ export default function TransactionsScaffoldScreen() {
         metadata.verification?.status !== 'unverified' && !item.parsed.isReportingReady
       )
     })
+    .sort((a, b) => {
+      // Sort by updatedAt (most recent first), fallback to createdAt
+      const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+        (a.original.metadata as { createdAt?: number }).createdAt ||
+        0
+      const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+        (b.original.metadata as { createdAt?: number }).createdAt ||
+        0
+      return bDate - aDate
+    })
+    .slice(0, 3) // Show only 3 most recent
     .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
 
   // Reporting ready transactions (all sources: receipts, bank, credit cards)
-  // Condition: Transaction is verified AND (has accounting entries OR reconciliation complete)
+  // Condition: Transaction is reconciled OR (verified with accounting entries)
+  // Reconciled transactions go directly to Reporting Ready
   // This feeds the Reports screen and the "Reporting Ready" section
   const reportingReadyTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
@@ -316,9 +339,10 @@ export default function TransactionsScaffoldScreen() {
         // Check if has accounting entries
         const hasEntries = hasAccountingEntries(tx)
 
-        // Reporting ready if: verified AND (reconciled OR has accounting entries)
+        // Reporting ready if: reconciled OR (verified AND has accounting entries)
+        // Reconciled transactions go directly to Reporting Ready
         // Includes all sources: purchase receipts, bank statements, and credit card statements
-        return isVerified && (isReconciled || hasEntries)
+        return isReconciled || (isVerified && hasEntries)
       })
       .map((tx) => {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
@@ -410,6 +434,17 @@ export default function TransactionsScaffoldScreen() {
         // Needs verification if: has accounting entries AND not verified/exception
         return hasEntries && !isVerified && !isException
       })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Show only 3 most recent
       .map((tx) => {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
@@ -453,6 +488,17 @@ export default function TransactionsScaffoldScreen() {
         // IMPORTANT: Do NOT include verified transactions with accounting entries here
         return !hasEntries && !isReconciled
       })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Show only 3 most recent
       .map((tx) => {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
@@ -464,7 +510,8 @@ export default function TransactionsScaffoldScreen() {
       })
 
   // Get last 3 bank transactions that are now Reporting Ready (to show pipeline progress)
-  // Condition: Transaction is both verified AND reconciled (or verified with accounting entries that don't require reconciliation)
+  // Condition: Transaction is reconciled OR (verified with accounting entries)
+  // Reconciled transactions go directly to Reporting Ready
   const recentReportingReadyBank: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
@@ -492,8 +539,9 @@ export default function TransactionsScaffoldScreen() {
         // Check if has accounting entries
         const hasEntries = hasAccountingEntries(tx)
 
-        // Reporting ready if: verified AND (reconciled OR has accounting entries)
-        return isVerified && (isReconciled || hasEntries)
+        // Reporting ready if: reconciled OR (verified AND has accounting entries)
+        // Reconciled transactions go directly to Reporting Ready
+        return isReconciled || (isVerified && hasEntries)
       })
       .sort((a, b) => {
         // Sort by updatedAt (most recent first), fallback to createdAt
@@ -542,6 +590,17 @@ export default function TransactionsScaffoldScreen() {
         // Needs verification if: has accounting entries AND not verified/exception
         return hasEntries && !isVerified && !isException
       })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Show only 3 most recent
       .map((tx) => {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
@@ -582,6 +641,17 @@ export default function TransactionsScaffoldScreen() {
         // - AND not yet reconciled
         return !hasEntries && !isReconciled
       })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Show only 3 most recent
       .map((tx) => {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
@@ -593,7 +663,8 @@ export default function TransactionsScaffoldScreen() {
       })
 
   // Get last 3 card transactions that are now Reporting Ready (to show pipeline progress)
-  // Condition: Transaction is both verified AND reconciled (or verified with accounting entries that don't require reconciliation)
+  // Condition: Transaction is reconciled OR (verified with accounting entries)
+  // Reconciled transactions go directly to Reporting Ready
   const recentReportingReadyCards: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
@@ -621,8 +692,9 @@ export default function TransactionsScaffoldScreen() {
         // Check if has accounting entries
         const hasEntries = hasAccountingEntries(tx)
 
-        // Reporting ready if: verified AND (reconciled OR has accounting entries)
-        return isVerified && (isReconciled || hasEntries)
+        // Reporting ready if: reconciled OR (verified AND has accounting entries)
+        // Reconciled transactions go directly to Reporting Ready
+        return isReconciled || (isVerified && hasEntries)
       })
       .sort((a, b) => {
         // Sort by updatedAt (most recent first), fallback to createdAt
@@ -645,6 +717,271 @@ export default function TransactionsScaffoldScreen() {
           originalTransaction: tx,
         }
       })
+
+  // Create full transaction lists (before slicing) for "View all" functionality
+  // These are the complete lists that will be shown when user clicks "View all"
+  const getFullTransactions = (columnTitle: string): Array<TransactionStub & { originalTransaction?: Transaction }> => {
+    switch (columnTitle) {
+      case 'Needs Verification':
+        return parsedTransactions
+          .filter((item) => {
+            const metadata = item.original.metadata as {
+              verification?: { status?: string }
+            }
+            return metadata.verification?.status === 'unverified'
+          })
+          .sort((a, b) => {
+            const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (a.original.metadata as { createdAt?: number }).createdAt ||
+              0
+            const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (b.original.metadata as { createdAt?: number }).createdAt ||
+              0
+            return bDate - aDate
+          })
+          .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
+      
+      case 'Verified, Needs Match':
+        return parsedTransactions
+          .filter((item) => {
+            const metadata = item.original.metadata as {
+              verification?: { status?: string }
+            }
+            return (
+              metadata.verification?.status !== 'unverified' && !item.parsed.isReportingReady
+            )
+          })
+          .sort((a, b) => {
+            const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (a.original.metadata as { createdAt?: number }).createdAt ||
+              0
+            const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (b.original.metadata as { createdAt?: number }).createdAt ||
+              0
+            return bDate - aDate
+          })
+          .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
+      
+      case 'Needs Verification (no reconciliation required)':
+        if (activeSection === 'bank') {
+          return allTransactions
+            .filter((tx) => {
+              if (!isBankTransaction(tx)) return false
+              const metadata = tx.metadata as { verification?: { status?: string } }
+              const hasEntries = hasAccountingEntries(tx)
+              const verificationStatus = metadata.verification?.status
+              const isVerified = verificationStatus === 'verified'
+              const isException = verificationStatus === 'exception'
+              return hasEntries && !isVerified && !isException
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        } else {
+          return allTransactions
+            .filter((tx) => {
+              if (!isCreditCardTransaction(tx)) return false
+              const metadata = tx.metadata as { verification?: { status?: string } }
+              const hasEntries = hasAccountingEntries(tx)
+              const verificationStatus = metadata.verification?.status
+              const isVerified = verificationStatus === 'verified'
+              const isException = verificationStatus === 'exception'
+              return hasEntries && !isVerified && !isException
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        }
+      
+      case 'Needs Reconciliation':
+        if (activeSection === 'bank') {
+          return allTransactions
+            .filter((tx) => {
+              if (!isBankTransaction(tx)) return false
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
+              const reconciliationStatus = metadata.reconciliation?.status
+              const hasEntries = hasAccountingEntries(tx)
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception'
+              return !hasEntries && !isReconciled
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        } else {
+          return allTransactions
+            .filter((tx) => {
+              if (!isCreditCardTransaction(tx)) return false
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
+              const reconciliationStatus = metadata.reconciliation?.status
+              const hasEntries = hasAccountingEntries(tx)
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception'
+              return !hasEntries && !isReconciled
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        }
+      
+      case 'Reporting Ready':
+        if (activeSection === 'receipts') {
+          return allTransactions
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                capture?: { source?: string; mechanism?: string }
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
+              const capture = metadata.capture
+              const verification = metadata.verification
+              const reconciliation = metadata.reconciliation
+              const isReceipt =
+                capture?.source === 'purchase_invoice_ocr' ||
+                capture?.mechanism === 'ocr' ||
+                capture?.source?.includes('purchase')
+              if (!isReceipt) return false
+              const isReportingReady =
+                verification?.status !== 'unverified' &&
+                (reconciliation?.status === 'matched' ||
+                  reconciliation?.status === 'reconciled' ||
+                  reconciliation?.status === 'exception')
+              return isReportingReady
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isReportingReady: true,
+              originalTransaction: tx,
+            }))
+        } else if (activeSection === 'bank') {
+          return allTransactions
+            .filter((tx) => {
+              if (!isBankTransaction(tx)) return false
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
+              const verificationStatus = metadata.verification?.status
+              const reconciliationStatus = metadata.reconciliation?.status
+              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception'
+              const hasEntries = hasAccountingEntries(tx)
+              return isReconciled || (isVerified && hasEntries)
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isReportingReady: true,
+              originalTransaction: tx,
+            }))
+        } else {
+          return allTransactions
+            .filter((tx) => {
+              if (!isCreditCardTransaction(tx)) return false
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
+              const verificationStatus = metadata.verification?.status
+              const reconciliationStatus = metadata.reconciliation?.status
+              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception'
+              const hasEntries = hasAccountingEntries(tx)
+              return isReconciled || (isVerified && hasEntries)
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isReportingReady: true,
+              originalTransaction: tx,
+            }))
+        }
+      
+      default:
+        return []
+    }
+  }
 
   // Update receiptColumns with real data
   const receiptColumnsWithData: PipelineColumn[] = [
@@ -724,25 +1061,43 @@ export default function TransactionsScaffoldScreen() {
     navigation.navigate('AddTransaction', { context })
   }
 
-  // Handler for Reconcile button with context
+  // Handler for Reconcile button - calls reconciliation API endpoint
   const handleReconcileClick = async () => {
+    if (!businessId) {
+      console.error('Cannot reconcile: businessId is missing')
+      return
+    }
+
+    if (activeSection !== 'bank' && activeSection !== 'cards') {
+      console.error('Reconcile button should only be shown for bank or cards sections')
+      return
+    }
+
     try {
-      const context = {
-        pipelineSection: activeSection,
-        ...(activeSection === 'bank' && selectedBankAccount && { bankAccountId: selectedBankAccount }),
-        ...(activeSection === 'cards' && selectedCard && { cardId: selectedCard }),
+      setReconciling(true)
+      
+      // Call the appropriate reconciliation endpoint based on active section
+      const response =
+        activeSection === 'bank'
+          ? await reconciliationApi.reconcileBank(businessId)
+          : await reconciliationApi.reconcileCreditCard(businessId)
+
+      console.log(`Reconciliation completed: ${response.matched} transactions matched`)
+      
+      // Refresh transactions to show updated reconciliation statuses
+      // Reconciled transactions will appear in "Reporting Ready"
+      if (response.matched > 0) {
+        const refreshResponse = await transactions2Api.getTransactions(businessId, {
+          page: 1,
+          limit: 200,
+        })
+        setAllTransactions(refreshResponse.transactions)
       }
-      
-      // Send signal to backend
-      await api.post('/authenticated/transactions2/api/actions/reconcile-clicked', {
-        businessId,
-        context,
-        timestamp: Date.now(),
-      })
-      
-      // TODO: Navigate to reconcile screen or trigger reconcile action
     } catch (error) {
-      console.error('Failed to send reconcile click signal:', error)
+      console.error('Failed to reconcile transactions:', error)
+      // TODO: Show user-friendly error message (Alert or toast notification)
+    } finally {
+      setReconciling(false)
     }
   }
 
@@ -914,18 +1269,6 @@ export default function TransactionsScaffoldScreen() {
                 <Text style={styles.ctaText}>Add</Text>
               </View>
             </TouchableOpacity>
-            {activeSection === 'cards' && (
-              <TouchableOpacity 
-                activeOpacity={0.8} 
-                style={[styles.ctaButton, styles.primaryCta]}
-                onPress={handleReconcileClick}
-              >
-                <View style={styles.ctaContent}>
-                  <MaterialIcons name="autorenew" size={18} color={GRAYSCALE_PRIMARY} />
-                  <Text style={styles.ctaText}>Reconcile</Text>
-                </View>
-              </TouchableOpacity>
-            )}
           </View>
         )}
 
@@ -937,6 +1280,8 @@ export default function TransactionsScaffoldScreen() {
           cardsColumnsWithData,
           reportingReadyTransactions,
           handleReconcileClick,
+          reconciling,
+          getFullTransactions,
         )}
       </ScrollView>
     </AppBarLayout>
@@ -951,14 +1296,25 @@ function renderSection(
   cardsColumns: PipelineColumn[],
   reportingReadyTransactions: Array<TransactionStub & { originalTransaction?: Transaction }>,
   handleReconcileClick?: () => void,
+  reconciling?: boolean,
+  getFullTransactions?: (columnTitle: string) => Array<TransactionStub & { originalTransaction?: Transaction }>,
 ) {
   switch (section) {
     case 'receipts':
-      return <PipelineRow columns={receiptColumns} navigation={navigation} />
+      return <PipelineRow columns={receiptColumns} navigation={navigation} getFullTransactions={getFullTransactions} pipelineSection={section} />
     case 'bank':
-      return <PipelineRow columns={bankColumns} navigation={navigation} handleReconcileClick={handleReconcileClick} />
+      return <PipelineRow columns={bankColumns} navigation={navigation} handleReconcileClick={handleReconcileClick} reconciling={reconciling} getFullTransactions={getFullTransactions} pipelineSection={section} />
     case 'cards':
-      return <PipelineRow columns={cardsColumns} navigation={navigation} />
+      return (
+        <PipelineRow
+          columns={cardsColumns}
+          navigation={navigation}
+          handleReconcileClick={handleReconcileClick}
+          reconciling={reconciling}
+          getFullTransactions={getFullTransactions}
+          pipelineSection={section}
+        />
+      )
     case 'sales':
       return null // TODO: Add Sales Pipeline screen
     case 'internal':
@@ -1002,18 +1358,28 @@ function PipelineRow({
   columns,
   navigation,
   handleReconcileClick,
+  reconciling,
+  getFullTransactions,
+  pipelineSection,
 }: {
   columns: PipelineColumn[]
   navigation: StackNavigationProp<TransactionsStackParamList>
   handleReconcileClick?: () => void
+  reconciling?: boolean
+  getFullTransactions?: (columnTitle: string) => Array<TransactionStub & { originalTransaction?: Transaction }>
+  pipelineSection: SectionKey
 }) {
   const handleViewAll = (column: PipelineColumn) => {
-    const items = column.transactions || []
+    // Use full transaction list if available, otherwise fall back to displayed items
+    const items = getFullTransactions 
+      ? getFullTransactions(column.title) 
+      : (column.transactions || [])
     navigation.navigate('ScaffoldViewAll', {
       section: column.title,
       title: column.title,
       items,
       showReconcileButton: column.title === 'Needs Reconciliation',
+      pipelineSection: pipelineSection, // Pass the parent section (bank/cards)
     })
   }
 
@@ -1049,12 +1415,19 @@ function PipelineRow({
               {isNeedsReconciliation(column.title) && handleReconcileClick && (
                 <TouchableOpacity
                   activeOpacity={0.7}
-                  style={styles.reconcileButton}
+                  style={[styles.reconcileButton, reconciling && styles.reconcileButtonDisabled]}
                   onPress={handleReconcileClick}
+                  disabled={reconciling}
                 >
                   <View style={styles.reconcileButtonContent}>
-                    <MaterialIcons name="autorenew" size={16} color={GRAYSCALE_PRIMARY} />
-                    <Text style={styles.reconcileButtonText}>Reconcile</Text>
+                    <MaterialIcons 
+                      name={reconciling ? "hourglass-empty" : "autorenew"} 
+                      size={16} 
+                      color={GRAYSCALE_PRIMARY} 
+                    />
+                    <Text style={styles.reconcileButtonText}>
+                      {reconciling ? 'Reconciling...' : 'Reconcile'}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               )}
@@ -1310,6 +1683,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#dcdcdc',
     backgroundColor: CARD_BACKGROUND,
+  },
+  reconcileButtonDisabled: {
+    opacity: 0.6,
   },
   reconcileButtonContent: {
     flexDirection: 'row',
