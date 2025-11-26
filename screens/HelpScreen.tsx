@@ -6,9 +6,8 @@ import { AppBarLayout } from '../components/AppBarLayout'
 
 export default function HelpScreen() {
   return (
-    <AppBarLayout>
+    <AppBarLayout title="Help">
       <View style={styles.container}>
-        <Text style={styles.title}>Help</Text>
         <Text style={styles.subtitle}>Wireframe placeholder content.</Text>
       </View>
     </AppBarLayout>

@@ -30,7 +30,7 @@ export default function ProfileScreen() {
 
   if (!user || !businessUser) {
     return (
-      <AppBarLayout>
+      <AppBarLayout title="Profile">
         <View style={[styles.content, styles.center]}>
           <ActivityIndicator size="large" color="#666666" />
           <Text style={styles.loadingText}>Loading...</Text>
@@ -47,7 +47,7 @@ export default function ProfileScreen() {
         : '👤 User'
 
   return (
-    <AppBarLayout>
+    <AppBarLayout title="Profile">
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Account Overview</Text>

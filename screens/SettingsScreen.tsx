@@ -174,12 +174,8 @@ export default function SettingsScreen() {
   }
 
   return (
-    <AppBarLayout>
+    <AppBarLayout title="Settings" showProfileIcon>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Settings</Text>
-        </View>
-
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Bank Accounts</Text>
@@ -424,7 +420,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 24,
+    paddingTop: 36,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
   },
   header: {
     marginBottom: 24,

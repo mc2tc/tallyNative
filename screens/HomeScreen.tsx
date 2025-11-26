@@ -6,9 +6,8 @@ import { AppBarLayout } from '../components/AppBarLayout'
 
 export default function HomeScreen() {
   return (
-    <AppBarLayout>
+    <AppBarLayout title="Home">
       <View style={styles.container}>
-        <Text style={styles.title}>Home</Text>
         <Text style={styles.subtitle}>Primary dashboard content coming soon.</Text>
         <View style={styles.placeholderBlock}>
           <Text style={styles.placeholderText}>Wireframe placeholder</Text>

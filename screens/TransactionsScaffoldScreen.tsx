@@ -1162,7 +1162,11 @@ export default function TransactionsScaffoldScreen() {
   }, [businessId])
 
   return (
-    <AppBarLayout>
+    <AppBarLayout
+      title="Transactions"
+      rightIconName="add-circle-sharp"
+      onRightIconPress={handleAddClick}
+    >
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
@@ -1170,8 +1174,6 @@ export default function TransactionsScaffoldScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <Text style={styles.heroTitle}>Transactions</Text>
-
         <View style={styles.sectionNavWrapper}>
           <ScrollView
             horizontal
@@ -1254,21 +1256,6 @@ export default function TransactionsScaffoldScreen() {
                 )
               })}
             </ScrollView>
-          </View>
-        )}
-
-        {activeSection !== 'reporting' && (
-          <View style={styles.heroActionsRow}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.ctaButton, styles.secondaryCta]}
-              onPress={handleAddClick}
-            >
-              <View style={styles.ctaContent}>
-                <MaterialIcons name="add" size={18} color={GRAYSCALE_PRIMARY} />
-                <Text style={styles.ctaText}>Add</Text>
-              </View>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -1583,7 +1570,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 20,
     paddingBottom: 24,
-    paddingTop: 32,
+    paddingTop: 24,
   },
   heroTitle: {
     fontSize: 18,

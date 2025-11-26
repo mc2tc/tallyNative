@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import type { ReportsStackParamList } from '../navigation/ReportsNavigator'
 import {
   chartAccountsApi,
@@ -13,6 +12,7 @@ import {
 } from '../lib/api/chartAccounts'
 import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
+import { AppBarLayout } from '../components/AppBarLayout'
 
 type ReportCardConfig = {
   key: string
@@ -170,7 +170,7 @@ export default function ReportsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <AppBarLayout title="Reports">
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         {loading && (
           <View style={styles.loader}>
@@ -195,21 +195,19 @@ export default function ReportsScreen() {
           ))}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </AppBarLayout>
   )
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f4f4f4',
-  },
   container: {
     flex: 1,
     backgroundColor: '#f4f4f4',
   },
   contentContainer: {
-    padding: 24,
+    paddingTop: 36,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
   },
   cardsGrid: {
     gap: 16,
