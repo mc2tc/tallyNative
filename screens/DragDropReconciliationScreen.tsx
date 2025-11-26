@@ -638,15 +638,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ffffff',
+    padding: 4,
+    marginRight: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-    marginRight: 12,
   },
   loadingContainer: {
     flex: 1,

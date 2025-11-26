@@ -347,8 +347,9 @@ const styles = StyleSheet.create({
   loader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 12,
-    paddingVertical: 12,
+    paddingVertical: 24,
   },
   errorText: {
     color: '#b00020',
