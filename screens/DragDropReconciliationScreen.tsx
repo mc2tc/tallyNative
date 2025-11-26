@@ -586,7 +586,7 @@ export default function DragDropReconciliationScreen({
             <View style={styles.divider} />
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Purchase Receipts</Text>
+              <Text style={styles.sectionTitle}>Purchases</Text>
               <Text style={styles.sectionSubtitle}>
                 Drop bank/card transactions here to match ({receiptTransactions.length} {receiptTransactions.length === 1 ? 'receipt' : 'receipts'})
               </Text>

@@ -1,17 +1,17 @@
 // View all screen for scaffold pipeline sections
 import React, { useCallback, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { api } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
 import DragDropReconciliationScreen from './DragDropReconciliationScreen'
+import { AppBarLayout } from '../components/AppBarLayout'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
 const CARD_BACKGROUND = '#ffffff'
-const SURFACE_BACKGROUND = '#f6f6f6'
+const SURFACE_BACKGROUND = '#f0f0f0'
 
 type TransactionStub = {
   id: string
@@ -85,13 +85,7 @@ export default function ScaffoldViewAllScreen() {
   }, [businessId])
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={handleGoBack} style={styles.backButton} activeOpacity={0.7}>
-          <MaterialIcons name="arrow-back" size={24} color={GRAYSCALE_PRIMARY} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{title}</Text>
-      </View>
+    <AppBarLayout title={title} onBackPress={handleGoBack}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         {items.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -164,22 +158,11 @@ export default function ScaffoldViewAllScreen() {
         }
         businessId={businessId}
       />
-    </SafeAreaView>
+    </AppBarLayout>
   )
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: SURFACE_BACKGROUND,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
   backButton: {
     width: 44,
     height: 44,

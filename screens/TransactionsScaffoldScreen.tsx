@@ -145,7 +145,7 @@ type SectionKey = 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'report
 
 // Base section nav - will be filtered based on available accounts/cards
 const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
-  { key: 'receipts', label: 'Purchase Receipts' },
+  { key: 'receipts', label: 'Purchases' },
   { key: 'bank', label: 'Bank Transactions' },
   { key: 'cards', label: 'Credit Card Transactions' },
   { key: 'sales', label: 'Sales Pipeline' },
@@ -315,45 +315,56 @@ export default function TransactionsScaffoldScreen() {
   // Reporting ready transactions (all sources: receipts, bank, credit cards)
   // Condition: Transaction is reconciled OR (verified with accounting entries)
   // Reconciled transactions go directly to Reporting Ready
-  // This feeds the Reports screen and the "Reporting Ready" section
+  // This feeds the Reports screen and the "Reporting ready" section
+  const reportingReadySourceTransactions = allTransactions.filter((tx) => {
+    const metadata = tx.metadata as {
+      verification?: { status?: string }
+      reconciliation?: { status?: string }
+      capture?: { source?: string }
+    }
+    const verificationStatus = metadata.verification?.status
+    const reconciliationStatus = metadata.reconciliation?.status
+
+    // Check if verified (including exception)
+    const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+    
+    // Check if reconciled
+    const isReconciled =
+      reconciliationStatus === 'matched' ||
+      reconciliationStatus === 'reconciled' ||
+      reconciliationStatus === 'exception'
+
+    // Check if has accounting entries
+    const hasEntries = hasAccountingEntries(tx)
+
+    // Reporting ready if: reconciled OR (verified AND has accounting entries)
+    // Reconciled transactions go directly to Reporting Ready
+    // Includes all sources: purchase receipts, bank statements, and credit card statements
+    return isReconciled || (isVerified && hasEntries)
+  })
+
+  // Sort reporting ready transactions by most recent first
+  const sortedReportingReadySourceTransactions = reportingReadySourceTransactions.sort((a, b) => {
+    const aMeta = a.metadata as { updatedAt?: number; createdAt?: number }
+    const bMeta = b.metadata as { updatedAt?: number; createdAt?: number }
+    const aDate = aMeta.updatedAt || aMeta.createdAt || 0
+    const bDate = bMeta.updatedAt || bMeta.createdAt || 0
+    return bDate - aDate
+  })
+
+  // Full list of reporting ready transactions (all sources)
   const reportingReadyTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
-      .filter((tx) => {
-        const metadata = tx.metadata as {
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-          capture?: { source?: string }
-        }
-        const verificationStatus = metadata.verification?.status
-        const reconciliationStatus = metadata.reconciliation?.status
+    sortedReportingReadySourceTransactions.map((tx) => {
+      const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+      return {
+        id: tx.id,
+        title: tx.summary.thirdPartyName,
+        amount,
+        isReportingReady: true,
+        originalTransaction: tx,
+      }
+    })
 
-        // Check if verified (including exception)
-        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-        
-        // Check if reconciled
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
-
-        // Check if has accounting entries
-        const hasEntries = hasAccountingEntries(tx)
-
-        // Reporting ready if: reconciled OR (verified AND has accounting entries)
-        // Reconciled transactions go directly to Reporting Ready
-        // Includes all sources: purchase receipts, bank statements, and credit card statements
-        return isReconciled || (isVerified && hasEntries)
-      })
-      .map((tx) => {
-        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
-        return {
-          id: tx.id,
-          title: tx.summary.thirdPartyName,
-          amount,
-          isReportingReady: true,
-          originalTransaction: tx,
-        }
-      })
 
   // Get last 3 receipts that are now Reporting Ready (to show pipeline progress)
   const recentReportingReadyReceipts: Array<TransactionStub & { originalTransaction: Transaction }> =
@@ -722,7 +733,7 @@ export default function TransactionsScaffoldScreen() {
   // These are the complete lists that will be shown when user clicks "View all"
   const getFullTransactions = (columnTitle: string): Array<TransactionStub & { originalTransaction?: Transaction }> => {
     switch (columnTitle) {
-      case 'Needs Verification':
+      case 'Needs verification':
         return parsedTransactions
           .filter((item) => {
             const metadata = item.original.metadata as {
@@ -741,7 +752,7 @@ export default function TransactionsScaffoldScreen() {
           })
           .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
       
-      case 'Verified, Needs Match':
+      case 'Verified, needs match':
         return parsedTransactions
           .filter((item) => {
             const metadata = item.original.metadata as {
@@ -762,7 +773,7 @@ export default function TransactionsScaffoldScreen() {
           })
           .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
       
-      case 'Needs Verification (no reconciliation required)':
+      case 'Needs verification (no reconciliation required)':
         if (activeSection === 'bank') {
           return allTransactions
             .filter((tx) => {
@@ -813,7 +824,7 @@ export default function TransactionsScaffoldScreen() {
             }))
         }
       
-      case 'Needs Reconciliation':
+      case 'Needs reconciliation':
         if (activeSection === 'bank') {
           return allTransactions
             .filter((tx) => {
@@ -874,7 +885,7 @@ export default function TransactionsScaffoldScreen() {
             }))
         }
       
-      case 'Reporting Ready':
+      case 'Reporting ready':
         if (activeSection === 'receipts') {
           return allTransactions
             .filter((tx) => {
@@ -986,17 +997,17 @@ export default function TransactionsScaffoldScreen() {
   // Update receiptColumns with real data
   const receiptColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Needs Verification',
+      title: 'Needs verification',
       actions: ['View all'],
       transactions: needsVerificationTransactions,
     },
     {
-      title: 'Verified, Needs Match',
+      title: 'Verified, needs match',
       actions: ['View all'],
       transactions: verifiedNeedsMatchTransactions,
     },
     {
-      title: 'Reporting Ready',
+      title: 'Reporting ready',
       actions: ['View all'],
       transactions: recentReportingReadyReceipts,
     },
@@ -1005,22 +1016,22 @@ export default function TransactionsScaffoldScreen() {
   // Update bankColumns with real data
   const bankColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Needs Verification (no reconciliation required)',
+      title: 'Needs verification (no reconciliation required)',
       actions: ['View all'],
       transactions: bankNeedsVerificationTransactions,
     },
     {
-      title: 'Needs Reconciliation',
+      title: 'Needs reconciliation',
       actions: ['View all'],
       transactions: bankNeedsReconciliationTransactions,
     },
     {
-      title: 'Reporting Ready',
+      title: 'Reporting ready',
       actions: ['View all'],
       transactions: recentReportingReadyBank,
     },
     {
-      title: 'Auto Bank Rules',
+      title: 'Auto bank rules',
       actions: ['View all', '+ Add rules'],
       rules: bankStatementRules,
     },
@@ -1029,22 +1040,22 @@ export default function TransactionsScaffoldScreen() {
   // Update cardsColumns with real data
   const cardsColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Needs Verification (no reconciliation required)',
+      title: 'Needs verification (no reconciliation required)',
       actions: ['View all'],
       transactions: cardNeedsVerificationTransactions,
     },
     {
-      title: 'Needs Reconciliation',
+      title: 'Needs reconciliation',
       actions: ['View all'],
       transactions: cardNeedsReconciliationTransactions,
     },
     {
-      title: 'Reporting Ready',
+      title: 'Reporting ready',
       actions: ['View all'],
       transactions: recentReportingReadyCards,
     },
     {
-      title: 'Auto Card Rules',
+      title: 'Auto card rules',
       actions: ['View all', '+ Add rules'],
     },
   ]
@@ -1223,7 +1234,7 @@ export default function TransactionsScaffoldScreen() {
                     onPress={() => setSelectedBankAccount(account.accountNumber)}
                   >
                     <Text style={[styles.bankAccountText, isActive && styles.bankAccountTextActive]}>
-                      •••• {lastFour}
+                      ..{lastFour}
                     </Text>
                   </TouchableOpacity>
                 )
@@ -1250,7 +1261,7 @@ export default function TransactionsScaffoldScreen() {
                     onPress={() => setSelectedCard(card.cardNumber)}
                   >
                     <Text style={[styles.bankAccountText, isActive && styles.bankAccountTextActive]}>
-                      •••• {lastFour}
+                      ..{lastFour}
                     </Text>
                   </TouchableOpacity>
                 )
@@ -1310,12 +1321,12 @@ function renderSection(
       return (
         <View style={styles.reportingCard}>
           <View style={styles.cardTitleRow}>
-            <Text style={styles.sectionHeader}>Reporting Ready (all sources)</Text>
+            <Text style={styles.sectionHeader}>Reporting ready (all sources)</Text>
             <TouchableOpacity activeOpacity={0.6} style={styles.infoButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
             </TouchableOpacity>
           </View>
-          <CardList items={reportingReadyTransactions} navigation={navigation} />
+          <CardList items={reportingReadyTransactions.slice(0, 3)} navigation={navigation} />
           <View style={styles.pipelineActions}>
             <TouchableOpacity
               activeOpacity={0.7}
@@ -1323,7 +1334,7 @@ function renderSection(
               onPress={() =>
                 navigation.navigate('ScaffoldViewAll', {
                   section: 'reporting',
-                  title: 'Reporting Ready (all sources)',
+                  title: 'Reporting ready (all sources)',
                   items: reportingReadyTransactions,
                 })
               }
@@ -1361,16 +1372,20 @@ function PipelineRow({
     const items = getFullTransactions 
       ? getFullTransactions(column.title) 
       : (column.transactions || [])
+    const effectiveTitle =
+      column.title === 'Needs verification (no reconciliation required)'
+        ? 'Needs verification'
+        : column.title
     navigation.navigate('ScaffoldViewAll', {
       section: column.title,
-      title: column.title,
+      title: effectiveTitle,
       items,
-      showReconcileButton: column.title === 'Needs Reconciliation',
+      showReconcileButton: column.title === 'Needs reconciliation',
       pipelineSection: pipelineSection, // Pass the parent section (bank/cards)
     })
   }
 
-  const isNeedsReconciliation = (columnTitle: string) => columnTitle === 'Needs Reconciliation'
+  const isNeedsReconciliation = (columnTitle: string) => columnTitle === 'Needs reconciliation'
 
   return (
     <View style={styles.pipelineColumnStack}>
@@ -1541,22 +1556,18 @@ const styles = StyleSheet.create({
   bankAccountNav: {
     flexDirection: 'row',
     gap: 8,
-    paddingHorizontal: 2,
+    paddingHorizontal: 10,
   },
   bankAccountButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#dcdcdc',
-    backgroundColor: '#ffffff',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
   },
   bankAccountButtonActive: {
-    borderColor: '#4a4a4a',
-    backgroundColor: '#f0f0f0',
+    borderBottomWidth: 1,
+    borderBottomColor: GRAYSCALE_PRIMARY,
   },
   bankAccountText: {
-    fontSize: 12,
+    fontSize: 13,
     color: GRAYSCALE_SECONDARY,
     fontWeight: '500',
   },

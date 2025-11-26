@@ -272,7 +272,7 @@ const reconcileCreditCardTransactions = async (businessId: string) => {
   - These bypass reconciliation and go to verification instead
   - Examples: bank fees, withdrawals, interest charges
 
-### Purchase Receipts
+### Purchases
 
 - Purchase receipts with:
   - `metadata.capture.source == 'purchase_invoice_ocr'`

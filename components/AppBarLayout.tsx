@@ -16,6 +16,7 @@ interface AppBarLayoutProps {
   showProfileIcon?: boolean
   rightIconName?: keyof typeof Ionicons.glyphMap
   onRightIconPress?: () => void
+  onBackPress?: () => void
 }
 
 export function AppBarLayout({
@@ -25,6 +26,7 @@ export function AppBarLayout({
   showProfileIcon = false,
   rightIconName,
   onRightIconPress,
+  onBackPress,
 }: AppBarLayoutProps) {
   const navigation = useNavigation<NavigationProp<any>>()
   const drawerNavigation = useNavigation<DrawerNavigationProp<AppDrawerParamList>>()
@@ -56,9 +58,13 @@ export function AppBarLayout({
         <TouchableOpacity
           activeOpacity={0.7}
           style={[styles.circleButton, { borderColor }]}
-          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+          onPress={onBackPress ? onBackPress : () => navigation.dispatch(DrawerActions.openDrawer())}
         >
-          <MaterialIcons name="more-vert" size={24} color="#333333" />
+          <MaterialIcons
+            name={onBackPress ? 'arrow-back' : 'more-vert'}
+            size={24}
+            color="#333333"
+          />
         </TouchableOpacity>
         <View style={[styles.titleContainer, { borderColor }]}>
           {title ? <Text style={styles.titleText}>{title}</Text> : null}

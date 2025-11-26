@@ -20,6 +20,7 @@ import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import { transactions2Api } from '../lib/api/transactions2'
+import { AppBarLayout } from '../components/AppBarLayout'
 
 type AddTransactionNavigationProp =
   | StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>
@@ -280,46 +281,78 @@ export default function AddTransactionScreen() {
     )
   }, [getTransactionType, businessId])
 
+  const handleEmailIngestion = useCallback(() => {
+    Alert.alert(
+      'Email ingestion',
+      'Email-based ingestion is coming soon. You will be able to forward receipts and statements to a dedicated address.',
+    )
+  }, [])
+
+  const showManualInput =
+    context?.pipelineSection !== 'bank' && context?.pipelineSection !== 'cards'
+  const isBankContext = context?.pipelineSection === 'bank'
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <AppBarLayout
+      title="Add transaction"
+      onBackPress={handleGoBack}
+    >
       <View style={styles.container}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={handleGoBack} style={styles.backButton} activeOpacity={0.7}>
-            <MaterialIcons name="arrow-back" size={24} color="#4a4a4a" />
-          </TouchableOpacity>
+        <View style={styles.content}>
           {context?.pipelineSection && (
             <Text style={styles.contextLabel}>
-              {context.pipelineSection === 'receipts' ? 'Purchase Receipts' :
+              {context.pipelineSection === 'receipts' ? 'Purchases' :
                context.pipelineSection === 'bank' ? (
                  context.bankAccountId 
-                   ? `Bank Transactions •••• ${getLastFour(context.bankAccountId)}`
-                   : 'Bank Transactions'
+                   ? `Bank transactions ..${getLastFour(context.bankAccountId)}`
+                   : 'Bank transactions'
                ) :
                context.pipelineSection === 'cards' ? (
                  context.cardId
-                   ? `Credit Card Transactions •••• ${getLastFour(context.cardId)}`
-                   : 'Credit Card Transactions'
+                   ? `Credit card transactions ..${getLastFour(context.cardId)}`
+                   : 'Credit card transactions'
                ) :
-               context.pipelineSection === 'sales' ? 'Sales Pipeline' :
-               context.pipelineSection === 'internal' ? 'Internal Transactions' :
-               context.pipelineSection === 'reporting' ? 'Reporting Ready' :
+               context.pipelineSection === 'sales' ? 'Sales pipeline' :
+               context.pipelineSection === 'internal' ? 'Internal transactions' :
+               context.pipelineSection === 'reporting' ? 'Reporting ready' :
                context.pipelineSection}
             </Text>
           )}
-        </View>
-        <View style={styles.content}>
-          <Text style={styles.title}>Add Transaction</Text>
           <Text style={styles.subtitle}>Choose how you'd like to add transactions.</Text>
+
           <View style={styles.buttonGrid}>
+            {isBankContext && (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      'Connect to bank',
+                      'Bank connections are coming soon. You will be able to link your bank to import statements automatically.',
+                    )
+                  }}
+                  style={[styles.button, styles.bankConnectButton]}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.buttonContent}>
+                    <MaterialIcons name="account-balance" size={18} color="#4a4a4a" />
+                    <Text style={styles.bankConnectText}>Connect to Bank</Text>
+                  </View>
+                </TouchableOpacity>
+                <View style={styles.buttonSeparator} />
+              </>
+            )}
             <TouchableOpacity
               onPress={pickFromLibrary}
               disabled={!canCapture}
               style={[styles.button, !canCapture && styles.buttonDisabled]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                Choose photo
-              </Text>
+              <View style={styles.buttonContent}>
+                <MaterialIcons name="photo-library" size={18} color="#ffffff" />
+                <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                  Choose photo
+                </Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={takePhoto}
@@ -327,9 +360,12 @@ export default function AddTransactionScreen() {
               style={[styles.button, !canCapture && styles.buttonDisabled]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                Take photo
-              </Text>
+              <View style={styles.buttonContent}>
+                <MaterialIcons name="photo-camera" size={18} color="#ffffff" />
+                <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                  Take photo
+                </Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={pickFromFiles}
@@ -337,27 +373,41 @@ export default function AddTransactionScreen() {
               style={[styles.button, !canCapture && styles.buttonDisabled]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                Choose from Files
-              </Text>
+              <View style={styles.buttonContent}>
+                <MaterialIcons name="folder-open" size={18} color="#ffffff" />
+                <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                  Choose from files
+                </Text>
+              </View>
             </TouchableOpacity>
+            {showManualInput && (
+              <TouchableOpacity
+                onPress={handleManualInput}
+                disabled={!canCapture}
+                style={[styles.button, !canCapture && styles.buttonDisabled]}
+                activeOpacity={0.7}
+              >
+                <View style={styles.buttonContent}>
+                  <MaterialIcons name="edit" size={18} color="#ffffff" />
+                  <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                    Manual input
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              onPress={handleManualInput}
+              onPress={handleEmailIngestion}
               disabled={!canCapture}
               style={[styles.button, !canCapture && styles.buttonDisabled]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                Manual Input
-              </Text>
+              <View style={styles.buttonContent}>
+                <MaterialIcons name="email" size={18} color="#ffffff" />
+                <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
+                  Send via email
+                </Text>
+              </View>
             </TouchableOpacity>
-          </View>
-          <View style={styles.infoNote}>
-            <Text style={styles.infoNoteTitle}>Email-Based Ingestion</Text>
-            <Text style={styles.infoNoteText}>
-              You can forward receipt emails, bank statements, and credit card statements to a
-              dedicated Tally email address for automatic processing. This feature is coming soon.
-            </Text>
           </View>
           {busy ? <ActivityIndicator style={styles.progress} /> : null}
           {lastImageUri ? <Image source={{ uri: lastImageUri }} style={styles.preview} /> : null}
@@ -367,32 +417,24 @@ export default function AddTransactionScreen() {
           ) : null}
         </View>
       </View>
-    </SafeAreaView>
+    </AppBarLayout>
   )
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f0f0f0',
     paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 24,
   },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 16,
-  },
   contextLabel: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 18,
+    fontWeight: '600',
     color: '#4a4a4a',
-    marginLeft: 12,
+    textAlign: 'center',
+    marginBottom: 12,
   },
   backButton: {
     width: 44,
@@ -407,15 +449,16 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
     paddingBottom: 16,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '600',
     color: '#000000',
-    marginBottom: 8,
+    textAlign: 'center',
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
@@ -423,23 +466,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   buttonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
     marginTop: 24,
     width: '100%',
     maxWidth: 400,
+    alignSelf: 'center',
   },
   button: {
     backgroundColor: '#666666',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderRadius: 8,
-    width: '48%',
-    marginBottom: 12,
-    alignItems: 'center',
+    width: '100%',
+    marginBottom: 10,
+    alignItems: 'flex-start',
     justifyContent: 'center',
     minHeight: 56,
+  },
+  bankConnectButton: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+    marginBottom: 0,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   buttonDisabled: {
     backgroundColor: '#e0e0e0',
@@ -448,31 +500,25 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '500',
-    textAlign: 'center',
+    textAlign: 'left',
+    marginLeft: 8,
   },
   buttonTextDisabled: {
     color: '#999999',
   },
-  infoNote: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    width: '100%',
-    maxWidth: 400,
+  bankConnectText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#4a4a4a',
+    marginLeft: 8,
   },
-  infoNoteTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 8,
-  },
-  infoNoteText: {
-    fontSize: 13,
-    color: '#666666',
-    lineHeight: 18,
+  buttonSeparator: {
+    height: 1,
+    borderBottomWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#d0d0d0',
+    marginTop: 14,
+    marginBottom: 14,
   },
   progress: {
     marginTop: 16,

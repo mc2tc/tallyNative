@@ -101,7 +101,7 @@ Updated Bank Transactions and Credit Card Transactions sections with proper work
 - Updated Bank Transactions section with three workflow states: Needs Verification (no reconciliation required), Needs Reconciliation, and Reporting Ready
 - Implemented bank transaction filtering logic based on `classification.kind === 'statement_entry'` and accounting entries presence
 - "Needs Verification" shows bank transactions with accounting entries (rule matched) that are not yet verified
-- "Needs Reconciliation" shows bank transactions without accounting entries (no rule matched) that need to be matched with Purchase Receipts
+- "Needs Reconciliation" shows bank transactions without accounting entries (no rule matched) that need to be matched with Purchases
 - "Reporting Ready" shows verified transactions that are either reconciled OR have accounting entries (standalone transactions like bank fees)
 - Updated Credit Card Transactions section with similar three-column structure matching Bank Transactions
 - Removed dummy data from both Bank and Card sections - now using real transaction filtering
@@ -389,17 +389,17 @@ Today's work focused on enhancing the Transactions screen with categorized trans
 
 ### Commits
 
-#### 1. Add Purchase Receipts and Bank Records cards to Transactions screen
+#### 1. Add Purchases and Bank Records cards to Transactions screen
 **Commit:** `8d38c1f`  
 **Files Changed:** 2 files, 119 insertions(+), 5 deletions(-)
 
 **Changes:**
 - Added `classificationKind` filter parameter to `transactions2` API to support filtering by transaction classification
-- Implemented Purchase Receipts card displaying first 3 transactions with `classification.kind === "purchase"`
+- Implemented Purchases card displaying first 3 transactions with `classification.kind === "purchase"`
 - Implemented Bank Records card displaying first 3 transactions with `classification.kind === "bank-record"`
 - Added client-side filtering as fallback to ensure proper transaction separation
 - Updated Add Transactions button to use simple plus icon instead of receipt-text-plus
-- Added subtle card titles ("Purchase Receipts" and "Bank Records") with uppercase styling
+- Added subtle card titles ("Purchases" and "Bank Records") with uppercase styling
 
 **Files Modified:**
 - `lib/api/transactions2.ts` - Added classificationKind parameter support
@@ -465,7 +465,7 @@ Today's work focused on enhancing the Transactions screen with categorized trans
 - **Net Change:** +1,764 lines
 
 ### Key Features Added
-1. Transaction categorization (Purchase Receipts vs Bank Records)
+1. Transaction categorization (Purchases vs Bank Records)
 2. Transaction detail screen with editing capabilities
 3. Payment method and debit account management
 4. Profile screen and navigation improvements

@@ -7,9 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native'
-import { MaterialIcons } from '@expo/vector-icons'
 import {
   chartAccountsApi,
   type ChartAccount,
@@ -17,6 +15,7 @@ import {
 } from '../lib/api/chartAccounts'
 import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
+import { AppBarLayout } from '../components/AppBarLayout'
 
 export default function ProfitLossReportScreen() {
   const navigation = useNavigation()
@@ -120,12 +119,7 @@ export default function ProfitLossReportScreen() {
   const hasValues = data?.period !== undefined
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={handleGoBack} style={styles.backButton} activeOpacity={0.7}>
-          <MaterialIcons name="arrow-back" size={24} color="#4a4a4a" />
-        </TouchableOpacity>
-      </View>
+    <AppBarLayout title="Reports" onBackPress={handleGoBack}>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {!businessId && (
           <Text style={styles.statusText}>No business context found for this account.</Text>
@@ -235,35 +229,14 @@ export default function ProfitLossReportScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </AppBarLayout>
   )
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f6f6f6',
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
   content: {
     flex: 1,
-    backgroundColor: '#f6f6f6',
+    backgroundColor: '#f0f0f0',
   },
   contentContainer: {
     padding: 16,

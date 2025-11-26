@@ -1,7 +1,7 @@
 // Transaction detail screen - displays full transaction summary information
 import React, { useCallback, useState } from 'react'
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native'
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
@@ -12,6 +12,7 @@ import { chartAccountsApi } from '../lib/api/chartAccounts'
 import { paymentMethodsApi, type PaymentMethodOption } from '../lib/api/paymentMethods'
 import { formatAmount } from '../lib/utils/currency'
 import { ApiError } from '../lib/api/client'
+import { AppBarLayout } from '../components/AppBarLayout'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const DEFAULT_CURRENCY = 'GBP'
@@ -316,19 +317,13 @@ export default function TransactionDetailScreen() {
   const chartName = isPurchase ? accounting?.credits?.[0]?.chartName : undefined
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={handleGoBack} style={styles.backButton} activeOpacity={0.7}>
-          <MaterialIcons name="arrow-back" size={24} color={GRAYSCALE_PRIMARY} />
-        </TouchableOpacity>
-        <Text style={styles.dateTime}>{dateTimeString}</Text>
-      </View>
+    <AppBarLayout title={transaction.summary.thirdPartyName} onBackPress={handleGoBack}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <View style={styles.header}>
           <View style={styles.iconContainer}>
             <MaterialCommunityIcons name="receipt-text" size={32} color={GRAYSCALE_PRIMARY} />
           </View>
-          <Text style={styles.thirdPartyName}>{transaction.summary.thirdPartyName}</Text>
+          <Text style={styles.thirdPartyName}>{dateTimeString}</Text>
           <Text style={styles.amount}>{amountWithSymbol}</Text>
           {chartName && (
             <View style={styles.chartNameRow}>
@@ -579,22 +574,11 @@ export default function TransactionDetailScreen() {
           </Animated.View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </AppBarLayout>
   )
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f6f6f6',
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
   backButton: {
     width: 44,
     height: 44,
@@ -614,7 +598,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#f6f6f6',
+    backgroundColor: '#f0f0f0',
   },
   contentContainer: {
     padding: 24,
