@@ -1,5 +1,112 @@
 # Daily Development Summaries
 
+## 2025-11-26
+
+### Summary
+Refined the navigation and visual hierarchy across Transactions, Reports, and follow-on screens to create a consistent wireframe app bar pattern, clarified report summaries and detail screens, and redesigned the Add Transaction experience to be context-aware and more action-focused. Standardized status/loading states and wording (e.g. “Purchases”, “Reports”) so users see clearer progress and flows across the app.
+
+### Commits
+
+#### 1. Refine app bar layout and root navigation UX
+**Commit:** `6cd6ce0`  
+**Files Changed:** 12 files, 365 insertions(+), 303 deletions(-)
+
+**Changes:**
+- Updated `AppBarLayout` to support centered titles, optional profile icon, configurable right-side icons, and back-button mode
+- Applied app bar titles to all main root screens (Home, Transactions, Reports, Settings, Help, Profile) and removed duplicate in-screen titles
+- Adjusted root spacing and backgrounds so content starts consistently below the app bar and the main surface uses a slightly darker tint
+- Replaced the Transactions root “+ Add” button with an app bar icon and wired it to pass context (section, bank account, card) into AddTransaction
+- Added account/card text tabs for Bank and Card sections, with simplified labels and consistent truncation format (e.g. `..1234`)
+- Tightened copy and capitalization across pipeline cards (e.g. “Needs verification”, “Reporting ready”) and truncated “View all” titles where appropriate
+
+**Files Modified:**
+- `components/AppBarLayout.tsx`
+- `screens/HomeScreen.tsx`
+- `screens/TransactionsScaffoldScreen.tsx`
+- `screens/ReportsScreen.tsx`
+- `screens/SettingsScreen.tsx`
+- `screens/HelpScreen.tsx`
+- `screens/ProfileScreen.tsx`
+
+---
+
+#### 2. Redesign Add Transaction screen and context handling
+**Commit:** `Refine app bar layout, titles, and root screen spacing` (local)  
+**Files Changed:** multiple (AddTransaction, Transactions scaffold, navigation)
+
+**Changes:**
+- Converted AddTransaction into a context-aware screen that shows a prominent, centered breadcrumb (e.g. Purchases, Bank transactions ..1234)
+- Replaced the 2x2 grid with a vertical stack of icon buttons (Choose photo, Take photo, Choose from files, Manual input, Send via email)
+- Introduced a bank-specific “Connect to Bank” button with dashed separator, only visible when launched from the Bank pipeline
+- Hid “Manual input” when adding from Bank / Card pipelines and kept it for other contexts (e.g. Purchases, Internal)
+- Centered the action group vertically under the app bar while preserving the wireframe grayscale aesthetic
+
+**Files Modified (selected):**
+- `screens/AddTransactionScreen.tsx`
+- `screens/TransactionsScaffoldScreen.tsx`
+
+---
+
+#### 3. Improve Transactions scaffold and drag-to-match flows
+**Commit:** `Refine app bar, navigation, and report/add-transaction UX` (local)  
+**Files Changed:** multiple scaffold/drag-drop files
+
+**Changes:**
+- Standardized section labels (e.g. “Purchases” instead of “Purchase Receipts”) across Transactions and drag-to-match screens
+- Ensured all pipeline “Needs …” cards show only three most recent items, with View all showing full lists (including Reporting ready for all sources)
+- Added bank/card context and section tracking through ScaffoldViewAll and DragDropReconciliationScreen
+- Updated DragDropReconciliationScreen header and back button to better match new secondary-screen patterns
+
+**Files Modified (selected):**
+- `screens/TransactionsScaffoldScreen.tsx`
+- `screens/ScaffoldViewAllScreen.tsx`
+- `screens/DragDropReconciliationScreen.tsx`
+- `docs/progress/daily-summaries.md`
+- `docs/api/TRANSACTIONS2_RECONCILIATION_API.md`
+
+---
+
+#### 4. Expand Reports dashboard cards and align report detail screens
+**Commit:** `Refine app bar, navigation, and report/add-transaction UX` / `Tighten report detail headers and drag-to-match back button`  
+**Files Changed:** 5 files, various insertions/deletions
+
+**Changes:**
+- Expanded Reports root cards to show mini summaries:  
+  - Profit & Loss: Income, Expenses, Net profit rows  
+  - Balance Sheet: Assets, Liabilities, Equity, and Liabilities + equity (with equity including retained earnings)  
+  - Cashflow: high-level net cash flow headline
+- Removed duplicate inline metrics in card headers and increased emphasis on the mini statements
+- Updated all report detail screens (Profit & Loss, Balance sheet, Cashflow) to use the shared AppBarLayout with title “Reports” and consistent back navigation
+- Added “Reports” as the conceptual breadcrumb in the app bar and kept the detailed report names inside each screen body
+- Centered “Loading …” states within report detail screens and kept the wireframe look
+
+**Files Modified:**
+- `screens/ReportsScreen.tsx`
+- `screens/ProfitLossReportScreen.tsx`
+- `screens/BalanceSheetReportScreen.tsx`
+- `screens/CashflowReportScreen.tsx`
+
+---
+
+### Statistics
+- **Total Commits:** 3 (local work across several UI/UX refinements)
+- **Total Files Changed:** ~20 files
+- **Total Lines Added:** ~400 insertions
+- **Total Lines Removed:** ~320 deletions
+- **Net Change:** ~+80 lines
+
+### Key Features Added
+1. Unified app bar design with clear breadcrumbing and back behavior for root screens, report detail screens, and follow-on flows.
+2. Context-aware Add Transaction screen with a vertically stacked, icon-based action layout and bank-specific “Connect to Bank” entry point.
+3. Richer Reports dashboard cards with mini P&L and Balance Sheet summaries, aligned with detailed report calculations (including retained earnings).
+4. Cleaner Transactions scaffold and drag-to-match flows with consistent labels, limits, and centered loading states.
+
+### Notes
+- Some commits referenced here are local (not yet pushed) and may be squashed/reworded before sharing with others.
+- Future follow-up includes a date-range picker for reports and full bank-connection flow behind the “Connect to Bank” entry point.
+
+---
+
 ## 2025-11-25
 
 ### Summary
