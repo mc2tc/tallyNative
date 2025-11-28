@@ -1,5 +1,61 @@
 # Daily Development Summaries
 
+## 2025-11-27
+
+### Summary
+Added account ledger functionality to Profit & Loss and Balance Sheet reports, enabling users to drill down into individual account transactions. Implemented clickable account rows that navigate to a detailed ledger view showing all transactions affecting the selected account, with running balances that sum to the account value shown in the reports.
+
+### Commits
+
+#### 1. feat: Add account ledger view for P&L and Balance Sheet reports
+**Commit:** `6703850`  
+**Files Changed:** 4 files, 611 insertions(+), 12 deletions(-)
+
+**Changes:**
+- Created AccountLedgerScreen to display detailed transaction ledger for any selected account
+- Made account rows clickable in ProfitLossReportScreen for income and expense accounts
+- Made account rows clickable in BalanceSheetReportScreen for asset, liability, and equity accounts
+- Added AccountLedger route to ReportsNavigator with support for all account types (income, expense, asset, liability, equity)
+- Implemented transaction filtering using Reporting Ready logic (matches balance sheet calculations)
+- For asset accounts (e.g. bank accounts), check both accounting.debits and accounting.credits (debits increase assets, credits decrease assets)
+- For expense accounts, check accounting.debits (debits increase expenses)
+- For income, liability, and equity accounts, check accounting.credits (credits increase these accounts)
+- Fixed column alignment between table headers (Amount, Balance) and ledger entry values
+- Running balance calculation correctly sums to match the period total shown in reports
+- Updated empty state message to reference "reporting ready" instead of "tallied"
+
+**Files Modified:**
+- `screens/AccountLedgerScreen.tsx` - New ledger screen with transaction filtering and display logic
+- `screens/ProfitLossReportScreen.tsx` - Added click handlers for account rows
+- `screens/BalanceSheetReportScreen.tsx` - Added click handlers for account rows
+- `navigation/ReportsNavigator.tsx` - Added AccountLedger route with type support
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 4 files
+- **Total Lines Added:** 611 insertions
+- **Total Lines Removed:** 12 deletions
+- **Net Change:** +599 lines
+
+### Key Features Added
+1. Account ledger view showing all transactions affecting a selected account
+2. Clickable account rows in P&L and Balance Sheet reports
+3. Support for all account types (income, expense, asset, liability, equity)
+4. Correct transaction filtering using Reporting Ready logic
+5. Proper handling of asset accounts with both debits and credits
+6. Running balance calculation that matches report totals
+7. Aligned column headers and values in ledger table
+
+### Notes
+- Ledger uses same transaction filtering as balance sheet reports (Reporting Ready = verified AND (reconciled OR has accounting entries))
+- Asset accounts like bank accounts can appear in both debits (deposits) and credits (withdrawals), requiring special handling
+- Running balances are calculated correctly with proper debit/credit handling per account type
+- Column alignment fixed by matching header and entry row layout structures exactly
+
+---
+
 ## 2025-11-26
 
 ### Summary
