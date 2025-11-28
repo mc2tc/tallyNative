@@ -4,8 +4,8 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
-import type { BankStatementRule } from '../lib/api/bankStatementRules'
-import { bankStatementRulesApi } from '../lib/api/bankStatementRules'
+import type { CreditCardRule } from '../lib/api/creditCardRules'
+import { creditCardRulesApi } from '../lib/api/creditCardRules'
 import { useAuth } from '../lib/auth/AuthContext'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
@@ -13,11 +13,11 @@ const GRAYSCALE_SECONDARY = '#6d6d6d'
 const CARD_BACKGROUND = '#ffffff'
 const SURFACE_BACKGROUND = '#f6f6f6'
 
-type BankStatementRuleDetailRouteProp = RouteProp<TransactionsStackParamList, 'BankStatementRuleDetail'>
+type CreditCardRuleDetailRouteProp = RouteProp<TransactionsStackParamList, 'CreditCardRuleDetail'>
 
-export default function BankStatementRuleDetailScreen() {
+export default function CreditCardRuleDetailScreen() {
   const navigation = useNavigation()
-  const route = useRoute<BankStatementRuleDetailRouteProp>()
+  const route = useRoute<CreditCardRuleDetailRouteProp>()
   const { rule } = route.params
   const { businessUser, memberships } = useAuth()
 
@@ -56,18 +56,18 @@ export default function BankStatementRuleDetailScreen() {
     if (!businessId) {
       Alert.alert(
         'No business selected',
-        'Sign in or select a business to update bank rules.',
+        'Sign in or select a business to update credit card rules.',
       )
       return
     }
 
     try {
       setSaving(true)
-      await bankStatementRulesApi.updateRule(rule.id, { businessId, keywords })
+      await creditCardRulesApi.updateRule(rule.id, { businessId, keywords })
       Alert.alert('Saved', 'Rule triggers have been updated.')
       navigation.goBack()
     } catch (error) {
-      console.error('Failed to update bank statement rule:', error)
+      console.error('Failed to update credit card rule:', error)
       Alert.alert(
         'Save failed',
         'We could not save your changes. Please try again in a moment.',
@@ -148,7 +148,7 @@ export default function BankStatementRuleDetailScreen() {
               </View>
               <View style={styles.accountingRow}>
                 <Text style={styles.accountingLabel}>Credits</Text>
-                <Text style={styles.accountingValue}>Bank</Text>
+                <Text style={styles.accountingValue}>Credit Card</Text>
               </View>
             </View>
           </View>
@@ -298,23 +298,6 @@ const styles = StyleSheet.create({
   },
   accountingValue: {
     fontSize: 14,
-    color: GRAYSCALE_PRIMARY,
-    fontWeight: '600',
-  },
-  badgeContainer: {
-    marginTop: 8,
-  },
-  badge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: SURFACE_BACKGROUND,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#dcdcdc',
-  },
-  badgeText: {
-    fontSize: 12,
     color: GRAYSCALE_PRIMARY,
     fontWeight: '600',
   },

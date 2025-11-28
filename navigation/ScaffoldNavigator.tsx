@@ -4,6 +4,7 @@ import TransactionsScaffoldScreen from '../screens/TransactionsScaffoldScreen'
 import ScaffoldViewAllScreen from '../screens/ScaffoldViewAllScreen'
 import TransactionDetailScreen from '../screens/TransactionDetailScreen'
 import AddTransactionScreen from '../screens/AddTransactionScreen'
+import ManualPurchaseEntryScreen from '../screens/ManualPurchaseEntryScreen'
 import type { Transaction } from '../lib/api/transactions2'
 
 export type ScaffoldStackParamList = {
@@ -21,6 +22,7 @@ export type ScaffoldStackParamList = {
   }
   TransactionDetail: { transaction: Transaction }
   AddTransaction: { context?: { pipelineSection?: string; bankAccountId?: string; cardId?: string } }
+  ManualPurchaseEntry: undefined
 }
 
 const Stack = createStackNavigator<ScaffoldStackParamList>()
@@ -32,6 +34,7 @@ export function ScaffoldNavigator() {
       <Stack.Screen name="ScaffoldViewAll" component={ScaffoldViewAllScreen} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
       <Stack.Screen name="AddTransaction" component={AddTransactionScreen} />
+      <Stack.Screen name="ManualPurchaseEntry" component={ManualPurchaseEntryScreen} />
     </Stack.Navigator>
   )
 }

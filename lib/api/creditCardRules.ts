@@ -1,6 +1,6 @@
 import { api } from './client'
 
-export type BankStatementRule = {
+export type CreditCardRule = {
   id: string
   title: string
   description: string
@@ -10,12 +10,12 @@ export type BankStatementRule = {
   isBusinessExpense: boolean
 }
 
-export type BankStatementRulesResponse = {
-  rules: BankStatementRule[]
+export type CreditCardRulesResponse = {
+  rules: CreditCardRule[]
   count: number
 }
 
-export type CreateBankStatementRulePayload = {
+export type CreateCreditCardRulePayload = {
   businessId: string
   title: string
   description?: string
@@ -24,41 +24,41 @@ export type CreateBankStatementRulePayload = {
   isBusinessExpense?: boolean
 }
 
-export const bankStatementRulesApi = {
-  getRules: async (businessId: string): Promise<BankStatementRulesResponse> => {
+export const creditCardRulesApi = {
+  getRules: async (businessId: string): Promise<CreditCardRulesResponse> => {
     const params = new URLSearchParams({ businessId })
-    return api.get<BankStatementRulesResponse>(
-      `/authenticated/transactions2/api/bank-statements/rules?${params.toString()}`,
+    return api.get<CreditCardRulesResponse>(
+      `/authenticated/transactions2/api/credit-card-statements/rules?${params.toString()}`,
     )
   },
 
   updateRule: async (
     id: string,
     payload: { businessId: string; keywords: string[] },
-  ): Promise<{ rule: BankStatementRule }> => {
+  ): Promise<{ rule: CreditCardRule }> => {
     const params = new URLSearchParams({
       businessId: payload.businessId,
     })
-    return api.patch<{ rule: BankStatementRule }>(
-      `/authenticated/transactions2/api/bank-statements/rules/${id}?${params.toString()}`,
+    return api.patch<{ rule: CreditCardRule }>(
+      `/authenticated/transactions2/api/credit-card-statements/rules/${id}?${params.toString()}`,
       { keywords: payload.keywords },
     )
   },
 
   createRule: async (
-    payload: CreateBankStatementRulePayload,
-  ): Promise<{ rule: BankStatementRule }> => {
+    payload: CreateCreditCardRulePayload,
+  ): Promise<{ rule: CreditCardRule }> => {
     const params = new URLSearchParams({
       businessId: payload.businessId,
     })
-    return api.post<{ rule: BankStatementRule }>(
-      `/authenticated/transactions2/api/bank-statements/rules?${params.toString()}`,
+    return api.post<{ rule: CreditCardRule }>(
+      `/authenticated/transactions2/api/credit-card-statements/rules?${params.toString()}`,
       {
         title: payload.title,
         description: payload.description,
         keywords: payload.keywords,
         debitAccount: payload.debitAccount,
-        category: 'bank_fee',
+        category: 'credit_card_fee',
         isBusinessExpense: true,
       },
     )

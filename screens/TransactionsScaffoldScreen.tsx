@@ -11,6 +11,7 @@ import { formatAmount } from '../lib/utils/currency'
 import { bankAccountsApi, type BankAccount } from '../lib/api/bankAccounts'
 import { creditCardsApi, type CreditCard } from '../lib/api/creditCards'
 import { bankStatementRulesApi, type BankStatementRule } from '../lib/api/bankStatementRules'
+import { creditCardRulesApi, type CreditCardRule } from '../lib/api/creditCardRules'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -21,7 +22,7 @@ type PipelineColumn = {
   title: string
   actions: string[]
   transactions?: Array<TransactionStub & { originalTransaction?: Transaction }>
-  rules?: BankStatementRule[]
+  rules?: BankStatementRule[] | CreditCardRule[]
 }
 
 type TransactionStub = {
@@ -54,10 +55,12 @@ function parseTransaction(tx: Transaction): TransactionStub | null {
       }
     | undefined
 
-  // Check if this is a receipt (purchase_invoice_ocr or similar)
+  // Check if this is a receipt (purchase_invoice_ocr, manual_entry, or similar)
   const isReceipt =
     capture?.source === 'purchase_invoice_ocr' ||
+    capture?.source === 'manual_entry' ||
     capture?.mechanism === 'ocr' ||
+    capture?.mechanism === 'manual' ||
     capture?.source?.includes('purchase')
 
   if (!isReceipt) {
@@ -81,10 +84,14 @@ function parseTransaction(tx: Transaction): TransactionStub | null {
   // For verified transactions, check if it's reporting ready
   // A transaction is reporting ready if:
   // - verification status is verified/exception AND
-  // - reconciliation status is matched/reconciled/exception
+  // - (reconciliation status is matched/reconciled/exception OR it's cash-only)
+  // Note: Backend sets reconciliation.status = 'reconciled' for cash when verified via confirmVerification
+  // But manual entry transactions may be created as verified, so we check cash-only as fallback
+  const isCashOnly = isCashOnlyTransaction(tx)
   const isReportingReady =
     verification?.status !== 'unverified' &&
-    (reconciliation?.status === 'matched' ||
+    (isCashOnly ||
+      reconciliation?.status === 'matched' ||
       reconciliation?.status === 'reconciled' ||
       reconciliation?.status === 'exception')
 
@@ -106,7 +113,9 @@ function isReceiptTransaction(tx: Transaction): boolean {
   const capture = metadata.capture
   return (
     capture?.source === 'purchase_invoice_ocr' ||
+    capture?.source === 'manual_entry' ||
     capture?.mechanism === 'ocr' ||
+    capture?.mechanism === 'manual' ||
     capture?.source?.includes('purchase') ||
     false
   )
@@ -140,6 +149,47 @@ function hasAccountingEntries(tx: Transaction): boolean {
   )
 }
 
+// Helper function to check if transaction is cash-only (doesn't need reconciliation)
+function isCashOnlyTransaction(tx: Transaction): boolean {
+  try {
+    const accounting = tx.accounting as
+      | {
+          paymentBreakdown?: Array<{ type?: string; paymentType?: string }>
+        }
+      | undefined
+    const details = tx.details as
+      | {
+          paymentType?: Array<{ type?: string }>
+          paymentBreakdown?: Array<{ type?: string }>
+        }
+      | undefined
+    
+    // Check accounting.paymentBreakdown first (most common location)
+    const paymentBreakdown = accounting?.paymentBreakdown
+    // Check details.paymentType (for manual entry)
+    const detailsPaymentType = details?.paymentType
+    // Check details.paymentBreakdown (alternative location)
+    const detailsPaymentBreakdown = details?.paymentBreakdown
+    
+    const allPaymentMethods =
+      paymentBreakdown || detailsPaymentType || detailsPaymentBreakdown || []
+    
+    if (allPaymentMethods.length === 0) {
+      return false
+    }
+    
+    // Check if all payment methods are cash
+    // Handle both { type: 'cash' } and { paymentType: 'cash' } formats
+    return allPaymentMethods.every((pm) => {
+      const paymentType = pm.type || (pm as { paymentType?: string }).paymentType
+      return paymentType === 'cash'
+    })
+  } catch (error) {
+    console.error('Error checking if transaction is cash-only:', error)
+    return false
+  }
+}
+
 
 type SectionKey = 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting'
 
@@ -171,6 +221,7 @@ export default function TransactionsScaffoldScreen() {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
+  const [creditCardRules, setCreditCardRules] = useState<CreditCardRule[]>([])
   const [reconciling, setReconciling] = useState(false)
 
   // Choose businessId (same logic as TransactionsScreen)
@@ -218,9 +269,14 @@ export default function TransactionsScaffoldScreen() {
   // Fetch bank statement rules
   useFocusEffect(
     useCallback(() => {
+      if (!businessId) {
+        setBankStatementRules([])
+        return
+      }
+
       const fetchRules = async () => {
         try {
-          const response = await bankStatementRulesApi.getRules()
+          const response = await bankStatementRulesApi.getRules(businessId)
           setBankStatementRules(response.rules)
         } catch (error) {
           console.error('Failed to fetch bank statement rules:', error)
@@ -229,7 +285,29 @@ export default function TransactionsScaffoldScreen() {
       }
 
       fetchRules()
-    }, []),
+    }, [businessId]),
+  )
+
+  // Fetch credit card rules
+  useFocusEffect(
+    useCallback(() => {
+      if (!businessId) {
+        setCreditCardRules([])
+        return
+      }
+
+      const fetchRules = async () => {
+        try {
+          const response = await creditCardRulesApi.getRules(businessId)
+          setCreditCardRules(response.rules)
+        } catch (error) {
+          console.error('Failed to fetch credit card rules:', error)
+          setCreditCardRules([])
+        }
+      }
+
+      fetchRules()
+    }, [businessId]),
   )
 
   // Fetch transactions
@@ -313,8 +391,9 @@ export default function TransactionsScaffoldScreen() {
     .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
 
   // Reporting ready transactions (all sources: receipts, bank, credit cards)
-  // Condition: Transaction is reconciled OR (verified with accounting entries)
+  // Condition: Transaction is reconciled OR (verified with accounting entries) OR (verified cash-only)
   // Reconciled transactions go directly to Reporting Ready
+  // Cash-only transactions don't need reconciliation
   // This feeds the Reports screen and the "Reporting ready" section
   const reportingReadySourceTransactions = allTransactions.filter((tx) => {
     const metadata = tx.metadata as {
@@ -337,10 +416,15 @@ export default function TransactionsScaffoldScreen() {
     // Check if has accounting entries
     const hasEntries = hasAccountingEntries(tx)
 
-    // Reporting ready if: reconciled OR (verified AND has accounting entries)
+    // Check if cash-only (fallback for manual entry transactions that may not have reconciliation.status set)
+    const isCashOnly = isCashOnlyTransaction(tx)
+
+    // Reporting ready if: reconciled OR (verified AND has accounting entries) OR (verified cash-only)
     // Reconciled transactions go directly to Reporting Ready
+    // Note: Backend sets reconciliation.status = 'reconciled' for cash when verified via confirmVerification
+    // But manual entry transactions may be created as verified, so we check cash-only as fallback
     // Includes all sources: purchase receipts, bank statements, and credit card statements
-    return isReconciled || (isVerified && hasEntries)
+    return isReconciled || (isVerified && hasEntries) || (isVerified && isCashOnly)
   })
 
   // Sort reporting ready transactions by most recent first
@@ -382,17 +466,24 @@ export default function TransactionsScaffoldScreen() {
         // Check if this is a receipt
         const isReceipt =
           capture?.source === 'purchase_invoice_ocr' ||
+          capture?.source === 'manual_entry' ||
           capture?.mechanism === 'ocr' ||
+          capture?.mechanism === 'manual' ||
           capture?.source?.includes('purchase')
 
         if (!isReceipt) {
           return false
         }
 
+        // Check if cash-only (fallback for manual entry)
+        const isCashOnly = isCashOnlyTransaction(tx)
+
         // Check if it's reporting ready
+        // Note: Backend sets reconciliation.status = 'reconciled' for cash when verified via confirmVerification
         const isReportingReady =
           verification?.status !== 'unverified' &&
-          (reconciliation?.status === 'matched' ||
+          (isCashOnly ||
+            reconciliation?.status === 'matched' ||
             reconciliation?.status === 'reconciled' ||
             reconciliation?.status === 'exception')
 
@@ -899,12 +990,21 @@ export default function TransactionsScaffoldScreen() {
               const reconciliation = metadata.reconciliation
               const isReceipt =
                 capture?.source === 'purchase_invoice_ocr' ||
+                capture?.source === 'manual_entry' ||
                 capture?.mechanism === 'ocr' ||
+                capture?.mechanism === 'manual' ||
                 capture?.source?.includes('purchase')
               if (!isReceipt) return false
+              
+              // Check if cash-only (fallback for manual entry)
+              const isCashOnly = isCashOnlyTransaction(tx)
+              
+              // Check if it's reporting ready
+              // Note: Backend sets reconciliation.status = 'reconciled' for cash when verified via confirmVerification
               const isReportingReady =
                 verification?.status !== 'unverified' &&
-                (reconciliation?.status === 'matched' ||
+                (isCashOnly ||
+                  reconciliation?.status === 'matched' ||
                   reconciliation?.status === 'reconciled' ||
                   reconciliation?.status === 'exception')
               return isReportingReady
@@ -1057,6 +1157,7 @@ export default function TransactionsScaffoldScreen() {
     {
       title: 'Auto card rules',
       actions: ['View all', '+ Add rules'],
+      rules: creditCardRules,
     },
   ]
 
@@ -1398,7 +1499,11 @@ function PipelineRow({
             </TouchableOpacity>
           </View>
           {column.rules ? (
-            <RulesList rules={column.rules} navigation={navigation} />
+            <RulesList 
+              rules={column.rules} 
+              navigation={navigation} 
+              ruleType={pipelineSection === 'cards' ? 'creditCard' : 'bank'}
+            />
           ) : (
             <CardList items={column.transactions || []} navigation={navigation} />
           )}
@@ -1409,7 +1514,18 @@ function PipelineRow({
                   key={action}
                   activeOpacity={0.7}
                   style={styles.linkButton}
-                  onPress={() => action === 'View all' && handleViewAll(column)}
+                  onPress={() => {
+                    if (action === 'View all') {
+                      handleViewAll(column)
+                    }
+                    if (action === '+ Add rules') {
+                      if (pipelineSection === 'bank') {
+                        navigation.navigate('BankStatementRuleCreate')
+                      } else if (pipelineSection === 'cards') {
+                        navigation.navigate('CreditCardRuleCreate')
+                      }
+                    }
+                  }}
                 >
                   <Text style={styles.linkButtonText}>{action}</Text>
                 </TouchableOpacity>
@@ -1477,12 +1593,18 @@ function CardList({
 function RulesList({
   rules,
   navigation,
+  ruleType,
 }: {
-  rules: BankStatementRule[]
+  rules: BankStatementRule[] | CreditCardRule[]
   navigation: StackNavigationProp<TransactionsStackParamList>
+  ruleType?: 'bank' | 'creditCard'
 }) {
-  const handleRulePress = (rule: BankStatementRule) => {
-    navigation.navigate('BankStatementRuleDetail', { rule })
+  const handleRulePress = (rule: BankStatementRule | CreditCardRule) => {
+    if (ruleType === 'creditCard') {
+      navigation.navigate('CreditCardRuleDetail', { rule: rule as CreditCardRule })
+    } else {
+      navigation.navigate('BankStatementRuleDetail', { rule: rule as BankStatementRule })
+    }
   }
 
   return (

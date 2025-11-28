@@ -1,5 +1,55 @@
 # Daily Development Summaries
 
+## 2025-11-28
+
+### Summary
+Expanded the Transactions experience with full manual purchase entry, credit card rules management, and tighter pipeline logic for cash-only and manual-entry purchases. Added backend-facing documentation for credit card rules and purchases manual entry, and refined navigation so Transactions and Reports tabs reset cleanly to their home stacks when reselected.
+
+### Commits
+
+#### 1. Add manual purchase entry, credit card rules, and pipeline refinements (local)
+**Commit:** `local`  
+**Files Changed:** ~18 files, ~1500 insertions(+), ~450 deletions(-)
+
+**Changes:**
+- Added full manual purchase entry flow that lets users build itemised purchases (items, charges, payment methods, currency) and submit them as Transactions2 `purchase` transactions with `inputMethod: 'manual'`
+- Updated `AddTransactionScreen` to route purchase contexts to the manual entry screen while keeping other transaction types as “coming soon”
+- Extended bank statement rules API client to be business-aware and support creating/updating rules, and added parallel credit card rules API with corresponding create/detail screens
+- Enhanced `TransactionsScaffoldScreen` to treat manual-entry purchases as receipts, support cash-only “reporting ready” detection across receipts/bank/cards, and surface both bank and credit card auto rules with “+ Add rules” actions
+- Improved `MainTabNavigator` so re-pressing Transactions or Reports tabs resets their nested stacks back to `TransactionsHome` / `ReportsHome` for a cleaner navigation baseline
+- Added backend implementation notes for credit card rules and a detailed purchases manual-entry API spec, plus a focused Purchases architecture doc describing initial-load and filtering behavior
+
+**Files Modified (selected):**
+- `lib/api/bankStatementRules.ts` / `lib/api/creditCardRules.ts` - Business-scoped rule APIs with get/update/create helpers
+- `navigation/MainTabNavigator.tsx` / `navigation/TransactionsNavigator.tsx` / `navigation/ScaffoldNavigator.tsx` - Tab reset behavior and new routes for manual entry and rule create/detail screens
+- `screens/AddTransactionScreen.tsx` / `screens/ManualPurchaseEntryScreen.tsx` - Context-aware manual entry integration and end-to-end purchase creation form
+- `screens/TransactionsScaffoldScreen.tsx` - Manual-entry receipt support, cash-only reporting-ready logic, bank/card auto rules columns with navigation to rule management
+- `screens/BankStatementRuleDetailScreen.tsx` / `screens/BankStatementRuleCreateScreen.tsx` / `screens/CreditCardRuleDetailScreen.tsx` / `screens/CreditCardRuleCreateScreen.tsx` - Editable keyword triggers and new rule creation flows for bank and credit card statements
+- `docs/api/CREDIT_CARD_RULES_API_BACKEND_NOTE.md` / `docs/api/TRANSACTIONS2_PURCHASES_MANUAL_ENTRY.md` - Backend guides for credit card rules endpoints and manual purchases API payload/behavior
+- `docs/architecture/transactions-purchases-flow.md` (and related FE docs) - Focused architecture write-up for Purchases on initial load, replacing the older generic React Native transaction architecture document
+
+---
+
+### Statistics
+- **Total Commits:** 1 (local multi-file change)
+- **Total Files Changed:** ~18 files
+- **Total Lines Added:** ~1500 insertions
+- **Total Lines Removed:** ~450 deletions
+- **Net Change:** ~+1050 lines
+
+### Key Features Added
+1. Manual Purchase Entry screen with item, charge, payment-method, and currency handling wired into Transactions2 `purchase` creation.
+2. Bank and credit card auto-rules management (list, edit keywords, create new rules) integrated into the Transactions scaffold for both bank and card pipelines.
+3. Improved reporting-ready and receipt detection that includes manual-entry purchases and cash-only transactions across receipts, bank, and cards.
+4. Tab reselect behavior that reliably returns Transactions and Reports to their home screens for easier navigation.
+
+### Notes
+- Manual purchase entry uses the documented Transactions2 purchases manual-entry payload and relies on backend support for currency conversion and accounting entry generation.
+- Cash-only detection is implemented defensively across `accounting.paymentBreakdown` and `details.paymentType/paymentBreakdown` to support both OCR and manual-entry payloads.
+- The legacy `react-native-transaction-architecture.md` doc was removed in favor of narrower, flow-focused architecture documents for Purchases and related screens.
+
+---
+
 ## 2025-11-27
 
 ### Summary

@@ -266,20 +266,18 @@ export default function AddTransactionScreen() {
   const handleManualInput = useCallback(async () => {
     const transactionType = getTransactionType()
     
-    // TODO: Navigate to manual input screen or show manual input form
-    // When implemented, use:
-    // await transactions2Api.createTransaction({
-    //   businessId,
-    //   transactionType,
-    //   inputMethod: 'manual',
-    //   transactionData: { ... }
-    // })
+    // For purchase transactions, navigate to manual entry screen
+    if (transactionType === 'purchase') {
+      navigation.navigate('ManualPurchaseEntry')
+      return
+    }
     
+    // For other transaction types, show coming soon message
     Alert.alert(
       'Manual Input',
       `Manual input for ${transactionType} transactions is coming soon.`
     )
-  }, [getTransactionType, businessId])
+  }, [getTransactionType, navigation])
 
   const handleEmailIngestion = useCallback(() => {
     Alert.alert(
