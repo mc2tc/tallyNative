@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
 import {
   chartAccountsApi,
   type ChartAccount,
@@ -16,9 +17,10 @@ import {
 import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
 import { AppBarLayout } from '../components/AppBarLayout'
+import type { ReportsStackParamList } from '../navigation/ReportsNavigator'
 
 export default function BalanceSheetReportScreen() {
-  const navigation = useNavigation()
+  const navigation = useNavigation<StackNavigationProp<ReportsStackParamList>>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
   const [data, setData] = useState<ChartAccountsResponse | null>(null)
@@ -153,6 +155,18 @@ export default function BalanceSheetReportScreen() {
     assetAccounts.length > 0 || liabilityAccounts.length > 0 || equityAccounts.length > 0
   const hasValues = data?.period !== undefined
 
+  const handleAccountPress = useCallback(
+    (account: ChartAccount, accountType: 'asset' | 'liability' | 'equity') => {
+      navigation.navigate('AccountLedger', {
+        accountName: account.name,
+        accountType,
+        accountValue: account.value,
+        period: data?.period,
+      })
+    },
+    [navigation, data?.period],
+  )
+
   return (
     <AppBarLayout title="Reports" onBackPress={handleGoBack}>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
@@ -197,14 +211,19 @@ export default function BalanceSheetReportScreen() {
                 <View style={styles.section}>
                   <Text style={styles.sectionLabel}>Assets</Text>
                   {assetAccounts.map((account) => (
-                    <View key={`${account.id ?? account.name}-asset`} style={styles.accountRow}>
+                    <TouchableOpacity
+                      key={`${account.id ?? account.name}-asset`}
+                      style={styles.accountRow}
+                      onPress={() => handleAccountPress(account, 'asset')}
+                      activeOpacity={0.7}
+                    >
                       <Text style={styles.accountName}>{account.name}</Text>
                       <Text style={styles.accountValue}>
                         {hasValues && account.value !== undefined
                           ? formatAmount(account.value, 'GBP', true)
                           : '—'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   {assetAccounts.length === 0 && (
                     <Text style={styles.emptyHint}>No asset accounts yet</Text>
@@ -224,9 +243,11 @@ export default function BalanceSheetReportScreen() {
                 <View style={styles.section}>
                   <Text style={styles.sectionLabel}>Liabilities</Text>
                   {liabilityAccounts.map((account) => (
-                    <View
+                    <TouchableOpacity
                       key={`${account.id ?? account.name}-liability`}
                       style={styles.accountRow}
+                      onPress={() => handleAccountPress(account, 'liability')}
+                      activeOpacity={0.7}
                     >
                       <Text style={styles.accountName}>{account.name}</Text>
                       <Text style={styles.accountValue}>
@@ -234,7 +255,7 @@ export default function BalanceSheetReportScreen() {
                           ? formatAmount(account.value, 'GBP', true)
                           : '—'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   {liabilityAccounts.length === 0 && (
                     <Text style={styles.emptyHint}>No liability accounts yet</Text>
@@ -254,14 +275,19 @@ export default function BalanceSheetReportScreen() {
                 <View style={styles.section}>
                   <Text style={styles.sectionLabel}>Equity</Text>
                   {equityAccounts.map((account) => (
-                    <View key={`${account.id ?? account.name}-equity`} style={styles.accountRow}>
+                    <TouchableOpacity
+                      key={`${account.id ?? account.name}-equity`}
+                      style={styles.accountRow}
+                      onPress={() => handleAccountPress(account, 'equity')}
+                      activeOpacity={0.7}
+                    >
                       <Text style={styles.accountName}>{account.name}</Text>
                       <Text style={styles.accountValue}>
                         {hasValues && account.value !== undefined
                           ? formatAmount(account.value, 'GBP', true)
                           : '—'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   {hasValues && netProfit !== undefined && (
                     <View style={styles.accountRow}>

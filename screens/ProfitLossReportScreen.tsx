@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
 import {
   chartAccountsApi,
   type ChartAccount,
@@ -16,9 +17,10 @@ import {
 import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
 import { AppBarLayout } from '../components/AppBarLayout'
+import type { ReportsStackParamList } from '../navigation/ReportsNavigator'
 
 export default function ProfitLossReportScreen() {
-  const navigation = useNavigation()
+  const navigation = useNavigation<StackNavigationProp<ReportsStackParamList>>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
   const [data, setData] = useState<ChartAccountsResponse | null>(null)
@@ -118,6 +120,18 @@ export default function ProfitLossReportScreen() {
   const hasAccounts = incomeAccounts.length > 0 || expenseAccounts.length > 0
   const hasValues = data?.period !== undefined
 
+  const handleAccountPress = useCallback(
+    (account: ChartAccount, accountType: 'income' | 'expense') => {
+      navigation.navigate('AccountLedger', {
+        accountName: account.name,
+        accountType,
+        accountValue: account.value,
+        period: data?.period,
+      })
+    },
+    [navigation, data?.period],
+  )
+
   return (
     <AppBarLayout title="Reports" onBackPress={handleGoBack}>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
@@ -159,14 +173,19 @@ export default function ProfitLossReportScreen() {
                 <View style={styles.section}>
                   <Text style={styles.sectionLabel}>Income</Text>
                   {incomeAccounts.map((account) => (
-                    <View key={`${account.id ?? account.name}-income`} style={styles.accountRow}>
+                    <TouchableOpacity
+                      key={`${account.id ?? account.name}-income`}
+                      style={styles.accountRow}
+                      onPress={() => handleAccountPress(account, 'income')}
+                      activeOpacity={0.7}
+                    >
                       <Text style={styles.accountName}>{account.name}</Text>
                       <Text style={styles.accountValue}>
                         {hasValues && account.value !== undefined
                           ? formatAmount(account.value, 'GBP', true)
                           : '—'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   {incomeAccounts.length === 0 && (
                     <Text style={styles.emptyHint}>No income accounts yet</Text>
@@ -186,14 +205,19 @@ export default function ProfitLossReportScreen() {
                 <View style={styles.section}>
                   <Text style={styles.sectionLabel}>Expenses</Text>
                   {expenseAccounts.map((account) => (
-                    <View key={`${account.id ?? account.name}-expense`} style={styles.accountRow}>
+                    <TouchableOpacity
+                      key={`${account.id ?? account.name}-expense`}
+                      style={styles.accountRow}
+                      onPress={() => handleAccountPress(account, 'expense')}
+                      activeOpacity={0.7}
+                    >
                       <Text style={styles.accountName}>{account.name}</Text>
                       <Text style={styles.accountValue}>
                         {hasValues && account.value !== undefined
                           ? formatAmount(account.value, 'GBP', true)
                           : '—'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   {expenseAccounts.length === 0 && (
                     <Text style={styles.emptyHint}>No expense accounts yet</Text>
