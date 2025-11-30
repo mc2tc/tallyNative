@@ -1,5 +1,49 @@
 # Daily Development Summaries
 
+## 2025-11-30
+
+### Summary
+Enhanced the Transactions scaffold navigation with improved UX: added automatic centering of selected navigation items, introduced two new sections (Payroll and Financial Services), and conditionally hide the Add Transaction button when viewing the Reporting Ready section.
+
+### Commits
+
+#### 1. feat: Add navigation centering, new sections, and conditional Add button
+**Commit:** `86714a5`  
+**Files Changed:** 1 file, 207 insertions(+), 14 deletions(-)
+
+**Changes:**
+- Implemented automatic centering of selected navigation item in horizontal scroll view with smooth animation
+- Added button position tracking using refs and onLayout handlers to measure button positions and container width
+- Added two new navigation sections: "Payroll" and "Financial Services" (placed before Reporting Ready)
+- Updated SectionKey type to include 'payroll' and 'financialServices'
+- Conditionally hide Add Transaction button when Reporting Ready section is active (no need to add transactions to already reporting-ready items)
+- Added useEffect to center button when activeSection changes, with small delay to ensure layout completion
+
+**Files Modified:**
+- `screens/TransactionsScaffoldScreen.tsx` - Navigation centering logic, new sections, conditional Add button
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 1 file
+- **Total Lines Added:** 207 insertions
+- **Total Lines Removed:** 14 deletions
+- **Net Change:** +193 lines
+
+### Key Features Added
+1. Automatic centering of selected navigation item in horizontal scroll view
+2. Payroll section added to Transactions navigation
+3. Financial Services section added to Transactions navigation
+4. Conditional Add Transaction button (hidden for Reporting Ready section)
+
+### Notes
+- Navigation centering uses refs to track button positions and smoothly scrolls to center the selected item
+- New sections (Payroll, Financial Services) currently return null in renderSection (placeholder for future implementation)
+- Add Transaction button logic ensures users can't add transactions when viewing already-completed Reporting Ready items
+
+---
+
 ## 2025-11-28
 
 ### Summary
