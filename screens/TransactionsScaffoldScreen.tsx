@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState, useRef } from 'react'
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { useFocusEffect, useNavigation } from '@react-navigation/native'
+import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
@@ -32,6 +32,7 @@ type TransactionStub = {
   subtitle?: string
   verificationItems?: Array<{ label: string; confirmed?: boolean }>
   isReportingReady?: boolean
+  isCredit?: boolean // True if this is a credit to the account (money coming in)
 }
 
 // Helper function to parse transaction into TransactionStub
@@ -149,6 +150,61 @@ function hasAccountingEntries(tx: Transaction): boolean {
   )
 }
 
+// Helper function to check if transaction is a credit to the account (money coming in)
+// Based on TRANSACTIONS2_IDENTIFYING_POSITIVE_ACCOUNT_TRANSACTIONS.md
+// This checks if the transaction has a positive impact on account balances
+function isCreditToAccount(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    statementContext?: { isCredit?: boolean }
+    capture?: { source?: string }
+    classification?: { kind?: string }
+  }
+  const accounting = tx.accounting as {
+    debits?: Array<{ chartName?: string; isAsset?: boolean; isLiability?: boolean }>
+    credits?: Array<{ isIncome?: boolean }>
+  } | undefined
+
+  // 1. Check for bank statement credits (money coming in)
+  if (isBankTransaction(tx)) {
+    // Check statement context first (most reliable)
+    if (metadata.statementContext?.isCredit === true) {
+      return true
+    }
+    // Check accounting entries - Bank account is debited (asset increases)
+    if (accounting?.debits?.some(debit => 
+      debit.chartName === 'Bank' && debit.isAsset === true
+    )) {
+      return true
+    }
+  }
+
+  // 2. Check for credit card statement credits (payments - reduces liability)
+  if (isCreditCardTransaction(tx)) {
+    // Check statement context first (most reliable)
+    if (metadata.statementContext?.isCredit === true) {
+      return true
+    }
+    // Check accounting entries - Card account is debited (liability decreases)
+    if (accounting?.debits?.some(debit => 
+      debit.chartName === 'Card' && debit.isLiability === true
+    )) {
+      return true
+    }
+  }
+
+  // 3. Check for income transactions (sales invoices)
+  if (metadata.classification?.kind === 'sale') {
+    return true
+  }
+
+  // 4. Check for income credits in accounting entries
+  if (accounting?.credits?.some(credit => credit.isIncome === true)) {
+    return true
+  }
+
+  return false
+}
+
 // Helper function to check if transaction is cash-only (doesn't need reconciliation)
 function isCashOnlyTransaction(tx: Transaction): boolean {
   try {
@@ -191,7 +247,7 @@ function isCashOnlyTransaction(tx: Transaction): boolean {
 }
 
 
-type SectionKey = 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting'
+type SectionKey = 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | 'payroll' | 'financialServices'
 
 // Base section nav - will be filtered based on available accounts/cards
 const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
@@ -200,6 +256,8 @@ const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
   { key: 'cards', label: 'Credit Card Transactions' },
   { key: 'sales', label: 'Sales Pipeline' },
   { key: 'internal', label: 'Internal Transactions' },
+  { key: 'payroll', label: 'Payroll' },
+  { key: 'financialServices', label: 'Financial Services' },
   { key: 'reporting', label: 'Reporting Ready' },
 ]
 
@@ -211,9 +269,74 @@ function getLastFour(number: string): string {
 
 export default function TransactionsScaffoldScreen() {
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const route = useRoute<RouteProp<TransactionsStackParamList, 'TransactionsHome'>>()
   const { businessUser, memberships } = useAuth()
-  const [activeSection, setActiveSection] = useState<SectionKey>('receipts')
+  const [activeSection, setActiveSection] = useState<SectionKey>(route.params?.activeSection || 'receipts')
   const [navAtEnd, setNavAtEnd] = useState(false)
+  const sectionNavScrollRef = useRef<ScrollView>(null)
+  const buttonPositionsRef = useRef<Map<string, { x: number; width: number }>>(new Map())
+  const containerWidthRef = useRef<number>(0)
+
+  // Function to center the selected navigation button
+  const centerSelectedButton = (sectionKey: string) => {
+    const buttonInfo = buttonPositionsRef.current.get(sectionKey)
+    const containerWidth = containerWidthRef.current
+    
+    if (buttonInfo && containerWidth > 0 && sectionNavScrollRef.current) {
+      const buttonCenterX = buttonInfo.x + buttonInfo.width / 2
+      const scrollX = buttonCenterX - containerWidth / 2
+      
+      sectionNavScrollRef.current.scrollTo({
+        x: Math.max(0, scrollX),
+        animated: true,
+      })
+    }
+  }
+
+  // Update active section when route params change (e.g., when navigating back from upload)
+  useEffect(() => {
+    if (route.params?.activeSection) {
+      console.log('TransactionsScaffoldScreen: Setting activeSection from route params:', route.params.activeSection)
+      setActiveSection(route.params.activeSection)
+    }
+  }, [route.params?.activeSection])
+
+  // Center the button when activeSection changes
+  useEffect(() => {
+    // Small delay to ensure layout has completed
+    const timer = setTimeout(() => {
+      centerSelectedButton(activeSection)
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [activeSection])
+
+  // Also update when screen comes into focus (in case params were set before screen mounted)
+  // Also refresh transactions when screen comes into focus (e.g., after upload)
+  useFocusEffect(
+    useCallback(() => {
+      if (route.params?.activeSection) {
+        console.log('TransactionsScaffoldScreen: Setting activeSection from route params (focus):', route.params.activeSection)
+        setActiveSection(route.params.activeSection)
+      }
+      
+      // Refresh transactions when screen comes into focus (to show newly created transactions)
+      if (businessId) {
+        const refreshTransactions = async () => {
+          try {
+            const response = await transactions2Api.getTransactions(businessId, {
+              page: 1,
+              limit: 200,
+            })
+            console.log('TransactionsScaffoldScreen: Refreshed transactions on focus, count:', response.transactions.length)
+            setAllTransactions(response.transactions)
+          } catch (error) {
+            console.error('TransactionsScaffoldScreen: Failed to refresh transactions on focus:', error)
+          }
+        }
+        refreshTransactions()
+      }
+    }, [route.params?.activeSection, businessId])
+  )
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
   const [selectedBankAccount, setSelectedBankAccount] = useState<string | null>(null)
@@ -445,6 +568,7 @@ export default function TransactionsScaffoldScreen() {
         title: tx.summary.thirdPartyName,
         amount,
         isReportingReady: true,
+        isCredit: isCreditToAccount(tx),
         originalTransaction: tx,
       }
     })
@@ -507,12 +631,14 @@ export default function TransactionsScaffoldScreen() {
           title: tx.summary.thirdPartyName,
           amount,
           isReportingReady: true,
+          isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
         }
       })
 
   // Bank transactions that need verification (no reconciliation required)
   // Condition: Has accounting entries (rule matched) but is not yet verified
+  // IMPORTANT: Exclude auto-reconciled transactions (they go to Reporting Ready)
   const bankNeedsVerificationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
@@ -523,6 +649,7 @@ export default function TransactionsScaffoldScreen() {
 
         const metadata = tx.metadata as {
           verification?: { status?: string }
+          reconciliation?: { status?: string }
         }
         
         // Check if it has accounting entries (rule matched)
@@ -533,8 +660,15 @@ export default function TransactionsScaffoldScreen() {
         const isVerified = verificationStatus === 'verified'
         const isException = verificationStatus === 'exception'
 
-        // Needs verification if: has accounting entries AND not verified/exception
-        return hasEntries && !isVerified && !isException
+        // Check if already reconciled (auto-reconciled transactions skip verification)
+        const reconciliationStatus = metadata.reconciliation?.status
+        const isReconciled =
+          reconciliationStatus === 'matched' ||
+          reconciliationStatus === 'reconciled' ||
+          reconciliationStatus === 'exception'
+
+        // Needs verification if: has accounting entries AND not verified/exception AND not reconciled
+        return hasEntries && !isVerified && !isException && !isReconciled
       })
       .sort((a, b) => {
         // Sort by updatedAt (most recent first), fallback to createdAt
@@ -553,6 +687,7 @@ export default function TransactionsScaffoldScreen() {
           id: tx.id,
           title: tx.summary.thirdPartyName,
           amount,
+          isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
         }
       })
@@ -607,6 +742,7 @@ export default function TransactionsScaffoldScreen() {
           id: tx.id,
           title: tx.summary.thirdPartyName,
           amount,
+          isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
         }
       })
@@ -663,12 +799,14 @@ export default function TransactionsScaffoldScreen() {
           title: tx.summary.thirdPartyName,
           amount,
           isReportingReady: true,
+          isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
         }
       })
 
   // Card transactions that need verification (no reconciliation required)
   // Condition: Has accounting entries (rule matched) but is not yet verified
+  // IMPORTANT: Exclude auto-reconciled transactions (they go to Reporting Ready)
   const cardNeedsVerificationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
@@ -679,6 +817,7 @@ export default function TransactionsScaffoldScreen() {
 
         const metadata = tx.metadata as {
           verification?: { status?: string }
+          reconciliation?: { status?: string }
         }
         
         // Check if it has accounting entries (rule matched)
@@ -689,8 +828,15 @@ export default function TransactionsScaffoldScreen() {
         const isVerified = verificationStatus === 'verified'
         const isException = verificationStatus === 'exception'
 
-        // Needs verification if: has accounting entries AND not verified/exception
-        return hasEntries && !isVerified && !isException
+        // Check if already reconciled (auto-reconciled transactions skip verification)
+        const reconciliationStatus = metadata.reconciliation?.status
+        const isReconciled =
+          reconciliationStatus === 'matched' ||
+          reconciliationStatus === 'reconciled' ||
+          reconciliationStatus === 'exception'
+
+        // Needs verification if: has accounting entries AND not verified/exception AND not reconciled
+        return hasEntries && !isVerified && !isException && !isReconciled
       })
       .sort((a, b) => {
         // Sort by updatedAt (most recent first), fallback to createdAt
@@ -709,6 +855,7 @@ export default function TransactionsScaffoldScreen() {
           id: tx.id,
           title: tx.summary.thirdPartyName,
           amount,
+          isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
         }
       })
@@ -760,6 +907,7 @@ export default function TransactionsScaffoldScreen() {
           id: tx.id,
           title: tx.summary.thirdPartyName,
           amount,
+          isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
         }
       })
@@ -816,6 +964,7 @@ export default function TransactionsScaffoldScreen() {
           title: tx.summary.thirdPartyName,
           amount,
           isReportingReady: true,
+          isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
         }
       })
@@ -869,12 +1018,21 @@ export default function TransactionsScaffoldScreen() {
           return allTransactions
             .filter((tx) => {
               if (!isBankTransaction(tx)) return false
-              const metadata = tx.metadata as { verification?: { status?: string } }
+              const metadata = tx.metadata as { 
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
               const hasEntries = hasAccountingEntries(tx)
               const verificationStatus = metadata.verification?.status
               const isVerified = verificationStatus === 'verified'
               const isException = verificationStatus === 'exception'
-              return hasEntries && !isVerified && !isException
+              const reconciliationStatus = metadata.reconciliation?.status
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception'
+              // Exclude auto-reconciled transactions (they go to Reporting Ready)
+              return hasEntries && !isVerified && !isException && !isReconciled
             })
             .sort((a, b) => {
               const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -887,18 +1045,28 @@ export default function TransactionsScaffoldScreen() {
               id: tx.id,
               title: tx.summary.thirdPartyName,
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
             }))
         } else {
           return allTransactions
             .filter((tx) => {
               if (!isCreditCardTransaction(tx)) return false
-              const metadata = tx.metadata as { verification?: { status?: string } }
+              const metadata = tx.metadata as { 
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
               const hasEntries = hasAccountingEntries(tx)
               const verificationStatus = metadata.verification?.status
               const isVerified = verificationStatus === 'verified'
               const isException = verificationStatus === 'exception'
-              return hasEntries && !isVerified && !isException
+              const reconciliationStatus = metadata.reconciliation?.status
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception'
+              // Exclude auto-reconciled transactions (they go to Reporting Ready)
+              return hasEntries && !isVerified && !isException && !isReconciled
             })
             .sort((a, b) => {
               const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -911,6 +1079,7 @@ export default function TransactionsScaffoldScreen() {
               id: tx.id,
               title: tx.summary.thirdPartyName,
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
             }))
         }
@@ -943,6 +1112,7 @@ export default function TransactionsScaffoldScreen() {
               id: tx.id,
               title: tx.summary.thirdPartyName,
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
             }))
         } else {
@@ -972,6 +1142,7 @@ export default function TransactionsScaffoldScreen() {
               id: tx.id,
               title: tx.summary.thirdPartyName,
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
             }))
         }
@@ -1276,8 +1447,8 @@ export default function TransactionsScaffoldScreen() {
   return (
     <AppBarLayout
       title="Transactions"
-      rightIconName="add-circle-sharp"
-      onRightIconPress={handleAddClick}
+      rightIconName={activeSection !== 'reporting' ? 'add-circle-sharp' : undefined}
+      onRightIconPress={activeSection !== 'reporting' ? handleAddClick : undefined}
     >
       <ScrollView
         style={styles.container}
@@ -1288,9 +1459,13 @@ export default function TransactionsScaffoldScreen() {
       >
         <View style={styles.sectionNavWrapper}>
           <ScrollView
+            ref={sectionNavScrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.sectionNav}
+            onLayout={(event) => {
+              containerWidthRef.current = event.nativeEvent.layout.width
+            }}
             onScroll={(event) => {
               const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent
               const reachedEnd = contentOffset.x + layoutMeasurement.width >= contentSize.width - 4
@@ -1305,6 +1480,10 @@ export default function TransactionsScaffoldScreen() {
                   key={section.key}
                   style={[styles.navButton, isActive && styles.navButtonActive]}
                   activeOpacity={0.8}
+                  onLayout={(event) => {
+                    const { x, width } = event.nativeEvent.layout
+                    buttonPositionsRef.current.set(section.key, { x, width })
+                  }}
                   onPress={() => setActiveSection(section.key)}
                 >
                   <Text style={[styles.navButtonText, isActive && styles.navButtonTextActive]}>
@@ -1418,6 +1597,10 @@ function renderSection(
       return null // TODO: Add Sales Pipeline screen
     case 'internal':
       return null // TODO: Add Internal Transactions screen
+    case 'payroll':
+      return null // TODO: Add Payroll screen
+    case 'financialServices':
+      return null // TODO: Add Financial Services screen
     case 'reporting':
       return (
         <View style={styles.reportingCard}>
@@ -1582,6 +1765,9 @@ function CardList({
         >
           <View style={styles.cardTextGroup}>
             <Text style={styles.cardTitle}>{item.title}</Text>
+            {item.isCredit && (
+              <Text style={styles.creditLabel}>credit</Text>
+            )}
           </View>
           <Text style={styles.cardAmount}>{item.amount}</Text>
         </TouchableOpacity>
@@ -1839,6 +2025,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: GRAYSCALE_PRIMARY,
+  },
+  creditLabel: {
+    marginTop: 2,
+    fontSize: 10,
+    color: GRAYSCALE_SECONDARY,
+    textTransform: 'uppercase',
+    fontWeight: '500',
   },
   cardSubtitle: {
     marginTop: 2,
