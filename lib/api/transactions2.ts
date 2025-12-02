@@ -212,4 +212,42 @@ export const reconciliationApi = {
 	},
 }
 
+export type HealthScoreResponse = {
+	success: boolean
+	data: {
+		healthScore: {
+			overall: number
+			kpiScores: {
+				revenueGrowth: number
+				netProfit: number
+				cashFlow: number
+				currentRatio: number
+			}
+			rawMetrics: {
+				revenueGrowthPercentage: number
+				netProfitMargin: number
+				cashCoverageRatio: number
+				currentRatio: number
+			}
+			timeframe: 'week' | 'month' | 'quarter'
+			usesRollingAverage: boolean
+		}
+	}
+}
+
+export const healthScoreApi = {
+	getHealthScore: async (
+		businessId: string,
+		timeframe: 'week' | 'month' | 'quarter' = 'week',
+	): Promise<HealthScoreResponse> => {
+		const params = new URLSearchParams({
+			businessId,
+			timeframe,
+		})
+		return api.get<HealthScoreResponse>(
+			`/api/transactions2/kpis?${params.toString()}`,
+		)
+	},
+}
+
 

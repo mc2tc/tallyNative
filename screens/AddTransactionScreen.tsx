@@ -57,6 +57,8 @@ export default function AddTransactionScreen() {
 
   const [busy, setBusy] = useState(false)
   const [lastImageUri, setLastImageUri] = useState<string | null>(null)
+  const [isPdfFile, setIsPdfFile] = useState(false)
+  const [pdfFileName, setPdfFileName] = useState<string | null>(null)
   const [resultSummary, setResultSummary] = useState<string | null>(null)
 
   const canCapture = useMemo(() => Boolean(businessId) && !busy, [businessId, busy])
@@ -94,7 +96,16 @@ export default function AddTransactionScreen() {
         throw new Error('No file URI returned from picker')
       }
       
-      setLastImageUri(asset.uri)
+      // Track file type for preview
+      setIsPdfFile(isPdf)
+      if (isPdf) {
+        setPdfFileName(asset.fileName || 'document.pdf')
+        setLastImageUri(null) // Don't try to render PDF as image
+      } else {
+        setLastImageUri(asset.uri)
+        setPdfFileName(null)
+      }
+      
       const downloadUrl = await uploadReceiptAndGetUrl({
         businessId,
         localUri: asset.uri,
@@ -114,7 +125,7 @@ export default function AddTransactionScreen() {
         })
         
         if (response.success) {
-          setResultSummary(`Created transaction ${response.transactionId}`)
+          setResultSummary(`Transaction created successfully`)
         } else if (response.logged) {
           // Transaction type/input method not yet implemented (501)
           Alert.alert(
@@ -141,6 +152,9 @@ export default function AddTransactionScreen() {
       }
       setBusy(true)
       setResultSummary(null)
+      setIsPdfFile(false)
+      setPdfFileName(null)
+      setLastImageUri(null)
       const result = await launchImageLibrary({
         mediaType: 'photo',
         selectionLimit: 1,
@@ -166,6 +180,9 @@ export default function AddTransactionScreen() {
       }
       setBusy(true)
       setResultSummary(null)
+      setIsPdfFile(false)
+      setPdfFileName(null)
+      setLastImageUri(null)
       const result = await launchCamera({
         mediaType: 'photo',
         saveToPhotos: true,
@@ -191,11 +208,15 @@ export default function AddTransactionScreen() {
       }
       setBusy(true)
       setResultSummary(null)
+      setIsPdfFile(false)
+      setPdfFileName(null)
+      setLastImageUri(null)
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
         copyToCacheDirectory: true,
       })
       if (result.canceled || !result.assets || result.assets.length === 0) {
+        setBusy(false)
         return
       }
       const file = result.assets[0]
@@ -217,10 +238,35 @@ export default function AddTransactionScreen() {
       
       if (!isImage && !isPdf) {
         Alert.alert('Invalid file type', 'Please select an image or PDF file.')
+        setBusy(false)
         return
       }
       
+      // For PDFs, navigate to processing screen
+      if (isPdf) {
+        const transactionType = getTransactionType()
+        ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
+          pdfFileName: file.name || 'document.pdf',
+          pdfUri: file.uri,
+          isPdf: true,
+          success: false,
+          pipelineSection: context?.pipelineSection,
+          businessId,
+          localUri: file.uri,
+          fileNameHint: file.name ?? undefined,
+          contentType: file.mimeType ?? undefined,
+          transactionType,
+          inputMethod: 'ocr_pdf' as const,
+        })
+        setBusy(false)
+        return
+      }
+      
+      // For images, continue with existing flow
+      setIsPdfFile(false)
+      setPdfFileName(null)
       setLastImageUri(file.uri)
+      
       const downloadUrl = await uploadReceiptAndGetUrl({
         businessId,
         localUri: file.uri,
@@ -229,7 +275,7 @@ export default function AddTransactionScreen() {
       })
       
       const transactionType = getTransactionType()
-      const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
+      const inputMethod = 'ocr_image'
       
       try {
         const response = await transactions2Api.createTransaction({
@@ -240,7 +286,7 @@ export default function AddTransactionScreen() {
         })
         
         if (response.success) {
-          setResultSummary(`Created transaction ${response.transactionId}`)
+          setResultSummary(`Transaction created successfully`)
         } else if (response.logged) {
           // Transaction type/input method not yet implemented (501)
           Alert.alert(
@@ -268,7 +314,7 @@ export default function AddTransactionScreen() {
     
     // For purchase transactions, navigate to manual entry screen
     if (transactionType === 'purchase') {
-      navigation.navigate('ManualPurchaseEntry')
+      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('ManualPurchaseEntry')
       return
     }
     
@@ -407,9 +453,28 @@ export default function AddTransactionScreen() {
               </View>
             </TouchableOpacity>
           </View>
-          {busy ? <ActivityIndicator style={styles.progress} /> : null}
-          {lastImageUri ? <Image source={{ uri: lastImageUri }} style={styles.preview} /> : null}
-          {resultSummary ? <Text style={styles.result}>{resultSummary}</Text> : null}
+          {busy ? (
+            <View style={styles.processingContainer}>
+              <ActivityIndicator style={styles.progress} />
+              <Text style={styles.processingText}>Processing...</Text>
+            </View>
+          ) : null}
+          {lastImageUri ? (
+            <Image source={{ uri: lastImageUri }} style={styles.preview} />
+          ) : isPdfFile && pdfFileName ? (
+            <View style={styles.pdfPreview}>
+              <MaterialIcons name="picture-as-pdf" size={48} color="#4a4a4a" />
+              <Text style={styles.pdfFileName} numberOfLines={2}>
+                {pdfFileName}
+              </Text>
+            </View>
+          ) : null}
+          {resultSummary ? (
+            <View style={styles.resultContainer}>
+              <MaterialIcons name="check-circle" size={20} color="#4a9eff" />
+              <Text style={styles.result}>{resultSummary}</Text>
+            </View>
+          ) : null}
           {!businessId ? (
             <Text style={styles.warning}>Sign in and ensure a business context is available.</Text>
           ) : null}
@@ -518,19 +583,64 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 14,
   },
-  progress: {
+  processingContainer: {
     marginTop: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progress: {
+    marginBottom: 8,
+  },
+  processingText: {
+    fontSize: 14,
+    color: '#6d6d6d',
+    marginTop: 8,
   },
   preview: {
     width: 220,
     height: 220,
     marginTop: 16,
     borderRadius: 8,
+    alignSelf: 'center',
+    backgroundColor: '#ffffff',
+  },
+  pdfPreview: {
+    width: 220,
+    height: 220,
+    marginTop: 16,
+    borderRadius: 8,
+    alignSelf: 'center',
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  pdfFileName: {
+    marginTop: 12,
+    fontSize: 12,
+    color: '#4a4a4a',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  resultContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#e8f4fd',
+    borderRadius: 8,
+    alignSelf: 'center',
+    maxWidth: '90%',
   },
   result: {
-    marginTop: 12,
     fontSize: 14,
-    color: '#000000',
+    color: '#4a4a4a',
+    marginLeft: 8,
+    fontWeight: '500',
   },
   warning: {
     marginTop: 12,

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -343,6 +343,7 @@ export default function TransactionsScaffoldScreen() {
   const [selectedCard, setSelectedCard] = useState<string | null>(null)
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingAccountsAndCards, setLoadingAccountsAndCards] = useState(true)
   const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
   const [creditCardRules, setCreditCardRules] = useState<CreditCardRule[]>([])
   const [reconciling, setReconciling] = useState(false)
@@ -360,10 +361,14 @@ export default function TransactionsScaffoldScreen() {
   // Fetch bank accounts and credit cards
   useFocusEffect(
     useCallback(() => {
-      if (!businessId) return
+      if (!businessId) {
+        setLoadingAccountsAndCards(false)
+        return
+      }
 
       const fetchAccountsAndCards = async () => {
         try {
+          setLoadingAccountsAndCards(true)
           const [accounts, cards] = await Promise.all([
             bankAccountsApi.getBankAccounts(businessId),
             creditCardsApi.getCreditCards(businessId),
@@ -382,6 +387,8 @@ export default function TransactionsScaffoldScreen() {
           console.error('Failed to fetch accounts/cards:', error)
           setBankAccounts([])
           setCreditCards([])
+        } finally {
+          setLoadingAccountsAndCards(false)
         }
       }
 
@@ -1450,14 +1457,19 @@ export default function TransactionsScaffoldScreen() {
       rightIconName={activeSection !== 'reporting' ? 'add-circle-sharp' : undefined}
       onRightIconPress={activeSection !== 'reporting' ? handleAddClick : undefined}
     >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        <View style={styles.sectionNavWrapper}>
+      {loadingAccountsAndCards ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
+          <View style={styles.sectionNavWrapper}>
           <ScrollView
             ref={sectionNavScrollRef}
             horizontal
@@ -1562,6 +1574,7 @@ export default function TransactionsScaffoldScreen() {
           getFullTransactions,
         )}
       </ScrollView>
+      )}
     </AppBarLayout>
   )
 }
@@ -1885,6 +1898,11 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   contentContainer: {
     paddingHorizontal: 20,

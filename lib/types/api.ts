@@ -127,3 +127,32 @@ export type BusinessContextResponse = {
   }
 }
 
+export type VatStatus = {
+  isVatRegistered: boolean
+  vatRegistrationNumber: string | null
+  vatRegistrationDate: string | null
+  vatScheme: 'standard' | 'flat_rate' | 'cash_accounting' | 'retail' | 'margin' | 'other' | null
+  vatFlatRateBusinessType: string | null
+  vatFlatRateLimitedCostBusiness: boolean | null
+  vatFlatRatePercentageOverride: number | null
+  taxableTurnoverLast12Months: number | null
+  expectedTurnoverNext12Months: number | null
+  wantsThresholdMonitoring: boolean | null
+  supplyTypes: string[]
+  partiallyExempt: boolean | null
+  sellsToEU: boolean | null
+  sellsOutsideEU: boolean | null
+  importsGoods: boolean | null
+  exportsGoods: boolean | null
+  keepReceiptsForVatReclaim: boolean | null
+  plansToRegister: boolean | null
+  registrationTimeline: 'next_3_months' | 'next_6_months' | 'next_12_months' | 'unknown' | null
+  updatedAt: number
+}
+
+export type VatStatusResponse = {
+  success: boolean
+  vatStatus: VatStatus | null
+  message?: string
+}
+

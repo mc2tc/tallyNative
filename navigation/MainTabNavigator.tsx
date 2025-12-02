@@ -4,7 +4,7 @@ import React from 'react'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { MaterialIcons } from '@expo/vector-icons'
 import { CommonActions } from '@react-navigation/native'
-import HomeScreen from '../screens/HomeScreen'
+import { HomeNavigator } from './HomeNavigator'
 import { TransactionsNavigator } from './TransactionsNavigator'
 import { ReportsNavigator } from './ReportsNavigator'
 import SettingsScreen from '../screens/SettingsScreen'
@@ -50,7 +50,49 @@ export function MainTabNavigator() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home' }} />
+      <Tab.Screen
+        name="Home"
+        component={HomeNavigator}
+        options={{ title: 'Home' }}
+        listeners={({ navigation, route }) => ({
+          tabPress: (e) => {
+            const state = navigation.getState()
+            const routeName = route.name
+            const tabRoute = state.routes.find((r) => r.name === routeName)
+            
+            if (tabRoute?.state) {
+              // Tab is already focused - reset the nested stack to initial route
+              const nestedState = tabRoute.state
+              const currentRoute = nestedState.routes[nestedState.index || 0]
+              
+              if (currentRoute?.name !== 'HomeMain') {
+                // Prevent default tab navigation and reset nested stack
+                e.preventDefault()
+                // Preserve all tabs but reset the nested stack of the Home tab
+                const tabIndex = state.routes.findIndex((r) => r.name === routeName)
+                const newRoutes = state.routes.map((r) => {
+                  if (r.name === 'Home') {
+                    return {
+                      ...r,
+                      state: {
+                        routes: [{ name: 'HomeMain' }],
+                        index: 0,
+                      },
+                    }
+                  }
+                  return r
+                })
+                navigation.dispatch(
+                  CommonActions.reset({
+                    index: tabIndex >= 0 ? tabIndex : state.index,
+                    routes: newRoutes,
+                  })
+                )
+              }
+            }
+          },
+        })}
+      />
       <Tab.Screen
         name="Transactions"
         component={TransactionsNavigator}

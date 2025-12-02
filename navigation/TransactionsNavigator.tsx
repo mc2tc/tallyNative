@@ -10,6 +10,7 @@ import BankStatementRuleCreateScreen from '../screens/BankStatementRuleCreateScr
 import CreditCardRuleDetailScreen from '../screens/CreditCardRuleDetailScreen'
 import CreditCardRuleCreateScreen from '../screens/CreditCardRuleCreateScreen'
 import ManualPurchaseEntryScreen from '../screens/ManualPurchaseEntryScreen'
+import UploadProcessingScreen from '../screens/UploadProcessingScreen'
 import type { Transaction } from '../lib/api/transactions2'
 import type { BankStatementRule } from '../lib/api/bankStatementRules'
 import type { CreditCardRule } from '../lib/api/creditCardRules'
@@ -23,8 +24,21 @@ type TransactionStub = {
 }
 
 export type TransactionsStackParamList = {
-  TransactionsHome: undefined
+  TransactionsHome: { activeSection?: 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' }
   AddTransaction: { context?: { pipelineSection?: string; bankAccountId?: string; cardId?: string } }
+  UploadProcessing: { 
+    pdfFileName?: string
+    pdfUri?: string
+    isPdf: boolean
+    success: boolean
+    pipelineSection?: string
+    businessId?: string
+    localUri: string
+    fileNameHint?: string
+    contentType?: string
+    transactionType: 'purchase' | 'sale' | 'bank_transaction' | 'credit_card_transaction' | 'internal'
+    inputMethod: 'ocr_pdf' | 'ocr_image'
+  }
   ManualPurchaseEntry: undefined
   TransactionList: undefined
   TransactionDetail: { transaction: Transaction }
@@ -55,6 +69,7 @@ export function TransactionsNavigator() {
       <Stack.Screen name="BankStatementRuleCreate" component={BankStatementRuleCreateScreen} />
       <Stack.Screen name="CreditCardRuleDetail" component={CreditCardRuleDetailScreen} />
       <Stack.Screen name="CreditCardRuleCreate" component={CreditCardRuleCreateScreen} />
+      <Stack.Screen name="UploadProcessing" component={UploadProcessingScreen} />
     </Stack.Navigator>
   )
 }
