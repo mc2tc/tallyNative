@@ -318,6 +318,12 @@ export default function AddTransactionScreen() {
       return
     }
     
+    // For sale transactions, navigate to sales pipeline screen
+    if (transactionType === 'sale') {
+      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('SalesPipeline')
+      return
+    }
+    
     // For other transaction types, show coming soon message
     Alert.alert(
       'Manual Input',
@@ -335,6 +341,7 @@ export default function AddTransactionScreen() {
   const showManualInput =
     context?.pipelineSection !== 'bank' && context?.pipelineSection !== 'cards'
   const isBankContext = context?.pipelineSection === 'bank'
+  const isSalesContext = context?.pipelineSection === 'sales'
 
   return (
     <AppBarLayout
@@ -356,13 +363,17 @@ export default function AddTransactionScreen() {
                    ? `Credit card transactions ..${getLastFour(context.cardId)}`
                    : 'Credit card transactions'
                ) :
-               context.pipelineSection === 'sales' ? 'Sales pipeline' :
+               context.pipelineSection === 'sales' ? 'Sales' :
                context.pipelineSection === 'internal' ? 'Internal transactions' :
                context.pipelineSection === 'reporting' ? 'Reporting ready' :
                context.pipelineSection}
             </Text>
           )}
-          <Text style={styles.subtitle}>Choose how you'd like to add transactions.</Text>
+          <Text style={styles.subtitle}>
+            {isSalesContext 
+              ? "Choose how you'd like to add invoices."
+              : "Choose how you'd like to add transactions."}
+          </Text>
 
           <View style={styles.buttonGrid}>
             {isBankContext && (
@@ -385,6 +396,21 @@ export default function AddTransactionScreen() {
                 <View style={styles.buttonSeparator} />
               </>
             )}
+            {isSalesContext && (
+              <>
+                <TouchableOpacity
+                  onPress={handleManualInput}
+                  style={[styles.button, styles.bankConnectButton]}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.buttonContent}>
+                    <MaterialIcons name="timeline" size={18} color="#4a4a4a" />
+                    <Text style={styles.bankConnectText}>Sales Pipeline</Text>
+                  </View>
+                </TouchableOpacity>
+                <View style={styles.buttonSeparator} />
+              </>
+            )}
             <TouchableOpacity
               onPress={pickFromLibrary}
               disabled={!canCapture}
@@ -394,7 +420,7 @@ export default function AddTransactionScreen() {
               <View style={styles.buttonContent}>
                 <MaterialIcons name="photo-library" size={18} color="#ffffff" />
                 <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                  Choose photo
+                  {isSalesContext ? 'Choose invoice image' : 'Choose photo'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -407,7 +433,7 @@ export default function AddTransactionScreen() {
               <View style={styles.buttonContent}>
                 <MaterialIcons name="photo-camera" size={18} color="#ffffff" />
                 <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                  Take photo
+                  {isSalesContext ? 'Take photo of invoice' : 'Take photo'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -420,11 +446,11 @@ export default function AddTransactionScreen() {
               <View style={styles.buttonContent}>
                 <MaterialIcons name="folder-open" size={18} color="#ffffff" />
                 <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                  Choose from files
+                  {isSalesContext ? 'Choose invoice from files' : 'Choose from files'}
                 </Text>
               </View>
             </TouchableOpacity>
-            {showManualInput && (
+            {showManualInput && !isSalesContext && (
               <TouchableOpacity
                 onPress={handleManualInput}
                 disabled={!canCapture}
@@ -448,7 +474,7 @@ export default function AddTransactionScreen() {
               <View style={styles.buttonContent}>
                 <MaterialIcons name="email" size={18} color="#ffffff" />
                 <Text style={[styles.buttonText, !canCapture && styles.buttonTextDisabled]}>
-                  Send via email
+                  {isSalesContext ? 'Send invoice via email' : 'Send via email'}
                 </Text>
               </View>
             </TouchableOpacity>

@@ -79,5 +79,15 @@ export const chartAccountsApi = {
     const accounts = await chartAccountsApi.getAccounts(businessId, { type: 'debit' })
     return accounts.map((account) => account.name)
   },
+  getIncomeAccounts: async (businessId: string): Promise<string[]> => {
+    // Fetch all accounts and filter for Sales Revenue accounts by name
+    // The chart of accounts uses "Sales Revenue" instead of type "income"
+    const allAccounts = await chartAccountsApi.getAccounts(businessId)
+    const salesRevenueAccounts = allAccounts.filter((account) => {
+      const name = account.name?.toLowerCase() || ''
+      return name.includes('sales revenue') || name.includes('revenue') || account.type === 'income'
+    })
+    return salesRevenueAccounts.map((account) => account.name)
+  },
 }
 

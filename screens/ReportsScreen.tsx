@@ -115,7 +115,11 @@ export default function ReportsScreen() {
     )
 
     // Calculate net profit (income - expenses)
-    const incomeAccounts = accounts.filter((acc) => acc.type === 'income')
+    // Filter for Sales Revenue accounts by name (chart of accounts uses "Sales Revenue" instead of type "income")
+    const incomeAccounts = accounts.filter((acc) => {
+      const name = acc.name?.toLowerCase() || ''
+      return name.includes('sales revenue') || name.includes('revenue') || acc.type === 'income'
+    })
     const expenseAccounts = accounts.filter((acc) => acc.type === 'expense')
     const totalIncome = incomeAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
     const totalExpenses = expenseAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)

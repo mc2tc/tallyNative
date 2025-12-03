@@ -1,8 +1,7 @@
 // Home screen
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState } from 'react'
 import { StyleSheet, Text, View, ScrollView, ActivityIndicator } from 'react-native'
-import { useFocusEffect } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { MetricsCard } from '../components/MetricsCard'
 import { ChatbotCard } from '../components/ChatbotCard'
@@ -34,7 +33,7 @@ export default function HomeScreen() {
           setError('Failed to fetch health score')
         }
       } catch (err) {
-        console.error('Error fetching health score:', err)
+        console.error(`[HomeScreen] Failed to fetch health score for businessId=${businessId}:`, err)
         setError(err instanceof Error ? err.message : 'Failed to fetch health score')
       } finally {
         setLoading(false)
@@ -44,21 +43,6 @@ export default function HomeScreen() {
     fetchHealthScore()
   }, [businessId])
 
-  // Log transaction data when screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      if (healthScore) {
-        console.log('=== Home Screen Transaction Data ===')
-        console.log('Health Score Data:', JSON.stringify(healthScore, null, 2))
-        console.log('Overall Score:', healthScore.overall)
-        console.log('KPI Scores:', healthScore.kpiScores)
-        console.log('Raw Metrics:', healthScore.rawMetrics)
-        console.log('Timeframe:', healthScore.timeframe)
-        console.log('Uses Rolling Average:', healthScore.usesRollingAverage)
-        console.log('=====================================')
-      }
-    }, [healthScore])
-  )
 
   // Use real data if available, otherwise use defaults
   const overallScore = healthScore?.overall ?? 0

@@ -81,6 +81,24 @@ export type TransactionsListResponse = {
 	limit?: number
 }
 
+export type SalesManualEntryRequest = {
+	businessId: string
+	customerName: string
+	transactionDate: string // ISO date string
+	totalAmount: number
+	currency?: string
+	description?: string
+	reference?: string
+	incomeAccount?: string
+	vatAmount?: number // REQUIRED if invoice includes VAT - see TRANSACTIONS2_SALES_MANUAL_ENTRY_API.md
+}
+
+export type SalesManualEntryResponse = {
+	success: boolean
+	transactionId: string
+	transaction: Transaction
+}
+
 export const transactions2Api = {
 	processReceipt: async (
 		payload: ReceiptOcrRequest,
@@ -88,6 +106,41 @@ export const transactions2Api = {
 		return api.post<ReceiptOcrResponse>(
 			'/authenticated/transactions2/api/receipts',
 			payload,
+		)
+	},
+
+	// Create manual sale transaction (invoice)
+	createSaleTransaction: async (
+		payload: SalesManualEntryRequest,
+	): Promise<SalesManualEntryResponse> => {
+		const params = new URLSearchParams({
+			businessId: payload.businessId,
+		})
+		const requestBody: {
+			customerName: string
+			transactionDate: string
+			totalAmount: number
+			currency?: string
+			description?: string
+			reference?: string
+			incomeAccount?: string
+			vatAmount?: number
+		} = {
+			customerName: payload.customerName,
+			transactionDate: payload.transactionDate,
+			totalAmount: payload.totalAmount,
+			currency: payload.currency,
+			description: payload.description,
+			reference: payload.reference,
+			incomeAccount: payload.incomeAccount,
+		}
+		// Include vatAmount if provided (REQUIRED for invoices with VAT)
+		if (payload.vatAmount !== undefined && payload.vatAmount > 0) {
+			requestBody.vatAmount = payload.vatAmount
+		}
+		return api.post<SalesManualEntryResponse>(
+			`/authenticated/transactions2/api/sales/manual?${params.toString()}`,
+			requestBody,
 		)
 	},
 
@@ -244,9 +297,19 @@ export const healthScoreApi = {
 			businessId,
 			timeframe,
 		})
-		return api.get<HealthScoreResponse>(
-			`/api/transactions2/kpis?${params.toString()}`,
-		)
+		console.log(`[KPIs API] Request: businessId=${businessId}, timeframe=${timeframe}`)
+		try {
+			const response = await api.get<HealthScoreResponse>(
+				`/authenticated/transactions2/api/kpis?${params.toString()}`,
+			)
+			if (response.success && response.data?.healthScore) {
+				console.log(`[KPIs API] Success: overall=${response.data.healthScore.overall}, timeframe=${response.data.healthScore.timeframe}`)
+			}
+			return response
+		} catch (error) {
+			console.error(`[KPIs API] Error: businessId=${businessId}, timeframe=${timeframe}`, error)
+			throw error
+		}
 	},
 }
 

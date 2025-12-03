@@ -1,5 +1,87 @@
 # Daily Development Summaries
 
+## 2025-12-03
+
+### Summary
+Extended Sales workflows across Transactions and Reports, including a dedicated Create Invoice flow, Sales pipeline cards, and VAT-aware manual sales posting that wires correctly into reporting. Tightened transaction filtering to clearly separate Purchases vs Sales across pipelines and ensured manual sales hit the appropriate Sales Revenue and VAT accounts so that Profit & Loss reflects them correctly.
+
+### Commits
+
+#### 1. feat: Add Create Invoice flow and Sales pipeline
+**Commit:** `local`  
+**Files Changed:** multiple (new screens, navigation updates, filtering changes)
+
+**Changes:**
+- Added `CreateInvoiceScreen` for manual sales invoices with line items (description, quantity, unit cost, VAT toggle), customer/project context, and validation.
+- Wired Sales context from `TransactionsScaffoldScreen` and `LeadDetailScreen` into `AddTransactionScreen` so Sales gets a tailored Add flow, including a top-level “Sales Pipeline” entry point.
+- Introduced a dedicated `SalesPipelineScreen` showing the 5-stage sales pipeline (Lead, In Conversation, Proposal/Quote Sent, Closed WON, Closed LOST) with grayscale wireframe styling and project/company hierarchy.
+- Updated `TransactionsNavigator` to include new routes for Create Invoice, Sales Pipeline, and Sales lead detail views.
+
+**Files Modified (selected):**
+- `screens/CreateInvoiceScreen.tsx` - New manual invoice creation flow.
+- `screens/AddTransactionScreen.tsx` - Sales context-aware Add menu and Sales Pipeline entry.
+- `screens/TransactionsScaffoldScreen.tsx` - Sales section re-labeled and wired to new flows.
+- `screens/SalesPipelineScreen.tsx` / `screens/LeadDetailScreen.tsx` - Sales pipeline and lead detail UX.
+- `navigation/TransactionsNavigator.tsx` - New routes for Sales-related screens.
+
+---
+
+#### 2. feat: Add VAT-aware manual sales entry and Sales Revenue account selection
+**Commit:** `local`  
+**Files Changed:** multiple (API client, Create Invoice, reports, docs)
+
+**Changes:**
+- Extended `transactions2Api.createSaleTransaction` to accept `incomeAccount` and `vatAmount`, and updated the `SalesManualEntryRequest` type accordingly.
+- Updated `CreateInvoiceScreen` to fetch candidate Sales Revenue accounts via `chartAccountsApi.getIncomeAccounts`, require a selection, and send `incomeAccount` and (when applicable) `vatAmount` with the sales manual entry.
+- Implemented auto-verification after creating a manual sale by calling `transactions2Api.confirmVerification` when the new transaction is still `unverified`.
+- Updated `ReportsScreen` income calculations and `chartAccountsApi.getIncomeAccounts` to prioritize “Sales Revenue”/“Revenue” by name, falling back to `type === 'income'` as needed.
+- Added backend-facing docs describing expectations for sales manual entry, verification, and how Sales Revenue / VAT Output Tax should be populated.
+
+**Files Modified (selected):**
+- `lib/api/transactions2.ts` - Added `vatAmount` to sales manual entry and wired createSaleTransaction.
+- `lib/api/chartAccounts.ts` - `getIncomeAccounts` tuned to prefer Sales Revenue accounts by name.
+- `screens/CreateInvoiceScreen.tsx` - Sales Revenue picker, VAT total wiring, and auto-verification.
+- `screens/ReportsScreen.tsx` - Income account selection updated to include Sales Revenue by name.
+- `docs/api/TRANSACTIONS2_SALES_MANUAL_ENTRY_API.md` / `docs/api/TRANSACTIONS2_SALE_TRANSACTION_VERIFICATION.md` / `docs/api/SALE_TRANSACTION_REPORTING_ISSUE.md` - Backend guidance for sales manual entry and verification.
+
+---
+
+#### 3. feat: Refine Sales pipeline cards and Purchases/Sales separation
+**Commit:** `local`  
+**Files Changed:** multiple (Transactions scaffold)
+
+**Changes:**
+- Reworked the Sales section on `TransactionsScaffoldScreen` to show three invoice-centric cards: “Invoices submitted pending payment”, “Invoices paid, needs match”, and “Invoices paid and reconciled”.
+- Implemented `isSaleTransaction` helper and tightened filters so Sales only surfaces true sale invoices, excluding Purchases and non-sale traffic.
+- Updated “Invoices paid, needs match” to require a credit to `Accounts Receivable`, ensuring only paid-on-invoice items appear there.
+- Added explicit purchase-only filters to the Purchases “Verified, needs match” card so Sales invoices don’t leak into Purchases.
+- Removed the “Invoices paid in cash” Sales card and ensured each pipeline card still limits to three most recent items with a “View all” list behind it.
+
+**Files Modified (selected):**
+- `screens/TransactionsScaffoldScreen.tsx` - Sales and Purchases filtering refinements, Sales cards reshaped.
+- `screens/AddTransactionScreen.tsx` - Sales breadcrumb, Sales Pipeline button placement and styling.
+
+---
+
+### Statistics
+- **Total Commits:** 3 (local, Sales / invoices work)
+- **Total Files Changed:** ~10–15 files
+- **Total Lines Added:** ~600–800 insertions
+- **Total Lines Removed:** ~150–250 deletions
+- **Net Change:** ~+400–550 lines
+
+### Key Features Added
+1. Dedicated Create Invoice flow with Sales context, Sales Revenue account selection, and VAT-aware posting.
+2. Sales pipeline UX spanning both invoice status cards on the Sales tab and a 5-stage Sales Pipeline screen.
+3. Reporting integration so manual sales invoices flow correctly into Sales Revenue and VAT in Profit & Loss.
+4. Clearer separation between Purchases and Sales across pipelines, reducing cross-contamination of cards.
+
+### Notes
+- Backend needs to ensure that manual sales entries with `incomeAccount` and `vatAmount` result in correct accounting entries (Sales Revenue net of VAT, VAT Output Tax for VAT portion) so chart-accounts values match frontend expectations.
+- Additional follow-up may include date range controls for sales reporting and extended Sales health metrics.
+
+---
+
 ## 2025-11-30
 
 ### Summary

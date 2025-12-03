@@ -7,7 +7,7 @@ The Health Score API provides a single, normalized 0-100 score that represents o
 ## Endpoint
 
 ```
-GET /api/transactions2/kpis?businessId=<businessId>&timeframe=<week|month|quarter>
+GET /authenticated/transactions2/api/kpis?businessId=<businessId>&timeframe=<week|month|quarter>
 ```
 
 ## Authentication
@@ -92,7 +92,7 @@ The timeframe used for calculation: `week`, `month`, or `quarter`
 async function fetchHealthScore(businessId: string, timeframe: 'week' | 'month' | 'quarter' = 'week') {
   try {
     const response = await fetch(
-      `https://your-api.com/api/transactions2/kpis?businessId=${businessId}&timeframe=${timeframe}`,
+      `https://your-api.com/authenticated/transactions2/api/kpis?businessId=${businessId}&timeframe=${timeframe}`,
       {
         headers: {
           'Authorization': `Bearer ${authToken}`,

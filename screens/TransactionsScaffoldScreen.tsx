@@ -22,6 +22,7 @@ type PipelineColumn = {
   title: string
   actions: string[]
   transactions?: Array<TransactionStub & { originalTransaction?: Transaction }>
+  salesLeads?: SalesLead[]
   rules?: BankStatementRule[] | CreditCardRule[]
 }
 
@@ -33,6 +34,15 @@ type TransactionStub = {
   verificationItems?: Array<{ label: string; confirmed?: boolean }>
   isReportingReady?: boolean
   isCredit?: boolean // True if this is a credit to the account (money coming in)
+}
+
+type SalesLead = {
+  id: string
+  title: string // Company name
+  projectTitle?: string // Project name/title
+  subtitle?: string
+  amount?: string
+  stage: 'lead' | 'conversation' | 'proposal' | 'won' | 'lost'
 }
 
 // Helper function to parse transaction into TransactionStub
@@ -136,6 +146,39 @@ function isCreditCardTransaction(tx: Transaction): boolean {
     capture?: { source?: string }
   }
   return metadata.capture?.source === 'credit_card_statement_ocr'
+}
+
+// Helper function to check if transaction is a sale transaction (invoice)
+function isSaleTransaction(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    classification?: { kind?: string }
+    capture?: { source?: string; mechanism?: string }
+  }
+  const accounting = tx.accounting as
+    | {
+        credits?: Array<{ isIncome?: boolean }>
+      }
+    | undefined
+
+  // Check classification kind
+  if (metadata.classification?.kind === 'sale') {
+    return true
+  }
+
+  // Check for income credits in accounting entries
+  if (accounting?.credits?.some(credit => credit.isIncome === true)) {
+    return true
+  }
+
+  // Check capture source for sale-related sources
+  const captureSource = metadata.capture?.source?.toLowerCase() || ''
+  if (captureSource.includes('sale') || captureSource.includes('invoice') || captureSource === 'manual') {
+    // For manual entries, also check if it's a sale by looking at the transaction type
+    // This is a fallback - the backend should set classification.kind = 'sale'
+    return true
+  }
+
+  return false
 }
 
 // Helper function to check if transaction has accounting entries
@@ -251,12 +294,12 @@ type SectionKey = 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'report
 
 // Base section nav - will be filtered based on available accounts/cards
 const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
+  { key: 'sales', label: 'Sales' },
   { key: 'receipts', label: 'Purchases' },
-  { key: 'bank', label: 'Bank Transactions' },
-  { key: 'cards', label: 'Credit Card Transactions' },
-  { key: 'sales', label: 'Sales Pipeline' },
-  { key: 'internal', label: 'Internal Transactions' },
   { key: 'payroll', label: 'Payroll' },
+  { key: 'internal', label: 'Internal' },
+  { key: 'bank', label: 'Bank' },
+  { key: 'cards', label: 'Credit Cards' },
   { key: 'financialServices', label: 'Financial Services' },
   { key: 'reporting', label: 'Reporting Ready' },
 ]
@@ -502,9 +545,14 @@ export default function TransactionsScaffoldScreen() {
     .filter((item) => {
       const metadata = item.original.metadata as {
         verification?: { status?: string }
+        classification?: { kind?: string }
       }
+      // Only include purchase transactions
+      const isPurchase = metadata.classification?.kind === 'purchase'
       return (
-        metadata.verification?.status !== 'unverified' && !item.parsed.isReportingReady
+        isPurchase &&
+        metadata.verification?.status !== 'unverified' && 
+        !item.parsed.isReportingReady
       )
     })
     .sort((a, b) => {
@@ -1004,9 +1052,14 @@ export default function TransactionsScaffoldScreen() {
           .filter((item) => {
             const metadata = item.original.metadata as {
               verification?: { status?: string }
+              classification?: { kind?: string }
             }
+            // Only include purchase transactions
+            const isPurchase = metadata.classification?.kind === 'purchase'
             return (
-              metadata.verification?.status !== 'unverified' && !item.parsed.isReportingReady
+              isPurchase &&
+              metadata.verification?.status !== 'unverified' && 
+              !item.parsed.isReportingReady
             )
           })
           .sort((a, b) => {
@@ -1267,6 +1320,114 @@ export default function TransactionsScaffoldScreen() {
             }))
         }
       
+      case 'Invoices submitted pending payment':
+        return allTransactions
+          .filter((tx) => {
+            if (!isSaleTransaction(tx)) return false
+            const metadata = tx.metadata as {
+              verification?: { status?: string }
+              reconciliation?: { status?: string }
+              classification?: { kind?: string }
+            }
+            // Explicitly exclude purchase transactions
+            if (metadata.classification?.kind === 'purchase') return false
+            
+            const verificationStatus = metadata.verification?.status
+            const reconciliationStatus = metadata.reconciliation?.status
+            const isUnverified = verificationStatus === 'unverified'
+            const isReconciled =
+              reconciliationStatus === 'matched' ||
+              reconciliationStatus === 'reconciled' ||
+              reconciliationStatus === 'exception'
+            const isCashOnly = isCashOnlyTransaction(tx)
+            return isUnverified || (verificationStatus !== 'unverified' && !isReconciled && !isCashOnly)
+          })
+          .sort((a, b) => {
+            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (a.metadata as { createdAt?: number }).createdAt || 0
+            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (b.metadata as { createdAt?: number }).createdAt || 0
+            return bDate - aDate
+          })
+          .map((tx) => ({
+            id: tx.id,
+            title: tx.summary.thirdPartyName,
+            amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+            originalTransaction: tx,
+          }))
+      
+      case 'Invoices paid, needs match':
+        return allTransactions
+          .filter((tx) => {
+            if (!isSaleTransaction(tx)) return false
+            const metadata = tx.metadata as {
+              verification?: { status?: string }
+              reconciliation?: { status?: string }
+            }
+            const accounting = tx.accounting as
+              | {
+                  credits?: Array<{ chartName?: string }>
+                }
+              | undefined
+            const verificationStatus = metadata.verification?.status
+            const reconciliationStatus = metadata.reconciliation?.status
+            const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+            const isReconciled =
+              reconciliationStatus === 'matched' ||
+              reconciliationStatus === 'reconciled' ||
+              reconciliationStatus === 'exception'
+            const isCashOnly = isCashOnlyTransaction(tx)
+            
+            // Check if there's a credit to Accounts Receivable
+            const hasAccountsReceivable = accounting?.credits?.some(
+              (credit) => credit.chartName === 'Accounts Receivable'
+            ) ?? false
+            
+            return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
+          })
+          .sort((a, b) => {
+            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (a.metadata as { createdAt?: number }).createdAt || 0
+            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (b.metadata as { createdAt?: number }).createdAt || 0
+            return bDate - aDate
+          })
+          .map((tx) => ({
+            id: tx.id,
+            title: tx.summary.thirdPartyName,
+            amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+            originalTransaction: tx,
+          }))
+      
+      case 'Invoices paid and reconciled':
+        return allTransactions
+          .filter((tx) => {
+            if (!isSaleTransaction(tx)) return false
+            const metadata = tx.metadata as {
+              reconciliation?: { status?: string }
+            }
+            const reconciliationStatus = metadata.reconciliation?.status
+            const isReconciled =
+              reconciliationStatus === 'matched' ||
+              reconciliationStatus === 'reconciled' ||
+              reconciliationStatus === 'exception'
+            return isReconciled
+          })
+          .sort((a, b) => {
+            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (a.metadata as { createdAt?: number }).createdAt || 0
+            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (b.metadata as { createdAt?: number }).createdAt || 0
+            return bDate - aDate
+          })
+          .map((tx) => ({
+            id: tx.id,
+            title: tx.summary.thirdPartyName,
+            amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+            isReportingReady: true,
+            originalTransaction: tx,
+          }))
+      
       default:
         return []
     }
@@ -1312,6 +1473,188 @@ export default function TransactionsScaffoldScreen() {
       title: 'Auto bank rules',
       actions: ['View all', '+ Add rules'],
       rules: bankStatementRules,
+    },
+  ]
+
+  // Filter sale transactions (invoices) into 4 categories
+  // 1. Invoices submitted pending payment (unverified or not paid)
+  const invoicesPendingPayment: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        if (!isSaleTransaction(tx)) return false
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+          classification?: { kind?: string }
+        }
+        // Explicitly exclude purchase transactions
+        if (metadata.classification?.kind === 'purchase') return false
+        
+        const verificationStatus = metadata.verification?.status
+        const reconciliationStatus = metadata.reconciliation?.status
+        
+        // Pending payment if: unverified OR (verified but not reconciled and not cash-only)
+        const isUnverified = verificationStatus === 'unverified'
+        const isReconciled =
+          reconciliationStatus === 'matched' ||
+          reconciliationStatus === 'reconciled' ||
+          reconciliationStatus === 'exception'
+        const isCashOnly = isCashOnlyTransaction(tx)
+        
+        // Pending if unverified, or verified but not paid (not reconciled and not cash)
+        return isUnverified || (verificationStatus !== 'unverified' && !isReconciled && !isCashOnly)
+      })
+      .sort((a, b) => {
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt || 0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt || 0
+        return bDate - aDate
+      })
+      .slice(0, 3)
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          originalTransaction: tx,
+        }
+      })
+
+  // 2. Invoices paid in cash (cash-only, verified)
+  const invoicesPaidCash: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        if (!isSaleTransaction(tx)) return false
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+        }
+        const verificationStatus = metadata.verification?.status
+        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+        const isCashOnly = isCashOnlyTransaction(tx)
+        
+        return isVerified && isCashOnly
+      })
+      .sort((a, b) => {
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt || 0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt || 0
+        return bDate - aDate
+      })
+      .slice(0, 3)
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          originalTransaction: tx,
+        }
+      })
+
+  // 3. Invoices paid, needs match (paid but needs reconciliation)
+  const invoicesPaidNeedsMatch: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        if (!isSaleTransaction(tx)) return false
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const accounting = tx.accounting as
+          | {
+              credits?: Array<{ chartName?: string }>
+            }
+          | undefined
+        const verificationStatus = metadata.verification?.status
+        const reconciliationStatus = metadata.reconciliation?.status
+        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+        const isReconciled =
+          reconciliationStatus === 'matched' ||
+          reconciliationStatus === 'reconciled' ||
+          reconciliationStatus === 'exception'
+        const isCashOnly = isCashOnlyTransaction(tx)
+        
+        // Check if there's a credit to Accounts Receivable
+        const hasAccountsReceivable = accounting?.credits?.some(
+          (credit) => credit.chartName === 'Accounts Receivable'
+        ) ?? false
+        
+        // Needs match if: verified, not cash-only, not reconciled, AND has Accounts Receivable credit
+        return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
+      })
+      .sort((a, b) => {
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt || 0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt || 0
+        return bDate - aDate
+      })
+      .slice(0, 3)
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          originalTransaction: tx,
+        }
+      })
+
+  // 4. Invoices paid and reconciled
+  const invoicesPaidReconciled: Array<TransactionStub & { originalTransaction: Transaction }> =
+    allTransactions
+      .filter((tx) => {
+        if (!isSaleTransaction(tx)) return false
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+          reconciliation?: { status?: string }
+        }
+        const reconciliationStatus = metadata.reconciliation?.status
+        const isReconciled =
+          reconciliationStatus === 'matched' ||
+          reconciliationStatus === 'reconciled' ||
+          reconciliationStatus === 'exception'
+        
+        return isReconciled
+      })
+      .sort((a, b) => {
+        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.metadata as { createdAt?: number }).createdAt || 0
+        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.metadata as { createdAt?: number }).createdAt || 0
+        return bDate - aDate
+      })
+      .slice(0, 3)
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isReportingReady: true,
+          originalTransaction: tx,
+        }
+      })
+
+  // Update salesColumns with invoice cards
+  const salesColumnsWithData: PipelineColumn[] = [
+    {
+      title: 'Invoices submitted pending payment',
+      actions: ['View all'],
+      transactions: invoicesPendingPayment,
+    },
+    {
+      title: 'Invoices paid, needs match',
+      actions: ['View all'],
+      transactions: invoicesPaidNeedsMatch,
+    },
+    {
+      title: 'Invoices paid and reconciled',
+      actions: ['View all'],
+      transactions: invoicesPaidReconciled,
     },
   ]
 
@@ -1568,6 +1911,7 @@ export default function TransactionsScaffoldScreen() {
           receiptColumnsWithData,
           bankColumnsWithData,
           cardsColumnsWithData,
+          salesColumnsWithData,
           reportingReadyTransactions,
           handleReconcileClick,
           reconciling,
@@ -1585,6 +1929,7 @@ function renderSection(
   receiptColumns: PipelineColumn[],
   bankColumns: PipelineColumn[],
   cardsColumns: PipelineColumn[],
+  salesColumns: PipelineColumn[],
   reportingReadyTransactions: Array<TransactionStub & { originalTransaction?: Transaction }>,
   handleReconcileClick?: () => void,
   reconciling?: boolean,
@@ -1607,7 +1952,7 @@ function renderSection(
         />
       )
     case 'sales':
-      return null // TODO: Add Sales Pipeline screen
+      return <PipelineRow columns={salesColumns} navigation={navigation} getFullTransactions={getFullTransactions} pipelineSection={section} />
     case 'internal':
       return null // TODO: Add Internal Transactions screen
     case 'payroll':
@@ -1665,6 +2010,25 @@ function PipelineRow({
   pipelineSection: SectionKey
 }) {
   const handleViewAll = (column: PipelineColumn) => {
+    // For sales pipeline, use sales leads
+    if (pipelineSection === 'sales' && column.salesLeads) {
+      // Convert sales leads to transaction stub format for compatibility
+      const items = column.salesLeads.map(lead => ({
+        id: lead.id,
+        title: lead.title,
+        amount: lead.amount || '',
+        subtitle: lead.subtitle,
+      }))
+      navigation.navigate('ScaffoldViewAll', {
+        section: column.title,
+        title: column.title,
+        items,
+        showReconcileButton: false,
+        pipelineSection: pipelineSection,
+      })
+      return
+    }
+    
     // Use full transaction list if available, otherwise fall back to displayed items
     const items = getFullTransactions 
       ? getFullTransactions(column.title) 
@@ -1700,6 +2064,8 @@ function PipelineRow({
               navigation={navigation} 
               ruleType={pipelineSection === 'cards' ? 'creditCard' : 'bank'}
             />
+          ) : pipelineSection === 'sales' && column.salesLeads ? (
+            <SalesCardList items={column.salesLeads} navigation={navigation} />
           ) : (
             <CardList items={column.transactions || []} navigation={navigation} />
           )}
@@ -1783,6 +2149,67 @@ function CardList({
             )}
           </View>
           <Text style={styles.cardAmount}>{item.amount}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  )
+}
+
+function SalesCardList({
+  items,
+  navigation,
+}: {
+  items: SalesLead[]
+  navigation?: StackNavigationProp<TransactionsStackParamList>
+}) {
+  const getStageColor = (stage: SalesLead['stage']): string => {
+    switch (stage) {
+      case 'lead':
+        return '#8d8d8d' // Dark gray
+      case 'conversation':
+        return '#a0a0a0' // Medium gray
+      case 'proposal':
+        return '#b3b3b3' // Light gray
+      case 'won':
+        return '#6d6d6d' // Darker gray
+      case 'lost':
+        return '#c0c0c0' // Lightest gray
+      default:
+        return GRAYSCALE_SECONDARY
+    }
+  }
+
+  const handleCardPress = (item: SalesLead) => {
+    if (navigation) {
+      navigation.navigate('LeadDetail', { lead: item })
+    }
+  }
+
+  return (
+    <View style={styles.cardList}>
+      {items.map((item) => (
+        <TouchableOpacity
+          key={item.id}
+          style={[styles.cardListItem, { borderLeftWidth: 4, borderLeftColor: getStageColor(item.stage) }]}
+          onPress={() => handleCardPress(item)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.cardTextGroup}>
+            <Text style={styles.cardTitle}>{item.title}</Text>
+            {item.projectTitle && (
+              <Text style={styles.projectTitle} numberOfLines={1}>
+                {item.projectTitle}
+              </Text>
+            )}
+            {item.subtitle && (
+              <Text style={styles.cardSubtitle} numberOfLines={1}>
+                {item.subtitle}
+              </Text>
+            )}
+          </View>
+          {item.amount && (
+            <Text style={styles.cardAmount}>{item.amount}</Text>
+          )}
         </TouchableOpacity>
       ))}
     </View>
@@ -2050,6 +2477,12 @@ const styles = StyleSheet.create({
     color: GRAYSCALE_SECONDARY,
     textTransform: 'uppercase',
     fontWeight: '500',
+  },
+  projectTitle: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '400',
+    color: GRAYSCALE_SECONDARY,
   },
   cardSubtitle: {
     marginTop: 2,
