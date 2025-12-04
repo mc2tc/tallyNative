@@ -1,5 +1,70 @@
 # Daily Development Summaries
 
+## 2025-12-04
+
+### Summary
+Implemented transactions3 bank reconciliation workflow and unreconcilable transaction handling for the Bank section. Fixed transaction filtering issues to ensure proper separation between Purchases and Bank sections, and added support for marking bank transactions as unreconcilable with reason tracking.
+
+### Commits
+
+#### 1. feat: Implement transactions3 bank reconciliation and unreconcilable transaction workflow
+**Commit:** `77d27e6`  
+**Files Changed:** 16 files, 4592 insertions(+), 272 deletions(-)
+
+**Changes:**
+- Updated reconciliation API to use transactions3 endpoint (`/authenticated/transactions3/api/reconcile/bank`)
+- Fixed timing issue where bank transactions weren't appearing on app reload by properly handling activeSection state in useFocusEffect
+- Fixed Purchases3 section to only show purchase transactions by adding `kind=purchase` filter to all API queries and client-side filtering
+- Fixed bank transactions appearing in wrong cards after verification by excluding unreconciled transactions from "Verified and audit ready" card
+- Implemented "Reconcile" button for Bank section's "Needs reconciliation" card with proper card refresh after reconciliation
+- Implemented "No matching record" workflow for bank transactions from "Needs reconciliation" card:
+  - Updated summary card to display `tx.summary.description` and credit/debit status from `statementContext.isCredit`
+  - Removed "Confirm and save" button for unreconcilable transactions
+  - Added checkbox "No matching record" with form containing:
+    - Description text input (pre-filled with transaction description)
+    - Chart of Accounts picker (loads from API)
+    - Reason picker with options: "Receipt lost", "Personal expense", "Cash transaction", "Receipt not available", "Other"
+    - "Confirm transaction" button that calls verify endpoint with `markAsUnreconcilable: true`
+- Added "Confirmed unreconcilable" card filtering logic for bank transactions with `reconciliation.status = 'unreconciled'`
+- Updated all bank transaction queries to use `kind=statement_entry` filter on backend
+- Added BankStatementRulesListScreen for managing bank statement rules
+- Extended transactions3 verifyTransaction API to support `markAsUnreconcilable`, `description`, and `unreconcilableReason` parameters
+
+**Files Modified:**
+- `lib/api/transactions2.ts` - Updated reconciliation endpoint, extended verifyTransaction for unreconcilable workflow
+- `screens/TransactionDetailScreen.tsx` - Added unreconcilable workflow UI with checkbox, form, and pickers
+- `screens/TransactionsScaffoldScreen.tsx` - Fixed filtering, added reconciliation handler, implemented unreconcilable card
+- `screens/AddTransactionScreen.tsx` - Updated bank statement upload integration
+- `screens/UploadProcessingScreen.tsx` - Updated bank statement processing
+- `navigation/TransactionsNavigator.tsx` - Added BankStatementRules route
+- `screens/BankStatementRulesListScreen.tsx` - New screen for listing bank statement rules
+- `docs/api/TRANSACTIONS3_*.md` - Added comprehensive documentation for transactions3 bank workflows
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 16 files
+- **Total Lines Added:** 4592 insertions
+- **Total Lines Removed:** 272 deletions
+- **Net Change:** +4320 lines
+
+### Key Features Added
+1. Transactions3 bank reconciliation with automatic matching and card refresh
+2. "No matching record" workflow for bank transactions with reason tracking
+3. Proper transaction filtering to separate Purchases (kind=purchase) from Bank (kind=statement_entry)
+4. "Confirmed unreconcilable" card showing verified bank transactions marked as unreconcilable
+5. Fixed timing issues with transaction loading on app reload
+6. Bank statement rules management screen
+
+### Notes
+- All bank transaction queries now filter by `kind=statement_entry` on the backend for better performance
+- Unreconcilable transactions are verified and moved to source_of_truth with `reconciliation.status = 'unreconciled'`
+- The reconciliation endpoint automatically matches bank transactions with purchase receipts based on amount, date, vendor name, and reference number
+- Bank transactions marked as unreconcilable require a Chart of Accounts selection and reason for audit trail purposes
+
+---
+
 ## 2025-12-03
 
 ### Summary
