@@ -75,49 +75,124 @@ export default function UploadProcessingScreen() {
         console.log('UploadProcessing: File uploaded, downloadUrl:', downloadUrl)
         
         // Create transaction
+        const finalTransactionType = transactionType || 'purchase'
+        const finalInputMethod = inputMethod || 'ocr_pdf'
         console.log('UploadProcessing: Creating transaction...', {
           businessId,
-          transactionType: transactionType || 'purchase',
-          inputMethod: inputMethod || 'ocr_pdf',
-          fileUrl: downloadUrl,
-        })
-        const response = await transactions2Api.createTransaction({
-          businessId,
-          transactionType: transactionType || 'purchase',
-          inputMethod: inputMethod || 'ocr_pdf',
+          transactionType: finalTransactionType,
+          inputMethod: finalInputMethod,
           fileUrl: downloadUrl,
         })
         
-        console.log('UploadProcessing: Transaction creation response:', {
-          success: response.success,
-          logged: response.logged,
-          transactionId: response.transactionId,
-          message: response.message,
-        })
+        // Bank section ALWAYS uses transactions3 bank statement upload endpoint (PDF only)
+        // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
+        // For purchases from receipts section, also use transactions3
+        // For other transaction types, use the unified transactions2 endpoint
+        const useBankStatementUpload = pipelineSection === 'bank' && isPdf
+        const useTransactions3 = pipelineSection === 'purchases3' || 
+          (finalTransactionType === 'purchase' && (finalInputMethod === 'ocr_image' || finalInputMethod === 'ocr_pdf'))
         
-        if (response.success) {
-          console.log('UploadProcessing: Transaction created successfully, transactionId:', response.transactionId)
-          // Wait a moment to ensure transaction is fully saved before showing success
-          await new Promise(resolve => setTimeout(resolve, 500))
-          setShowSuccess(true)
-          setProcessing(false)
-        } else if (response.logged) {
-          // Transaction type/input method not yet implemented (501)
-          console.log('UploadProcessing: Transaction type not yet implemented, logged for future implementation')
-          Alert.alert(
-            'Not Yet Available',
-            response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`,
-            [
-              {
-                text: 'OK',
-                onPress: () => navigation.goBack(),
-              },
-            ]
-          )
-          setProcessing(false)
+        let response
+        if (useBankStatementUpload) {
+          // Use transactions3 bank statement upload endpoint
+          console.log('UploadProcessing: Using transactions3 bank statement upload endpoint')
+          response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
+            // TODO: Get bankName and accountNumber if available from context
+          })
+          
+          console.log('UploadProcessing: Bank statement upload response:', {
+            success: response.success,
+            summary: response.summary,
+          })
+          
+          if (response.success) {
+            const summary = response.summary
+            console.log('UploadProcessing: Bank statement processed successfully', {
+              totalTransactions: summary.totalTransactions,
+              ruleMatched: summary.ruleMatched,
+              needsReconciliation: summary.needsReconciliation,
+            })
+            // Wait a moment to ensure transactions are fully saved before showing success
+            await new Promise(resolve => setTimeout(resolve, 500))
+            setShowSuccess(true)
+            setProcessing(false)
+          } else {
+            console.error('UploadProcessing: Bank statement upload failed')
+            throw new Error('Failed to process bank statement')
+          }
+        } else if (useTransactions3) {
+          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
+          
+          console.log('UploadProcessing: Transaction creation response:', {
+            success: response.success,
+            logged: response.logged,
+            transactionId: response.transactionId,
+            message: response.message,
+          })
+          
+          if (response.success) {
+            console.log('UploadProcessing: Transaction created successfully, transactionId:', response.transactionId)
+            // Wait a moment to ensure transaction is fully saved before showing success
+            await new Promise(resolve => setTimeout(resolve, 500))
+            setShowSuccess(true)
+            setProcessing(false)
+          } else if (response.logged) {
+            // Transaction type/input method not yet implemented (501)
+            console.log('UploadProcessing: Transaction type not yet implemented, logged for future implementation')
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`,
+              [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            )
+            setProcessing(false)
+          } else {
+            console.error('UploadProcessing: Transaction creation failed:', response.message)
+            throw new Error(response.message || 'Failed to create transaction')
+          }
         } else {
-          console.error('UploadProcessing: Transaction creation failed:', response.message)
-          throw new Error(response.message || 'Failed to create transaction')
+          response = await transactions2Api.createTransaction({
+            businessId,
+            transactionType: finalTransactionType,
+            inputMethod: finalInputMethod,
+            fileUrl: downloadUrl,
+          })
+          
+          console.log('UploadProcessing: Transaction creation response:', {
+            success: response.success,
+            logged: response.logged,
+            transactionId: response.transactionId,
+            message: response.message,
+          })
+          
+          if (response.success) {
+            console.log('UploadProcessing: Transaction created successfully, transactionId:', response.transactionId)
+            // Wait a moment to ensure transaction is fully saved before showing success
+            await new Promise(resolve => setTimeout(resolve, 500))
+            setShowSuccess(true)
+            setProcessing(false)
+          } else if (response.logged) {
+            // Transaction type/input method not yet implemented (501)
+            console.log('UploadProcessing: Transaction type not yet implemented, logged for future implementation')
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`,
+              [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            )
+            setProcessing(false)
+          } else {
+            console.error('UploadProcessing: Transaction creation failed:', response.message)
+            throw new Error(response.message || 'Failed to create transaction')
+          }
         }
       } catch (error) {
         console.error('UploadProcessing: Error during upload/transaction creation:', error)

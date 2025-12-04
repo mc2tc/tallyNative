@@ -76,6 +76,8 @@ export default function AddTransactionScreen() {
     switch (context.pipelineSection) {
       case 'receipts':
         return 'purchase'
+      case 'purchases3':
+        return 'purchase' // Purchases3 uses transactions3 exclusively
       case 'sales':
         return 'sale'
       case 'bank':
@@ -117,23 +119,65 @@ export default function AddTransactionScreen() {
       const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
       
       try {
-        const response = await transactions2Api.createTransaction({
-          businessId,
-          transactionType,
-          inputMethod,
-          fileUrl: downloadUrl,
-        })
+        // Bank section ALWAYS uses transactions3 bank statement upload endpoint
+        // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
+        // For purchases from receipts section, also use transactions3
+        // For other transaction types, use the unified transactions2 endpoint
+        const useBankStatementUpload = context?.pipelineSection === 'bank' && isPdf
+        const useTransactions3Purchase = context?.pipelineSection === 'purchases3' || 
+          (transactionType === 'purchase' && (inputMethod === 'ocr_image' || inputMethod === 'ocr_pdf'))
         
-        if (response.success) {
-          setResultSummary(`Transaction created successfully`)
-        } else if (response.logged) {
-          // Transaction type/input method not yet implemented (501)
-          Alert.alert(
-            'Not Yet Available',
-            response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
-          )
+        let response
+        if (useBankStatementUpload) {
+          // Use transactions3 bank statement upload endpoint
+          // Note: bankName and accountNumber are optional, can be added later if needed
+          response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
+            // TODO: Get bankName and accountNumber from bankAccounts API if context.bankAccountId is available
+          })
+          
+          // The response is grouped - show summary
+          if (response.success) {
+            const summary = response.summary
+            setResultSummary(
+              `Bank statement processed: ${summary.totalTransactions} transactions. ` +
+              `${summary.ruleMatched} rule-matched, ${summary.needsReconciliation} need reconciliation.`
+            )
+          } else {
+            throw new Error('Failed to process bank statement')
+          }
+        } else if (useTransactions3Purchase) {
+          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
+          
+          if (response.success) {
+            setResultSummary(`Transaction created successfully`)
+          } else if (response.logged) {
+            // Transaction type/input method not yet implemented (501)
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
+            )
+          } else {
+            throw new Error(response.message || 'Failed to create transaction')
+          }
         } else {
-          throw new Error(response.message || 'Failed to create transaction')
+          response = await transactions2Api.createTransaction({
+            businessId,
+            transactionType,
+            inputMethod,
+            fileUrl: downloadUrl,
+          })
+          
+          if (response.success) {
+            setResultSummary(`Transaction created successfully`)
+          } else if (response.logged) {
+            // Transaction type/input method not yet implemented (501)
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
+            )
+          } else {
+            throw new Error(response.message || 'Failed to create transaction')
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to create transaction'
@@ -278,12 +322,20 @@ export default function AddTransactionScreen() {
       const inputMethod = 'ocr_image'
       
       try {
-        const response = await transactions2Api.createTransaction({
-          businessId,
-          transactionType,
-          inputMethod,
-          fileUrl: downloadUrl,
-        })
+        // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
+        // For purchases from receipts section, also use transactions3
+        // For other transaction types, use the unified transactions2 endpoint
+        const useTransactions3 = context?.pipelineSection === 'purchases3' || 
+          (transactionType === 'purchase' && inputMethod === 'ocr_image')
+        
+        const response = useTransactions3
+          ? await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
+          : await transactions2Api.createTransaction({
+              businessId,
+              transactionType,
+              inputMethod,
+              fileUrl: downloadUrl,
+            })
         
         if (response.success) {
           setResultSummary(`Transaction created successfully`)

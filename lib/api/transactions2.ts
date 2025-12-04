@@ -231,6 +231,157 @@ export const transactions2Api = {
 			payload,
 		)
 	},
+
+	// Transactions3 purchase OCR endpoint - simplified endpoint for purchase receipts
+	// This is the new single-source-of-truth architecture for transactions
+	createPurchaseOcr: async (
+		businessId: string,
+		fileUrl: string,
+	): Promise<UnifiedTransactionResponse> => {
+		return api.post<UnifiedTransactionResponse>(
+			'/authenticated/transactions3/api/purchases/ocr',
+			{
+				businessId,
+				fileUrl,
+			},
+		)
+	},
+
+	// Transactions3 bank statement upload endpoint - automatically classifies and groups transactions
+	uploadBankStatement: async (
+		businessId: string,
+		fileUrl: string,
+		options?: {
+			bankName?: string
+			accountNumber?: string
+			statementStartDate?: string
+			statementEndDate?: string
+		},
+	): Promise<{
+		success: boolean
+		summary: {
+			totalTransactions: number
+			ruleMatched: number
+			needsReconciliation: number
+			skipped: number
+		}
+		transactions: {
+			needsVerification: Transaction[]
+			needsReconciliation: Transaction[]
+		}
+		skipped: unknown[]
+	}> => {
+		return api.post<{
+			success: boolean
+			summary: {
+				totalTransactions: number
+				ruleMatched: number
+				needsReconciliation: number
+				skipped: number
+			}
+			transactions: {
+				needsVerification: Transaction[]
+				needsReconciliation: Transaction[]
+			}
+			skipped: unknown[]
+		}>(
+			'/authenticated/transactions3/api/bank-statements/upload',
+			{
+				businessId,
+				fileUrl,
+				...(options?.bankName && { bankName: options.bankName }),
+				...(options?.accountNumber && { accountNumber: options.accountNumber }),
+				...(options?.statementStartDate && { statementStartDate: options.statementStartDate }),
+				...(options?.statementEndDate && { statementEndDate: options.statementEndDate }),
+			},
+		)
+	},
+
+	// Transactions3 verify endpoint - verify a pending transaction
+	verifyTransaction: async (
+		transactionId: string,
+		businessId: string,
+		options?: {
+			paymentBreakdown?: Array<{ type: string; amount: number }>
+			itemList?: Array<{
+				name: string
+				amount: number
+				amountExcluding?: number
+				vatAmount?: number
+				debitAccount?: string
+				debitAccountConfirmed?: boolean
+				isBusinessExpense?: boolean
+				category?: string
+				quantity?: number
+				unitCost?: number
+			}>
+			markAsUnreconcilable?: boolean
+			description?: string
+			unreconcilableReason?: string
+		},
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		const body: {
+			paymentBreakdown?: Array<{ type: string; amount: number }>
+			itemList?: Array<{
+				name: string
+				amount: number
+				amountExcluding?: number
+				vatAmount?: number
+				debitAccount?: string
+				debitAccountConfirmed?: boolean
+				isBusinessExpense?: boolean
+				category?: string
+				quantity?: number
+				unitCost?: number
+			}>
+			markAsUnreconcilable?: boolean
+			description?: string
+			unreconcilableReason?: string
+		} = {}
+		if (options?.paymentBreakdown) {
+			body.paymentBreakdown = options.paymentBreakdown
+		}
+		if (options?.itemList) {
+			body.itemList = options.itemList
+		}
+		if (options?.markAsUnreconcilable !== undefined) {
+			body.markAsUnreconcilable = options.markAsUnreconcilable
+		}
+		if (options?.description) {
+			body.description = options.description
+		}
+		if (options?.unreconcilableReason) {
+			body.unreconcilableReason = options.unreconcilableReason
+		}
+		const response = await api.patch<UnifiedTransactionResponse>(
+			`/authenticated/transactions3/api/transactions/${transactionId}/verify?${params.toString()}`,
+			Object.keys(body).length > 0 ? body : undefined,
+		)
+		// Extract transaction from response (response.transaction is the Transaction object)
+		return response.transaction as Transaction
+	},
+
+	// Transactions3 query endpoints - get transactions from transactions3 collections
+	getTransactions3: async (
+		businessId: string,
+		collection: 'pending' | 'source_of_truth' | 'archived',
+		options?: { page?: number; limit?: number; status?: string; kind?: string },
+	): Promise<TransactionsListResponse> => {
+		const params = new URLSearchParams({
+			businessId,
+			collection,
+			...(options?.page && { page: options.page.toString() }),
+			...(options?.limit && { limit: options.limit.toString() }),
+			...(options?.status && { status: options.status }),
+			...(options?.kind && { kind: options.kind }),
+		})
+		return api.get<TransactionsListResponse>(
+			`/authenticated/transactions3/api/transactions?${params.toString()}`,
+		)
+	},
 }
 
 export type ReconciliationMatch = {
@@ -248,10 +399,10 @@ export type ReconciliationResponse = {
 }
 
 export const reconciliationApi = {
-	// Reconcile bank transactions with purchase receipts
+	// Reconcile bank transactions with purchase receipts (transactions3 endpoint)
 	reconcileBank: async (businessId: string): Promise<ReconciliationResponse> => {
 		return api.post<ReconciliationResponse>(
-			'/authenticated/transactions2/api/reconcile/bank',
+			'/authenticated/transactions3/api/reconcile/bank',
 			{ businessId },
 		)
 	},

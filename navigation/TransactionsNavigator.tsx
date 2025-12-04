@@ -7,6 +7,7 @@ import TransactionDetailScreen from '../screens/TransactionDetailScreen'
 import ScaffoldViewAllScreen from '../screens/ScaffoldViewAllScreen'
 import BankStatementRuleDetailScreen from '../screens/BankStatementRuleDetailScreen'
 import BankStatementRuleCreateScreen from '../screens/BankStatementRuleCreateScreen'
+import BankStatementRulesListScreen from '../screens/BankStatementRulesListScreen'
 import CreditCardRuleDetailScreen from '../screens/CreditCardRuleDetailScreen'
 import CreditCardRuleCreateScreen from '../screens/CreditCardRuleCreateScreen'
 import ManualPurchaseEntryScreen from '../screens/ManualPurchaseEntryScreen'
@@ -27,7 +28,7 @@ type TransactionStub = {
 }
 
 export type TransactionsStackParamList = {
-  TransactionsHome: { activeSection?: 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' }
+  TransactionsHome: { activeSection?: 'receipts' | 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' }
   AddTransaction: { context?: { pipelineSection?: string; bankAccountId?: string; cardId?: string } }
   UploadProcessing: { 
     pdfFileName?: string
@@ -56,6 +57,7 @@ export type TransactionsStackParamList = {
   }
   BankStatementRuleDetail: { rule: BankStatementRule }
   BankStatementRuleCreate: undefined
+  BankStatementRules: undefined
   CreditCardRuleDetail: { rule: CreditCardRule }
   CreditCardRuleCreate: undefined
 }
@@ -76,6 +78,7 @@ export function TransactionsNavigator() {
       <Stack.Screen name="ScaffoldViewAll" component={ScaffoldViewAllScreen} />
       <Stack.Screen name="BankStatementRuleDetail" component={BankStatementRuleDetailScreen} />
       <Stack.Screen name="BankStatementRuleCreate" component={BankStatementRuleCreateScreen} />
+      <Stack.Screen name="BankStatementRules" component={BankStatementRulesListScreen} />
       <Stack.Screen name="CreditCardRuleDetail" component={CreditCardRuleDetailScreen} />
       <Stack.Screen name="CreditCardRuleCreate" component={CreditCardRuleCreateScreen} />
       <Stack.Screen name="UploadProcessing" component={UploadProcessingScreen} />

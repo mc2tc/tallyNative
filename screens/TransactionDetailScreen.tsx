@@ -1,6 +1,6 @@
 // Transaction detail screen - displays full transaction summary information
 import React, { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native'
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Animated } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons'
@@ -23,10 +23,15 @@ type TransactionDetailRouteProp =
 
 type TransactionItem = {
   name: string
-  quantity: number
-  unitCost: number
+  quantity?: number
+  unitCost?: number
   amount: number
   debitAccount?: string
+  amountExcluding?: number
+  vatAmount?: number
+  debitAccountConfirmed?: boolean
+  isBusinessExpense?: boolean
+  category?: string
 }
 
 type TransactionDetails = {
@@ -61,36 +66,396 @@ export default function TransactionDetailScreen() {
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false)
   const [updatingPaymentMethod, setUpdatingPaymentMethod] = useState(false)
   const [confirmingVerification, setConfirmingVerification] = useState(false)
+  // For transactions3: store selected payment method locally until verification (for purchase receipts only)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
+  // For bank transactions: store edited debit accounts locally until verification
+  const [editedItemDebitAccounts, setEditedItemDebitAccounts] = useState<Map<number, string>>(new Map())
+  // For "No matching record" workflow
+  const [noMatchingRecord, setNoMatchingRecord] = useState(false)
+  const [unreconcilableDescription, setUnreconcilableDescription] = useState<string>('')
+  const [unreconcilableAccount, setUnreconcilableAccount] = useState<string>('')
+  const [unreconcilableReason, setUnreconcilableReason] = useState<string>('')
+  const [showUnreconcilableAccountPicker, setShowUnreconcilableAccountPicker] = useState(false)
   const paymentMethodSlideAnim = React.useRef(new Animated.Value(0)).current
   const slideAnim = React.useRef(new Animated.Value(0)).current
   const insets = useSafeAreaInsets()
 
-  const businessId = transaction.metadata.businessId
+  // Safely extract businessId - use initial transaction's businessId as fallback
+  // This prevents errors if the updated transaction structure changes after verification
+  const initialBusinessId = initialTransaction?.metadata?.businessId
+  const currentBusinessId = transaction?.metadata?.businessId
+  const businessId = currentBusinessId || initialBusinessId
+  
+  if (!businessId) {
+    console.error('TransactionDetailScreen: No businessId found in transaction', {
+      initialTransaction: initialTransaction?.metadata,
+      currentTransaction: transaction?.metadata,
+    })
+  }
 
-  // Check if transaction needs verification
-  const metadata = transaction.metadata as { verification?: { status?: string } }
-  const isUnverified = metadata.verification?.status === 'unverified'
+  // Check if transaction needs verification (transactions3 pending transaction)
+  const transactionMetadata = transaction?.metadata as { 
+    verification?: { status?: string }
+    classification?: TransactionClassification
+    businessId?: string
+  } | undefined
+  const isUnverified = transactionMetadata?.verification?.status === 'unverified'
+  
+  // Check if this is a transactions3 transaction
+  const isTransactions3 = isUnverified
+  
+  // Check if this is a bank transaction (statement_entry) vs purchase receipt
+  // Extract classification early so we can use it for isBankTransaction
+  const classification = transactionMetadata?.classification as TransactionClassification | undefined
+  const isBankTransaction = classification?.kind === 'statement_entry'
+  
+  // Check if transaction has accounting entries (to determine if it needs reconciliation)
+  const accounting = transaction?.accounting as {
+    debits?: Array<unknown>
+    credits?: Array<unknown>
+  } | undefined
+  const hasAccountingEntries = (accounting?.debits?.length ?? 0) > 0 || (accounting?.credits?.length ?? 0) > 0
+  // Bank transaction from "Needs reconciliation" card: unverified, no accounting entries
+  const isNeedsReconciliation = isBankTransaction && isUnverified && !hasAccountingEntries
+  
+  // Get statement context for credit/debit display
+  const statementContext = transactionMetadata?.statementContext as { isCredit?: boolean } | undefined
+  const isCredit = statementContext?.isCredit
+  
+  // Initialize unreconcilable description with transaction description
+  React.useEffect(() => {
+    if (isNeedsReconciliation && !unreconcilableDescription) {
+      setUnreconcilableDescription(transaction?.summary?.description || transaction?.summary?.thirdPartyName || '')
+    }
+  }, [isNeedsReconciliation, transaction?.summary?.description, transaction?.summary?.thirdPartyName])
 
   const handleConfirmVerification = useCallback(async () => {
+    if (!businessId) {
+      Alert.alert('Error', 'Business ID is missing. Cannot verify transaction.')
+      return
+    }
+    
     setConfirmingVerification(true)
     try {
-      const updatedTransaction = await transactions2Api.confirmVerification(
-        transaction.id,
-        businessId,
-      )
-      setTransaction(updatedTransaction)
-      Alert.alert('Success', 'Transaction verified successfully')
+      let updatedTransaction: Transaction
+      
+      if (isTransactions3) {
+        // For transactions3: use verifyTransaction endpoint
+        const verifyOptions: {
+          paymentBreakdown?: Array<{ type: string; amount: number }>
+          itemList?: Array<{
+            name: string
+            amount: number
+            amountExcluding?: number
+            vatAmount?: number
+            debitAccount?: string
+            debitAccountConfirmed?: boolean
+            isBusinessExpense?: boolean
+            category?: string
+          }>
+        } = {}
+        
+        if (isBankTransaction) {
+          // For bank transactions: send itemList with confirmed debit accounts
+          const currentItemList = details?.itemList || []
+          if (currentItemList.length > 0) {
+            verifyOptions.itemList = currentItemList.map((item, index) => {
+              // Use edited debit account if available, otherwise use existing
+              const debitAccount = editedItemDebitAccounts.has(index)
+                ? editedItemDebitAccounts.get(index)!
+                : item.debitAccount || ''
+              
+              return {
+                name: item.name,
+                amount: item.amount,
+                amountExcluding: item.amountExcluding,
+                vatAmount: item.vatAmount,
+                debitAccount: debitAccount,
+                debitAccountConfirmed: true, // User confirmed by clicking "Confirm and save"
+                isBusinessExpense: item.isBusinessExpense,
+                category: item.category,
+              }
+            })
+          }
+        } else {
+          // For purchase receipts: include paymentBreakdown if payment method was edited
+          if (selectedPaymentMethod) {
+            verifyOptions.paymentBreakdown = [
+              {
+                type: selectedPaymentMethod,
+                amount: transactionAmount,
+              },
+            ]
+          }
+        }
+        
+        if (!transaction?.id) {
+          throw new Error('Transaction ID is missing')
+        }
+        
+        const verifyResponse = await transactions2Api.verifyTransaction(
+          transaction.id,
+          businessId!,
+          Object.keys(verifyOptions).length > 0 ? verifyOptions : undefined,
+        )
+        
+        console.log('TransactionDetailScreen: verifyTransaction response', {
+          hasResponse: !!verifyResponse,
+          hasMetadata: !!verifyResponse?.metadata,
+          hasBusinessId: !!verifyResponse?.metadata?.businessId,
+          transactionId: verifyResponse?.id,
+          metadataKeys: verifyResponse?.metadata ? Object.keys(verifyResponse.metadata) : [],
+        })
+        
+        updatedTransaction = verifyResponse
+      } else {
+        // For transactions2: use confirmVerification endpoint
+        if (!transaction?.id) {
+          throw new Error('Transaction ID is missing')
+        }
+        
+        updatedTransaction = await transactions2Api.confirmVerification(
+          transaction.id,
+          businessId!,
+        )
+      }
+      
+      // Verify the updated transaction has required fields
+      console.log('TransactionDetailScreen: Verifying updated transaction', {
+        hasTransaction: !!updatedTransaction,
+        isObject: typeof updatedTransaction === 'object',
+        hasSuccess: (updatedTransaction as any)?.success !== undefined,
+        keys: updatedTransaction ? Object.keys(updatedTransaction) : [],
+        hasMetadata: !!updatedTransaction?.metadata,
+        metadataKeys: updatedTransaction?.metadata ? Object.keys(updatedTransaction.metadata) : [],
+        hasBusinessId: !!updatedTransaction?.metadata?.businessId,
+      })
+      
+      // Check if we got the full response object instead of just the transaction
+      if (updatedTransaction && 'success' in updatedTransaction && 'transaction' in updatedTransaction) {
+        console.log('TransactionDetailScreen: Response contains full response object, extracting transaction')
+        updatedTransaction = (updatedTransaction as any).transaction as Transaction
+      }
+      
+      if (!updatedTransaction) {
+        console.error('TransactionDetailScreen: Updated transaction is null/undefined')
+        Alert.alert('Error', 'Transaction verification succeeded but received invalid response')
+        setConfirmingVerification(false)
+        return
+      }
+      
+      // Ensure metadata exists
+      if (!updatedTransaction.metadata) {
+        console.warn('TransactionDetailScreen: Updated transaction missing metadata, creating it', {
+          hasBusinessId: !!businessId,
+          transactionId: updatedTransaction.id,
+        })
+        if (businessId) {
+          // Create metadata object with required fields
+          updatedTransaction.metadata = {
+            businessId,
+            id: updatedTransaction.id || transaction.id,
+          } as Transaction['metadata']
+        } else {
+          console.error('TransactionDetailScreen: Cannot create metadata without businessId')
+          Alert.alert('Error', 'Transaction verification succeeded but response is missing required fields')
+          setConfirmingVerification(false)
+          return
+        }
+      }
+      
+      // Ensure businessId exists in metadata - use original if missing
+      if (!updatedTransaction.metadata.businessId) {
+        if (businessId) {
+          console.warn('TransactionDetailScreen: Updated transaction missing businessId in metadata, using original', businessId)
+          updatedTransaction.metadata.businessId = businessId
+        } else {
+          console.error('TransactionDetailScreen: No businessId available for updated transaction')
+          Alert.alert('Error', 'Transaction verification succeeded but business ID is missing')
+          setConfirmingVerification(false)
+          return
+        }
+      }
+      
+      // Transaction has been verified and moved to source_of_truth collection
+      // It may have a new ID, so we should navigate back to let the parent screen refresh
+      // The transaction will now appear in the appropriate card (e.g., "Reconcile to bank")
+      Alert.alert('Success', 'Transaction verified successfully', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Clear local state after successful verification
+            setSelectedPaymentMethod(null)
+            setEditedItemDebitAccounts(new Map())
+            // Navigate back immediately - parent screen will refresh and show transaction in correct collection
+            if (navigation.canGoBack()) {
+              navigation.goBack()
+            }
+          },
+        },
+      ])
     } catch (error) {
       console.error('Failed to confirm verification:', error)
       let errorMessage = 'Failed to confirm verification. Please try again.'
       if (error instanceof ApiError) {
+        errorMessage = error.message || errorMessage
+      }
+      Alert.alert('Error', errorMessage)
+      setConfirmingVerification(false)
+    }
+  }, [transaction.id, transactionAmount, businessId, isTransactions3, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, details, navigation])
+
+  // Handler for confirming unreconcilable transaction
+  const handleConfirmUnreconcilable = useCallback(async () => {
+    if (!businessId) {
+      Alert.alert('Error', 'Business ID is missing. Cannot verify transaction.')
+      return
+    }
+
+    if (!unreconcilableAccount) {
+      Alert.alert('Error', 'Please select a Chart of Accounts')
+      return
+    }
+
+    setConfirmingVerification(true)
+    try {
+      if (!transaction?.id) {
+        throw new Error('Transaction ID is missing')
+      }
+
+      // Build itemList from form data
+      const itemList = [
+        {
+          name: unreconcilableDescription || transaction.summary?.description || 'Transaction',
+          debitAccount: unreconcilableAccount,
+          amount: transactionAmount,
+          amountExcluding: transactionAmount, // Adjust if VAT-registered
+          isBusinessExpense: true,
+          debitAccountConfirmed: true,
+        },
+      ]
+
+      const verifyResponse = await transactions2Api.verifyTransaction(
+        transaction.id,
+        businessId,
+        {
+          markAsUnreconcilable: true,
+          description: unreconcilableDescription || transaction.summary?.description,
+          itemList: itemList,
+          unreconcilableReason: unreconcilableReason || undefined,
+        },
+      )
+
+      console.log('TransactionDetailScreen: verifyTransaction (unreconcilable) response', {
+        hasResponse: !!verifyResponse,
+        hasMetadata: !!verifyResponse?.metadata,
+      })
+
+      // Transaction has been verified and moved to source_of_truth collection
+      Alert.alert('Success', 'Transaction confirmed successfully', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Clear form state
+            setNoMatchingRecord(false)
+            setUnreconcilableDescription('')
+            setUnreconcilableAccount('')
+            setUnreconcilableReason('')
+            // Navigate back - parent screen will refresh and show transaction in correct collection
+            if (navigation.canGoBack()) {
+              navigation.goBack()
+            }
+          },
+        },
+      ])
+    } catch (error) {
+      console.error('Failed to confirm unreconcilable transaction:', error)
+      let errorMessage = 'Failed to confirm transaction. Please try again.'
+      if (error instanceof ApiError) {
+        errorMessage = error.message || errorMessage
+      } else if (error instanceof Error) {
         errorMessage = error.message
       }
       Alert.alert('Error', errorMessage)
     } finally {
       setConfirmingVerification(false)
     }
-  }, [transaction.id, businessId])
+  }, [transaction.id, transaction.summary?.description, transactionAmount, businessId, unreconcilableAccount, unreconcilableDescription, unreconcilableReason, navigation])
+
+  // Reason options for unreconcilable transactions
+  const unreconcilableReasons = [
+    'Receipt lost',
+    'Personal expense',
+    'Cash transaction',
+    'Receipt not available',
+    'Other',
+  ]
+
+  // Handler for selecting unreconcilable account
+  const handleSelectUnreconcilableAccount = useCallback((account: string) => {
+    setUnreconcilableAccount(account)
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowUnreconcilableAccountPicker(false)
+    })
+  }, [slideAnim])
+
+  // Handler for selecting unreconcilable reason
+  const [showReasonPicker, setShowReasonPicker] = useState(false)
+  const handleSelectReason = useCallback((reason: string) => {
+    setUnreconcilableReason(reason)
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowReasonPicker(false)
+    })
+  }, [slideAnim])
+
+  // Trigger animations when modals open
+  React.useEffect(() => {
+    if (showUnreconcilableAccountPicker || showReasonPicker) {
+      // Start animation immediately when modal opens
+      slideAnim.setValue(0)
+      Animated.timing(slideAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start()
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start()
+    }
+  }, [showUnreconcilableAccountPicker, showReasonPicker, slideAnim])
+
+  // Handler for closing unreconcilable account picker
+  const handleCloseUnreconcilableAccountPicker = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowUnreconcilableAccountPicker(false)
+    })
+  }, [slideAnim])
+
+  // Handler for closing reason picker
+  const handleCloseReasonPicker = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowReasonPicker(false)
+    })
+  }, [slideAnim])
 
   const handleGoBack = useCallback(() => {
     navigation.goBack()
@@ -156,29 +521,36 @@ export default function TransactionDetailScreen() {
 
   const handleSelectPaymentMethod = useCallback(
     async (method: PaymentMethodOption) => {
-      setUpdatingPaymentMethod(true)
-      try {
-        const updatedTransaction = await transactions2Api.updatePaymentMethod(
-          transaction.id,
-          businessId,
-          method.value,
-        )
-        setTransaction(updatedTransaction)
+      if (isTransactions3) {
+        // For transactions3: store locally (will be sent during verification)
+        setSelectedPaymentMethod(method.value)
         handleClosePaymentMethodPicker()
-      } catch (error) {
-        console.error('Failed to update payment method:', error)
-        let errorMessage = 'Failed to update payment method. Please try again.'
+      } else {
+        // For transactions2: update immediately via API
+        setUpdatingPaymentMethod(true)
+        try {
+          const updatedTransaction = await transactions2Api.updatePaymentMethod(
+            transaction.id,
+            businessId,
+            method.value,
+          )
+          setTransaction(updatedTransaction)
+          handleClosePaymentMethodPicker()
+        } catch (error) {
+          console.error('Failed to update payment method:', error)
+          let errorMessage = 'Failed to update payment method. Please try again.'
 
-        if (error instanceof ApiError) {
-          errorMessage = error.message
+          if (error instanceof ApiError) {
+            errorMessage = error.message
+          }
+
+          Alert.alert('Error', errorMessage)
+        } finally {
+          setUpdatingPaymentMethod(false)
         }
-
-        Alert.alert('Error', errorMessage)
-      } finally {
-        setUpdatingPaymentMethod(false)
       }
     },
-    [transaction.id, businessId, handleClosePaymentMethodPicker],
+    [transaction.id, businessId, handleClosePaymentMethodPicker, isTransactions3],
   )
 
   // Fetch chart accounts when opening the picker
@@ -259,11 +631,18 @@ export default function TransactionDetailScreen() {
     [editingItemIndex, transaction.id, businessId, handleClosePicker],
   )
 
+  // Safely access transaction properties with fallbacks
+  const transactionSummary = transaction?.summary
+  const transactionCurrency = transactionSummary?.currency || DEFAULT_CURRENCY
+  const transactionAmount = transactionSummary?.totalAmount || 0
+  const transactionDateValue = transactionSummary?.transactionDate || Date.now()
+  const thirdPartyName = transactionSummary?.thirdPartyName || 'Unknown'
+
   const isDefaultCurrency = (currency: string) => currency.toUpperCase() === DEFAULT_CURRENCY
-  const isDefault = isDefaultCurrency(transaction.summary.currency)
+  const isDefault = isDefaultCurrency(transactionCurrency)
 
   // Format transaction date and time (like Monzo: "Thursday 13 November, 21:17")
-  const transactionDate = new Date(transaction.summary.transactionDate)
+  const transactionDate = new Date(transactionDateValue)
   const formattedDate = transactionDate.toLocaleDateString('en-GB', {
     weekday: 'long',
     day: 'numeric',
@@ -291,11 +670,11 @@ export default function TransactionDetailScreen() {
     }
     return symbols[currency.toUpperCase()] || currency.toUpperCase()
   }
-  const currencySymbol = getCurrencySymbol(transaction.summary.currency)
+  const currencySymbol = getCurrencySymbol(transactionCurrency)
   const formattedAmount = new Intl.NumberFormat('en-GB', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(transaction.summary.totalAmount)
+  }).format(transactionAmount)
   const amountWithSymbol = `${currencySymbol}${formattedAmount}`
 
   // Format item amounts (without currency symbol, as it's shown in header)
@@ -306,26 +685,66 @@ export default function TransactionDetailScreen() {
     }).format(amount)
   }
 
-  // Get item list from details
-  const details = transaction.details as TransactionDetails | undefined
+  // Get item list from details - safely access with optional chaining
+  const details = transaction?.details as {
+    itemList?: TransactionItem[]
+    paymentBreakdown?: Array<{ type?: string; amount?: number }>
+  } | undefined
   const itemList = details?.itemList || []
 
-  // Check if classification kind is "purchase" and get chart name
-  const classification = transaction.metadata.classification as TransactionClassification | undefined
-  const accounting = transaction.accounting as TransactionAccounting | undefined
+  // Check if classification kind is "purchase" and get chart name (for transactions2)
+  // Note: accounting is already extracted above for hasAccountingEntries check
+  const transactionAccounting = transaction?.accounting as TransactionAccounting | undefined
   const isPurchase = classification?.kind === 'purchase'
-  const chartName = isPurchase ? accounting?.credits?.[0]?.chartName : undefined
+  const chartName = isPurchase && !isTransactions3 ? transactionAccounting?.credits?.[0]?.chartName : undefined
+
+  // For transactions3: get payment method from details.paymentBreakdown or use selected one
+  const currentPaymentBreakdown = details?.paymentBreakdown || []
+  const currentPaymentMethodType = currentPaymentBreakdown.length > 0 
+    ? currentPaymentBreakdown[0].type 
+    : undefined
+  const displayPaymentMethod = selectedPaymentMethod || currentPaymentMethodType
+
+  // Get payment method label for display
+  const getPaymentMethodLabel = (methodType?: string | null): string | null => {
+    if (!methodType) return null
+    const labels: Record<string, string> = {
+      cash: 'Cash',
+      card: 'Card',
+      bank_transfer: 'Bank Transfer',
+      cheque: 'Cheque',
+      other: 'Other',
+    }
+    return labels[methodType] || methodType.charAt(0).toUpperCase() + methodType.slice(1)
+  }
 
   return (
-    <AppBarLayout title={transaction.summary.thirdPartyName} onBackPress={handleGoBack}>
+    <AppBarLayout title={thirdPartyName} onBackPress={handleGoBack}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <View style={styles.header}>
           <View style={styles.iconContainer}>
-            <MaterialCommunityIcons name="receipt-text" size={32} color={GRAYSCALE_PRIMARY} />
+            {isBankTransaction ? (
+              <MaterialIcons name="account-balance" size={32} color={GRAYSCALE_PRIMARY} />
+            ) : (
+              <MaterialCommunityIcons name="receipt-text" size={32} color={GRAYSCALE_PRIMARY} />
+            )}
           </View>
-          <Text style={styles.thirdPartyName}>{dateTimeString}</Text>
-          <Text style={styles.amount}>{amountWithSymbol}</Text>
-          {chartName && (
+          {/* For bank transactions from "Needs reconciliation", show description and credit/debit status */}
+          {isNeedsReconciliation ? (
+            <>
+              <Text style={styles.thirdPartyName}>{transaction?.summary?.description || thirdPartyName}</Text>
+              <Text style={styles.amount}>{amountWithSymbol}</Text>
+              <Text style={styles.transactionType}>
+                {isCredit === true ? 'Credit' : isCredit === false ? 'Debit' : 'Unknown'}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.thirdPartyName}>{dateTimeString}</Text>
+              <Text style={styles.amount}>{amountWithSymbol}</Text>
+            </>
+          )}
+          {chartName && !isTransactions3 && (
             <View style={styles.chartNameRow}>
               <Text style={styles.chartName}>{chartName}</Text>
               <TouchableOpacity
@@ -338,9 +757,24 @@ export default function TransactionDetailScreen() {
               </TouchableOpacity>
             </View>
           )}
+          {isTransactions3 && !isBankTransaction && (
+            <View style={styles.chartNameRow}>
+              <Text style={styles.chartName}>
+                {displayPaymentMethod ? getPaymentMethodLabel(displayPaymentMethod) || 'Payment method' : 'Payment method'}
+              </Text>
+              <TouchableOpacity
+                style={styles.chartNameEditButton}
+                onPress={handleEditPaymentMethod}
+                activeOpacity={0.6}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="mode-edit-outline" size={14} color="#888888" />
+              </TouchableOpacity>
+            </View>
+          )}
           {!isDefault && (
             <Text style={styles.foreignCurrency}>
-              {formatAmount(transaction.summary.totalAmount, transaction.summary.currency, false)}
+              {formatAmount(transactionAmount, transactionCurrency, false)}
             </Text>
           )}
         </View>
@@ -356,10 +790,13 @@ export default function TransactionDetailScreen() {
                   <Text style={styles.itemName}>{item.name}</Text>
                   <View style={styles.itemDetailsRow}>
                     <Text style={styles.itemDetails}>
-                      {item.quantity} × {formatItemAmount(item.unitCost)}
-                      {item.debitAccount && ` • ${item.debitAccount}`}
+                      {item.quantity !== undefined && item.unitCost !== undefined
+                        ? `${item.quantity} × ${formatItemAmount(item.unitCost)}`
+                        : formatItemAmount(item.amount)}
+                      {(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) && 
+                        ` • ${editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount}`}
                     </Text>
-                    {item.debitAccount && (
+                    {(isUnverified || item.debitAccount) && (
                       <TouchableOpacity
                         style={styles.editIconButton}
                         activeOpacity={0.6}
@@ -377,7 +814,102 @@ export default function TransactionDetailScreen() {
           </View>
         )}
 
-        {isUnverified && (
+        {/* For bank transactions from "Needs reconciliation", show checkbox and form */}
+        {isNeedsReconciliation ? (
+          <View style={styles.unreconcilableContainer}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setNoMatchingRecord(!noMatchingRecord)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons
+                name={noMatchingRecord ? 'check-box' : 'check-box-outline-blank'}
+                size={24}
+                color={GRAYSCALE_PRIMARY}
+              />
+              <Text style={styles.checkboxLabel}>No matching record</Text>
+            </TouchableOpacity>
+
+            {noMatchingRecord && (
+              <View style={styles.unreconcilableForm}>
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Description</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={unreconcilableDescription}
+                    onChangeText={setUnreconcilableDescription}
+                    placeholder="Transaction description"
+                  />
+                </View>
+
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Chart of Accounts</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={async () => {
+                      if (!businessId) {
+                        Alert.alert('Error', 'Business ID is missing')
+                        return
+                      }
+                      setLoadingAccounts(true)
+                      try {
+                        const accounts = await chartAccountsApi.getAccounts(businessId)
+                        const accountNames = accounts.map((acc) => acc.name)
+                        setAvailableAccounts(accountNames)
+                        // Reset animation and open picker after accounts are loaded
+                        slideAnim.setValue(0)
+                        setShowUnreconcilableAccountPicker(true)
+                      } catch (error) {
+                        console.error('Failed to load accounts:', error)
+                        Alert.alert('Error', 'Failed to load accounts')
+                      } finally {
+                        setLoadingAccounts(false)
+                      }
+                    }}
+                  >
+                    <Text style={[styles.pickerButtonText, !unreconcilableAccount && styles.pickerButtonPlaceholder]}>
+                      {unreconcilableAccount || 'Select account'}
+                    </Text>
+                    <MaterialIcons name="arrow-drop-down" size={24} color={GRAYSCALE_PRIMARY} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Reason</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={() => {
+                      // Reset animation and open picker
+                      slideAnim.setValue(0)
+                      setShowReasonPicker(true)
+                    }}
+                  >
+                    <Text style={[styles.pickerButtonText, !unreconcilableReason && styles.pickerButtonPlaceholder]}>
+                      {unreconcilableReason || 'Select reason'}
+                    </Text>
+                    <MaterialIcons name="arrow-drop-down" size={24} color={GRAYSCALE_PRIMARY} />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.confirmButton,
+                    (!unreconcilableAccount || confirmingVerification) && styles.confirmButtonDisabled,
+                  ]}
+                  onPress={handleConfirmUnreconcilable}
+                  activeOpacity={0.8}
+                  disabled={!unreconcilableAccount || confirmingVerification}
+                >
+                  {confirmingVerification ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.confirmButtonText}>Confirm transaction</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        ) : isUnverified && !isNeedsReconciliation ? (
           <View style={styles.confirmButtonContainer}>
             <TouchableOpacity
               style={[styles.confirmButton, confirmingVerification && styles.confirmButtonDisabled]}
@@ -392,7 +924,7 @@ export default function TransactionDetailScreen() {
               )}
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
       </ScrollView>
 
       {/* Account Picker Bottom Sheet */}
@@ -448,10 +980,11 @@ export default function TransactionDetailScreen() {
                       </View>
                     ) : (
                       accounts.map((account, idx) => {
-                      const details = transaction.details as TransactionDetails | undefined
-                      const itemList = details?.itemList || []
-                      const currentItem = editingItemIndex !== null ? itemList[editingItemIndex] : null
-                      const isSelected = currentItem?.debitAccount === account
+                        // Get current account from edited state or transaction
+                        const currentAccount = editingItemIndex !== null && editedItemDebitAccounts.has(editingItemIndex)
+                          ? editedItemDebitAccounts.get(editingItemIndex)
+                          : (transaction?.details as TransactionDetails | undefined)?.itemList?.[editingItemIndex ?? -1]?.debitAccount
+                        const isSelected = currentAccount === account
 
                       return (
                         <TouchableOpacity
@@ -539,8 +1072,16 @@ export default function TransactionDetailScreen() {
                       </View>
                     ) : (
                       methods.map((method, idx) => {
-                        // Get current payment method value from transaction
-                        const currentPaymentMethodValue = accounting?.credits?.[0]?.paymentMethod
+                        // Get current payment method value from transaction or local state
+                        let currentPaymentMethodValue: string | undefined
+                        if (isTransactions3) {
+                          // For transactions3: check local state first, then transaction
+                          currentPaymentMethodValue = selectedPaymentMethod || currentPaymentMethodType
+                        } else {
+                          // For transactions2: check accounting credits
+                          const credits = accounting?.credits
+                          currentPaymentMethodValue = credits && credits.length > 0 ? credits[0]?.paymentMethod : undefined
+                        }
                         const isSelected = currentPaymentMethodValue === method.value
                         return (
                           <TouchableOpacity
@@ -570,6 +1111,148 @@ export default function TransactionDetailScreen() {
                   })()}
                 </ScrollView>
               )}
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Unreconcilable Account Picker Bottom Sheet */}
+      <Modal
+        visible={showUnreconcilableAccountPicker}
+        transparent
+        animationType="none"
+        onRequestClose={handleCloseUnreconcilableAccountPicker}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={handleCloseUnreconcilableAccountPicker}
+        >
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                transform: [
+                  {
+                    translateY: slideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [400, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Chart of Accounts</Text>
+                <TouchableOpacity onPress={handleCloseUnreconcilableAccountPicker} style={styles.closeButton}>
+                  <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
+                </TouchableOpacity>
+              </View>
+              {loadingAccounts ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+                  <Text style={styles.loadingText}>Loading accounts...</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  style={styles.accountList}
+                  contentContainerStyle={{ paddingBottom: insets.bottom }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {(() => {
+                    const accounts = Array.isArray(availableAccounts) ? availableAccounts : []
+                    return accounts.length === 0 ? (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>No accounts available</Text>
+                      </View>
+                    ) : (
+                      accounts.map((account, idx) => {
+                        const isSelected = unreconcilableAccount === account
+                        return (
+                          <TouchableOpacity
+                            key={idx}
+                            style={[styles.accountOption, isSelected && styles.accountOptionSelected]}
+                            onPress={() => handleSelectUnreconcilableAccount(account)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.accountOptionText, isSelected && styles.accountOptionTextSelected]}>
+                              {account}
+                            </Text>
+                            {isSelected && (
+                              <MaterialIcons name="check" size={20} color={GRAYSCALE_PRIMARY} style={styles.checkIcon} />
+                            )}
+                          </TouchableOpacity>
+                        )
+                      })
+                    )
+                  })()}
+                </ScrollView>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Reason Picker Bottom Sheet */}
+      <Modal
+        visible={showReasonPicker}
+        transparent
+        animationType="none"
+        onRequestClose={handleCloseReasonPicker}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={handleCloseReasonPicker}
+        >
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                transform: [
+                  {
+                    translateY: slideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [400, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Reason</Text>
+                <TouchableOpacity onPress={handleCloseReasonPicker} style={styles.closeButton}>
+                  <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.accountList}
+                contentContainerStyle={{ paddingBottom: insets.bottom }}
+                showsVerticalScrollIndicator={false}
+              >
+                {unreconcilableReasons.map((reason, idx) => {
+                  const isSelected = unreconcilableReason === reason
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.accountOption, isSelected && styles.accountOptionSelected]}
+                      onPress={() => handleSelectReason(reason)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.accountOptionText, isSelected && styles.accountOptionTextSelected]}>
+                        {reason}
+                      </Text>
+                      {isSelected && (
+                        <MaterialIcons name="check" size={20} color={GRAYSCALE_PRIMARY} style={styles.checkIcon} />
+                      )}
+                    </TouchableOpacity>
+                  )
+                })}
+              </ScrollView>
             </TouchableOpacity>
           </Animated.View>
         </TouchableOpacity>
@@ -631,6 +1314,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: GRAYSCALE_PRIMARY,
     marginBottom: 4,
+  },
+  transactionType: {
+    fontSize: 14,
+    color: '#888888',
+    marginTop: 4,
   },
   chartNameRow: {
     flexDirection: 'row',
@@ -776,6 +1464,71 @@ const styles = StyleSheet.create({
   },
   optionLoader: {
     marginLeft: 8,
+  },
+  unreconcilableContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 16,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  checkboxLabel: {
+    fontSize: 16,
+    color: GRAYSCALE_PRIMARY,
+    marginLeft: 12,
+    fontWeight: '500',
+  },
+  unreconcilableForm: {
+    marginTop: 8,
+  },
+  formField: {
+    marginBottom: 20,
+  },
+  formLabel: {
+    fontSize: 14,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  textInput: {
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    color: GRAYSCALE_PRIMARY,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  pickerButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  pickerButtonText: {
+    fontSize: 15,
+    color: GRAYSCALE_PRIMARY,
+  },
+  pickerButtonPlaceholder: {
+    color: '#888888',
+  },
+  reasonPickerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   confirmButtonContainer: {
     marginTop: 24,

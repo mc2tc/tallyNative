@@ -14,11 +14,16 @@ import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
 import { AppBarLayout } from '../components/AppBarLayout'
 
+type SimpleReportRoute = Exclude<
+  keyof ReportsStackParamList,
+  'AccountLedger'
+>
+
 type ReportCardConfig = {
   key: string
   title: string
   subtitle: string
-  route: keyof ReportsStackParamList
+  route: SimpleReportRoute
 }
 
 const reportCards: ReportCardConfig[] = [
@@ -115,11 +120,7 @@ export default function ReportsScreen() {
     )
 
     // Calculate net profit (income - expenses)
-    // Filter for Sales Revenue accounts by name (chart of accounts uses "Sales Revenue" instead of type "income")
-    const incomeAccounts = accounts.filter((acc) => {
-      const name = acc.name?.toLowerCase() || ''
-      return name.includes('sales revenue') || name.includes('revenue') || acc.type === 'income'
-    })
+    const incomeAccounts = accounts.filter((acc) => acc.type === 'income')
     const expenseAccounts = accounts.filter((acc) => acc.type === 'expense')
     const totalIncome = incomeAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
     const totalExpenses = expenseAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
@@ -175,7 +176,7 @@ export default function ReportsScreen() {
   }
 
   const handleNavigate = useCallback(
-    (route: keyof ReportsStackParamList) => {
+    (route: SimpleReportRoute) => {
       navigation.navigate(route)
     },
     [navigation],

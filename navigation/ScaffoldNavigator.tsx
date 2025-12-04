@@ -9,7 +9,7 @@ import UploadProcessingScreen from '../screens/UploadProcessingScreen'
 import type { Transaction } from '../lib/api/transactions2'
 
 export type ScaffoldStackParamList = {
-  ScaffoldHome: { activeSection?: 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' }
+  ScaffoldHome: { activeSection?: 'receipts' | 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' }
   ScaffoldViewAll: {
     section: string
     title: string
