@@ -3,7 +3,7 @@
 ## 2025-12-06
 
 ### Summary
-Fixed AccountLedgerScreen to use transactions3 API instead of transactions2, updated Reporting Ready filtering logic to match transactions3 definition, and added comprehensive debug logging to diagnose why transactions weren't appearing in reports. Added pull-to-refresh functionality to ReportsScreen. Identified that the backend chart accounts API needs to be updated to read from transactions3 instead of transactions2.
+Fixed AccountLedgerScreen to use transactions3 API instead of transactions2, updated Reporting Ready filtering logic to match transactions3 definition, and added comprehensive debug logging to diagnose why transactions weren't appearing in reports. Added pull-to-refresh functionality to ReportsScreen. Fixed TypeScript errors in Firebase configuration and updated transactions2 API endpoint to transactions3. Identified that the backend chart accounts API needs to be updated to read from transactions3 instead of transactions2.
 
 ### Commits
 
@@ -42,12 +42,39 @@ Fixed AccountLedgerScreen to use transactions3 API instead of transactions2, upd
 
 ---
 
+#### 2. fix: Fix TypeScript errors and update transactions2 API to transactions3
+**Commit:** `71d61e1`  
+**Files Changed:** 3 files, 37 insertions(+), 8 deletions(-)
+
+**Changes:**
+- Fixed Firebase `getReactNativePersistence` TypeScript import error:
+  - Changed import from `'firebase/auth'` to `'firebase/auth/react-native'`
+  - Added `@ts-ignore` comment for type definition gap (function exists at runtime)
+  - Added `initializeAuth` import and AsyncStorage persistence initialization
+  - Added error handling for already-initialized auth state
+- Updated `TransactionsListResponse` type to use pagination object structure:
+  - Changed from flat `total`, `page`, `limit` fields to nested `pagination` object
+  - Matches transactions3 API response format with `totalCount`, `totalPages`, `hasNextPage`, `hasPreviousPage`
+- Updated `getTransactions` endpoint from transactions2 to transactions3:
+  - Changed endpoint from `/authenticated/transactions2/api/transactions` to `/authenticated/transactions3/api/transactions`
+  - This completes the migration of the legacy `getTransactions` method to use transactions3
+- Added defensive unverified status check in `purchases3NeedsVerification` filter:
+  - Added explicit check for `verification.status === 'unverified'` in addition to purchase kind check
+  - Ensures only unverified purchase transactions appear in "Needs verification" card
+
+**Files Modified:**
+- `lib/config/firebase.ts` - Fixed TypeScript import error, added AsyncStorage persistence
+- `lib/api/transactions2.ts` - Updated response type and endpoint to transactions3
+- `screens/TransactionsScaffoldScreen.tsx` - Added defensive unverified status check
+
+---
+
 ### Statistics
-- **Total Commits:** 1
-- **Total Files Changed:** 2 files
-- **Total Lines Added:** 208 insertions
-- **Total Lines Removed:** 50 deletions
-- **Net Change:** +158 lines
+- **Total Commits:** 2
+- **Total Files Changed:** 5 files
+- **Total Lines Added:** 245 insertions
+- **Total Lines Removed:** 58 deletions
+- **Net Change:** +187 lines
 
 ### Key Features Added
 1. AccountLedgerScreen now correctly queries transactions3 `source_of_truth` collection
@@ -55,12 +82,18 @@ Fixed AccountLedgerScreen to use transactions3 API instead of transactions2, upd
 3. Comprehensive debug logging for transaction fetching and filtering
 4. Pull-to-refresh functionality on ReportsScreen
 5. Diagnostic checks to verify transactions3 data availability
+6. Fixed TypeScript errors in Firebase configuration
+7. Updated legacy `getTransactions` method to use transactions3 endpoint
+8. Improved type safety with pagination object structure
 
 ### Notes
 - **Root Cause Identified:** The backend chart accounts API (`/api/businesses/{businessId}/chart-accounts`) is still reading from transactions2 instead of transactions3, which is why all account values are 0. The frontend changes are correct - the backend needs to be updated to query transactions3 `source_of_truth` collection.
 - Diagnostic logs show that transactions exist in transactions3 with accounting entries, but the chart accounts API isn't finding them.
 - Frontend is now correctly using transactions3 for AccountLedgerScreen, which should work once backend chart accounts API is updated.
 - Debug logs will help identify where transactions are being filtered out or if there are account name mismatches.
+- Fixed TypeScript compilation error that was blocking type-checking workflow.
+- Legacy `getTransactions` method now uses transactions3 endpoint, completing the API migration for this method.
+- Firebase auth persistence now properly configured for React Native with AsyncStorage.
 
 ---
 
