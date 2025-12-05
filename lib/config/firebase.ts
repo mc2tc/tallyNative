@@ -1,9 +1,8 @@
 // Firebase configuration and initialization
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
-import { initializeAuth, getAuth, type Auth } from 'firebase/auth'
-// @ts-ignore - getReactNativePersistence may not be in type definitions but exists at runtime
-import { getReactNativePersistence } from 'firebase/auth/react-native'
+// @ts-ignore - getReactNativePersistence exists in the RN bundle but is often missing from public TypeScript definitions
+import { initializeAuth, getAuth, getReactNativePersistence, type Auth } from 'firebase/auth'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
 // Firebase config - these should come from environment variables
