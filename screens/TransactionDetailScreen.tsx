@@ -98,6 +98,7 @@ export default function TransactionDetailScreen() {
     verification?: { status?: string }
     classification?: TransactionClassification
     businessId?: string
+    statementContext?: { isCredit?: boolean }
   } | undefined
   const isUnverified = transactionMetadata?.verification?.status === 'unverified'
   
@@ -112,7 +113,7 @@ export default function TransactionDetailScreen() {
   // Check if transaction has accounting entries (to determine if it needs reconciliation)
   const accounting = transaction?.accounting as {
     debits?: Array<unknown>
-    credits?: Array<unknown>
+    credits?: Array<{ paymentMethod?: string; chartName?: string }>
   } | undefined
   const hasAccountingEntries = (accounting?.debits?.length ?? 0) > 0 || (accounting?.credits?.length ?? 0) > 0
   // Bank transaction from "Needs reconciliation" card: unverified, no accounting entries
@@ -128,6 +129,16 @@ export default function TransactionDetailScreen() {
       setUnreconcilableDescription(transaction?.summary?.description || transaction?.summary?.thirdPartyName || '')
     }
   }, [isNeedsReconciliation, transaction?.summary?.description, transaction?.summary?.thirdPartyName])
+
+  // Safely access transaction properties with fallbacks (moved before callbacks that use them)
+  const transactionSummary = transaction?.summary
+  const transactionAmount = transactionSummary?.totalAmount || 0
+  
+  // Get item list from details - safely access with optional chaining
+  const details = transaction?.details as {
+    itemList?: TransactionItem[]
+    paymentBreakdown?: Array<{ type?: string; amount?: number }>
+  } | undefined
 
   const handleConfirmVerification = useCallback(async () => {
     if (!businessId) {
@@ -252,10 +263,15 @@ export default function TransactionDetailScreen() {
         })
         if (businessId) {
           // Create metadata object with required fields
+          // Use unknown cast to bypass type checking since we're creating a minimal metadata object
           updatedTransaction.metadata = {
             businessId,
-            id: updatedTransaction.id || transaction.id,
-          } as Transaction['metadata']
+            capture: {},
+            classification: {},
+            createdBy: '',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          } as unknown as Transaction['metadata']
         } else {
           console.error('TransactionDetailScreen: Cannot create metadata without businessId')
           Alert.alert('Error', 'Transaction verification succeeded but response is missing required fields')
@@ -303,7 +319,7 @@ export default function TransactionDetailScreen() {
       Alert.alert('Error', errorMessage)
       setConfirmingVerification(false)
     }
-  }, [transaction.id, transactionAmount, businessId, isTransactions3, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, details, navigation])
+  }, [transaction.id, transaction?.summary?.totalAmount, businessId, isTransactions3, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, transaction?.details, navigation])
 
   // Handler for confirming unreconcilable transaction
   const handleConfirmUnreconcilable = useCallback(async () => {
@@ -324,12 +340,13 @@ export default function TransactionDetailScreen() {
       }
 
       // Build itemList from form data
+      const unreconcilableAmount = transaction?.summary?.totalAmount || 0
       const itemList = [
         {
           name: unreconcilableDescription || transaction.summary?.description || 'Transaction',
           debitAccount: unreconcilableAccount,
-          amount: transactionAmount,
-          amountExcluding: transactionAmount, // Adjust if VAT-registered
+          amount: unreconcilableAmount,
+          amountExcluding: unreconcilableAmount, // Adjust if VAT-registered
           isBusinessExpense: true,
           debitAccountConfirmed: true,
         },
@@ -380,7 +397,7 @@ export default function TransactionDetailScreen() {
     } finally {
       setConfirmingVerification(false)
     }
-  }, [transaction.id, transaction.summary?.description, transactionAmount, businessId, unreconcilableAccount, unreconcilableDescription, unreconcilableReason, navigation])
+  }, [transaction.id, transaction.summary?.description, transaction?.summary?.totalAmount, businessId, unreconcilableAccount, unreconcilableDescription, unreconcilableReason, navigation])
 
   // Reason options for unreconcilable transactions
   const unreconcilableReasons = [
@@ -631,10 +648,8 @@ export default function TransactionDetailScreen() {
     [editingItemIndex, transaction.id, businessId, handleClosePicker],
   )
 
-  // Safely access transaction properties with fallbacks
-  const transactionSummary = transaction?.summary
+  // Additional transaction properties for display
   const transactionCurrency = transactionSummary?.currency || DEFAULT_CURRENCY
-  const transactionAmount = transactionSummary?.totalAmount || 0
   const transactionDateValue = transactionSummary?.transactionDate || Date.now()
   const thirdPartyName = transactionSummary?.thirdPartyName || 'Unknown'
 
@@ -685,11 +700,6 @@ export default function TransactionDetailScreen() {
     }).format(amount)
   }
 
-  // Get item list from details - safely access with optional chaining
-  const details = transaction?.details as {
-    itemList?: TransactionItem[]
-    paymentBreakdown?: Array<{ type?: string; amount?: number }>
-  } | undefined
   const itemList = details?.itemList || []
 
   // Check if classification kind is "purchase" and get chart name (for transactions2)
