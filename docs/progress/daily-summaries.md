@@ -1,5 +1,69 @@
 # Daily Development Summaries
 
+## 2025-12-06
+
+### Summary
+Fixed AccountLedgerScreen to use transactions3 API instead of transactions2, updated Reporting Ready filtering logic to match transactions3 definition, and added comprehensive debug logging to diagnose why transactions weren't appearing in reports. Added pull-to-refresh functionality to ReportsScreen. Identified that the backend chart accounts API needs to be updated to read from transactions3 instead of transactions2.
+
+### Commits
+
+#### 1. fix: Update AccountLedgerScreen to use transactions3 and add debug logging
+**Commit:** `f118a02`  
+**Files Changed:** 2 files, 208 insertions(+), 50 deletions(-)
+
+**Changes:**
+- Updated AccountLedgerScreen to use `getTransactions3` with `source_of_truth` collection instead of `getTransactions`
+- Changed API query to fetch from `source_of_truth` collection with `status: 'verification:verified'` filter
+- Updated Reporting Ready filtering logic to match transactions3 definition:
+  - Removed redundant verification check (already filtered by backend)
+  - Updated reconciliation status check to use transactions3 values: `reconciled`, `not_required` (with legacy `matched` support)
+  - Simplified logic: include if `reconciled/not_required OR has accounting entries`
+- Added comprehensive debug logging to AccountLedgerScreen:
+  - Logs account name, type, businessId, and period when fetching
+  - Logs API response with total transactions, pagination, and sample transaction details
+  - Logs filtering process with counts at each stage (date filtering, Reporting Ready filtering, account matching)
+  - Logs account matching details for first 3 transactions showing debits/credits
+  - Logs final ledger entries count
+- Added debug logging to ReportsScreen:
+  - Logs chart accounts API response with total accounts, period, and sample accounts
+  - Logs normalized accounts breakdown by type
+  - Logs calculated metrics (income, expenses, net profit, assets, liabilities, equity)
+  - Added diagnostic check to verify transactions3 transactions exist before chart accounts calculation
+- Added pull-to-refresh functionality to ReportsScreen:
+  - Imported `RefreshControl` from react-native
+  - Added `refreshing` state
+  - Created `onRefresh` callback that refetches chart accounts data
+  - Extracted `fetchData` into `useCallback` for reuse
+  - Added `RefreshControl` to ScrollView
+
+**Files Modified:**
+- `screens/AccountLedgerScreen.tsx` - Updated to use transactions3, improved filtering, added debug logs
+- `screens/ReportsScreen.tsx` - Added pull-to-refresh, debug logging, and diagnostic checks
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 2 files
+- **Total Lines Added:** 208 insertions
+- **Total Lines Removed:** 50 deletions
+- **Net Change:** +158 lines
+
+### Key Features Added
+1. AccountLedgerScreen now correctly queries transactions3 `source_of_truth` collection
+2. Updated Reporting Ready filtering to match transactions3 definition
+3. Comprehensive debug logging for transaction fetching and filtering
+4. Pull-to-refresh functionality on ReportsScreen
+5. Diagnostic checks to verify transactions3 data availability
+
+### Notes
+- **Root Cause Identified:** The backend chart accounts API (`/api/businesses/{businessId}/chart-accounts`) is still reading from transactions2 instead of transactions3, which is why all account values are 0. The frontend changes are correct - the backend needs to be updated to query transactions3 `source_of_truth` collection.
+- Diagnostic logs show that transactions exist in transactions3 with accounting entries, but the chart accounts API isn't finding them.
+- Frontend is now correctly using transactions3 for AccountLedgerScreen, which should work once backend chart accounts API is updated.
+- Debug logs will help identify where transactions are being filtered out or if there are account name mismatches.
+
+---
+
 ## 2025-12-05
 
 ### Summary
