@@ -69,12 +69,28 @@ Fixed AccountLedgerScreen to use transactions3 API instead of transactions2, upd
 
 ---
 
+#### 3. fix: Correct getReactNativePersistence import path
+**Commit:** `d0fa650`  
+**Files Changed:** 1 file, 2 insertions(+), 3 deletions(-)
+
+**Changes:**
+- Fixed runtime bundling error by correcting import path:
+  - Changed from `'firebase/auth/react-native'` (doesn't exist at runtime) to `'firebase/auth'`
+  - The function `getReactNativePersistence` exists at runtime in `'firebase/auth'` but TypeScript types don't include it
+  - Using `@ts-ignore` comment to suppress TypeScript error while maintaining runtime functionality
+  - Fixes Metro bundler error: "Unable to resolve 'firebase/auth/react-native'"
+
+**Files Modified:**
+- `lib/config/firebase.ts` - Corrected import path for getReactNativePersistence
+
+---
+
 ### Statistics
-- **Total Commits:** 2
+- **Total Commits:** 3
 - **Total Files Changed:** 5 files
-- **Total Lines Added:** 245 insertions
-- **Total Lines Removed:** 58 deletions
-- **Net Change:** +187 lines
+- **Total Lines Added:** 247 insertions
+- **Total Lines Removed:** 61 deletions
+- **Net Change:** +186 lines
 
 ### Key Features Added
 1. AccountLedgerScreen now correctly queries transactions3 `source_of_truth` collection
@@ -92,6 +108,7 @@ Fixed AccountLedgerScreen to use transactions3 API instead of transactions2, upd
 - Frontend is now correctly using transactions3 for AccountLedgerScreen, which should work once backend chart accounts API is updated.
 - Debug logs will help identify where transactions are being filtered out or if there are account name mismatches.
 - Fixed TypeScript compilation error that was blocking type-checking workflow.
+- Fixed runtime bundling error by correcting Firebase import path (getReactNativePersistence from 'firebase/auth' not 'firebase/auth/react-native').
 - Legacy `getTransactions` method now uses transactions3 endpoint, completing the API migration for this method.
 - Firebase auth persistence now properly configured for React Native with AsyncStorage.
 
