@@ -62,14 +62,35 @@ export default function AccountLedgerScreen() {
       try {
         setLoading(true)
         setError(null)
-        // Fetch all transactions (we'll filter client-side)
-        const response = await transactions2Api.getTransactions(businessId, {
+        console.log('[AccountLedger] Fetching transactions for account:', {
+          accountName,
+          accountType,
+          businessId,
+          period,
+        })
+        // Fetch reporting-ready transactions from source_of_truth collection
+        // This is where verified transactions with accounting entries are stored
+        const response = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
           page: 1,
           limit: 1000, // Large limit to get all transactions
+          status: 'verification:verified',
+        })
+        console.log('[AccountLedger] API Response:', {
+          totalTransactions: response.transactions?.length || 0,
+          pagination: response.pagination,
+          sampleTransaction: response.transactions?.[0] ? {
+            id: response.transactions[0].id,
+            thirdPartyName: response.transactions[0].summary.thirdPartyName,
+            verificationStatus: (response.transactions[0].metadata as any)?.verification?.status,
+            reconciliationStatus: (response.transactions[0].metadata as any)?.reconciliation?.status,
+            hasAccounting: !!(response.transactions[0].accounting as any)?.debits?.length || !!(response.transactions[0].accounting as any)?.credits?.length,
+            debits: (response.transactions[0].accounting as any)?.debits?.map((d: any) => ({ chartName: d.chartName, amount: d.amount })) || [],
+            credits: (response.transactions[0].accounting as any)?.credits?.map((c: any) => ({ chartName: c.chartName, amount: c.amount })) || [],
+          } : null,
         })
         setTransactions(response.transactions)
       } catch (err) {
-        console.error('Failed to fetch transactions:', err)
+        console.error('[AccountLedger] Failed to fetch transactions:', err)
         setError('Failed to load transactions')
         setTransactions([])
       } finally {
@@ -82,11 +103,25 @@ export default function AccountLedgerScreen() {
 
   // Filter and process transactions for this account
   const ledgerEntries = useMemo(() => {
-    if (!transactions.length) return []
+    console.log('[AccountLedger] Filtering transactions:', {
+      totalTransactions: transactions.length,
+      accountName,
+      accountType,
+      period,
+    })
+
+    if (!transactions.length) {
+      console.log('[AccountLedger] No transactions to filter')
+      return []
+    }
 
     const entries: LedgerEntry[] = []
     const startDate = period?.startDate ? new Date(period.startDate) : null
     const endDate = period?.endDate ? new Date(period.endDate) : null
+
+    let dateFilteredCount = 0
+    let reportingReadyFilteredCount = 0
+    let accountMatchedCount = 0
 
     for (const transaction of transactions) {
       const txDate = new Date(transaction.summary.transactionDate)
@@ -102,8 +137,11 @@ export default function AccountLedgerScreen() {
         end.setHours(23, 59, 59, 999)
         if (txDate > end) continue
       }
+      dateFilteredCount++
 
-      // Only include Reporting Ready transactions (same logic used for balance sheet)
+      // Only include Reporting Ready transactions
+      // Since we're fetching from source_of_truth collection with verification:verified,
+      // all transactions are already verified. We just need to check reconciliation and accounting.
       const metadata = transaction.metadata as {
         verification?: { status?: string }
         reconciliation?: { status?: string }
@@ -111,19 +149,21 @@ export default function AccountLedgerScreen() {
       const accounting = transaction.accounting as TransactionAccounting | undefined
 
       // Check if transaction is Reporting Ready
-      // Reporting Ready = (verified OR exception) AND (reconciled OR has accounting entries)
-      const isVerified =
-        metadata.verification?.status === 'verified' ||
-        metadata.verification?.status === 'exception'
+      // Reporting Ready = verified AND (reconciled/not_required OR has accounting entries)
+      // Note: We're already filtering for verified transactions from source_of_truth collection
       const isReconciled =
-        metadata.reconciliation?.status === 'matched' ||
-        metadata.reconciliation?.status === 'exception'
+        metadata.reconciliation?.status === 'reconciled' ||
+        metadata.reconciliation?.status === 'not_required' ||
+        metadata.reconciliation?.status === 'matched' // Legacy status support
       const hasAccountingEntries =
         (accounting?.debits?.length ?? 0) > 0 || (accounting?.credits?.length ?? 0) > 0
 
-      if (!isVerified || (!isReconciled && !hasAccountingEntries)) {
+      // Include if reconciled/not_required OR has accounting entries
+      // All transactions from source_of_truth are verified, so we don't need to check verification status
+      if (!isReconciled && !hasAccountingEntries) {
         continue
       }
+      reportingReadyFilteredCount++
 
       // Check both debits and credits for all account types
       // For assets: debits increase (positive), credits decrease (negative)
@@ -132,10 +172,23 @@ export default function AccountLedgerScreen() {
       const debits = accounting?.debits || []
       const credits = accounting?.credits || []
 
+      // Log account matching details for first few transactions
+      if (reportingReadyFilteredCount <= 3) {
+        console.log('[AccountLedger] Checking transaction for account match:', {
+          transactionId: transaction.id,
+          thirdPartyName: transaction.summary.thirdPartyName,
+          accountName,
+          accountType,
+          debits: debits.map((d) => ({ chartName: d.chartName, amount: d.amount })),
+          credits: credits.map((c) => ({ chartName: c.chartName, amount: c.amount })),
+        })
+      }
+
       if (accountType === 'expense' || accountType === 'asset') {
         // Check debits (these increase expense/asset)
         for (const debit of debits) {
           if (debit.chartName === accountName && debit.amount) {
+            accountMatchedCount++
             entries.push({
               transaction,
               amount: debit.amount,
@@ -151,6 +204,7 @@ export default function AccountLedgerScreen() {
         if (accountType === 'asset') {
           for (const credit of credits) {
             if (credit.chartName === accountName && credit.amount) {
+              accountMatchedCount++
               entries.push({
                 transaction,
                 amount: -credit.amount, // Negative because credits decrease assets
@@ -167,6 +221,7 @@ export default function AccountLedgerScreen() {
         // Check credits (these increase income/liability/equity)
         for (const credit of credits) {
           if (credit.chartName === accountName && credit.amount) {
+            accountMatchedCount++
             entries.push({
               transaction,
               amount: credit.amount,
@@ -185,8 +240,18 @@ export default function AccountLedgerScreen() {
       }
     }
 
+    console.log('[AccountLedger] Filtering results:', {
+      totalTransactions: transactions.length,
+      dateFilteredCount,
+      reportingReadyFilteredCount,
+      accountMatchedCount,
+      finalEntriesCount: entries.length,
+    })
+
     // Sort by date ascending (oldest first)
-    return entries.sort((a, b) => a.date.getTime() - b.date.getTime())
+    const sortedEntries = entries.sort((a, b) => a.date.getTime() - b.date.getTime())
+    console.log('[AccountLedger] Final ledger entries:', sortedEntries.length)
+    return sortedEntries
   }, [transactions, accountName, accountType, period])
 
   // Calculate running balance
