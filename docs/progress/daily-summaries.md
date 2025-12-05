@@ -1,5 +1,85 @@
 # Daily Development Summaries
 
+## 2025-12-05
+
+### Summary
+Removed all legacy transactions2 code from refactored sections (Purchases, Bank, Credit Cards) to complete the transactions3 migration. Eliminated the old "receipts" section entirely in favor of "Purchases3", updated all filtering logic to use transactions3 exclusively, and fixed navigation/type errors in upload processing. Added TypeScript type-checking scripts for easier development workflow.
+
+### Commits
+
+#### 1. refactor: Remove legacy transactions2 code from refactored sections
+**Commit:** `local`  
+**Files Changed:** 2 files, ~500 insertions(+), ~800 deletions(-)
+
+**Changes:**
+- Removed 'receipts' section entirely from navigation and type definitions (replaced by 'purchases3')
+- Removed all `getTransactions()` calls for bank and cards sections (now use transactions3 exclusively)
+- Removed backward compatibility code that used `allTransactions` for bank/cards filtering
+- Removed receipts section rendering code and related variables (needsVerificationTransactions, verifiedNeedsMatchTransactions, recentReportingReadyReceipts, parsedTransactions, receiptColumnsWithData)
+- Updated `getFullTransactions` to use transactions3 data for bank and cards sections instead of allTransactions
+- Updated section switching logic to use 'purchases3' instead of 'receipts'
+- Added handling for legacy 'receipts' route params (converts to 'purchases3')
+- Updated reconciliation handlers to only use transactions3 endpoints
+- Updated refresh handlers to only fetch transactions3 data for bank/cards
+- Updated initial fetch comment to clarify it's only for Sales and Reporting sections (not yet migrated)
+
+**Files Modified:**
+- `screens/TransactionsScaffoldScreen.tsx` - Major cleanup removing all transactions2 references from refactored sections
+- `screens/UploadProcessingScreen.tsx` - Fixed 'receipts' references and navigation type errors
+
+---
+
+#### 2. fix: Update UploadProcessingScreen to remove receipts references and fix navigation types
+**Commit:** `local`  
+**Files Changed:** 1 file, ~20 insertions(+), ~15 deletions(-)
+
+**Changes:**
+- Removed outdated comment about "receipts section"
+- Updated activeSection type to remove 'receipts' and add 'purchases3'
+- Updated pipelineSection mapping to convert legacy 'receipts' to 'purchases3' activeSection
+- Fixed navigation type errors by using proper type assertions instead of `as never`
+
+**Files Modified:**
+- `screens/UploadProcessingScreen.tsx` - Fixed type errors and legacy section references
+
+---
+
+#### 3. feat: Add TypeScript type-checking scripts to package.json
+**Commit:** `local`  
+**Files Changed:** 1 file, 2 insertions(+)
+
+**Changes:**
+- Added `type-check` and `check` scripts to run `tsc --noEmit` for type checking
+- Provides similar functionality to Next.js `npm run build` for finding type errors
+
+**Files Modified:**
+- `package.json` - Added type-checking scripts
+
+---
+
+### Statistics
+- **Total Commits:** 3 (local refactoring work)
+- **Total Files Changed:** 3 files
+- **Total Lines Added:** ~520 insertions
+- **Total Lines Removed:** ~815 deletions
+- **Net Change:** ~-295 lines (code cleanup)
+
+### Key Features Added
+1. Complete removal of legacy transactions2 code from Purchases, Bank, and Credit Cards sections
+2. Elimination of 'receipts' section in favor of 'purchases3'
+3. All refactored sections now use transactions3 exclusively
+4. Fixed navigation and type errors in upload processing
+5. Added TypeScript type-checking scripts for development workflow
+
+### Notes
+- **Preserved transactions2 code** for Sales and Reporting Ready sections (will be refactored next)
+- **Preserved transactions2 code** for Payroll, Internal, and Financial Services (not yet started)
+- All bank and credit card transaction filtering now uses transactions3 data exclusively
+- Navigation properly handles legacy 'receipts' pipelineSection values by converting to 'purchases3'
+- Type-checking scripts allow developers to find TypeScript errors without running the app (similar to Next.js build)
+
+---
+
 ## 2025-12-04
 
 ### Summary

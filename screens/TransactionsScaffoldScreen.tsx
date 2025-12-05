@@ -137,7 +137,9 @@ function isBankTransaction(tx: Transaction): boolean {
   const metadata = tx.metadata as {
     capture?: { source?: string }
   }
-  return metadata.capture?.source === 'bank_statement_ocr'
+  // Support both old (bank_statement_ocr) and new (bank_statement_upload) source values
+  return metadata.capture?.source === 'bank_statement_upload' || 
+         metadata.capture?.source === 'bank_statement_ocr'
 }
 
 // Helper function to check if transaction is a credit card transaction (statement entry)
@@ -145,7 +147,7 @@ function isCreditCardTransaction(tx: Transaction): boolean {
   const metadata = tx.metadata as {
     capture?: { source?: string }
   }
-  return metadata.capture?.source === 'credit_card_statement_ocr'
+  return metadata.capture?.source === 'credit_card_statement_upload'
 }
 
 // Helper function to check if transaction is a sale transaction (invoice)
@@ -290,13 +292,12 @@ function isCashOnlyTransaction(tx: Transaction): boolean {
 }
 
 
-type SectionKey = 'receipts' | 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | 'payroll' | 'financialServices'
+type SectionKey = 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | 'payroll' | 'financialServices'
 
 // Base section nav - will be filtered based on available accounts/cards
 const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
   { key: 'sales', label: 'Sales' },
-  { key: 'receipts', label: 'Purchases' },
-  { key: 'purchases3', label: 'Purchases3' },
+  { key: 'purchases3', label: 'Purchases' },
   { key: 'payroll', label: 'Payroll' },
   { key: 'internal', label: 'Internal' },
   { key: 'bank', label: 'Bank' },
@@ -315,7 +316,11 @@ export default function TransactionsScaffoldScreen() {
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const route = useRoute<RouteProp<TransactionsStackParamList, 'TransactionsHome'>>()
   const { businessUser, memberships } = useAuth()
-  const [activeSection, setActiveSection] = useState<SectionKey>(route.params?.activeSection || 'receipts')
+  const [activeSection, setActiveSection] = useState<SectionKey>(
+    (route.params?.activeSection && route.params.activeSection !== 'receipts' 
+      ? route.params.activeSection 
+      : 'purchases3') as SectionKey
+  )
   const [navAtEnd, setNavAtEnd] = useState(false)
   const sectionNavScrollRef = useRef<ScrollView>(null)
   const buttonPositionsRef = useRef<Map<string, { x: number; width: number }>>(new Map())
@@ -340,8 +345,10 @@ export default function TransactionsScaffoldScreen() {
   // Update active section when route params change (e.g., when navigating back from upload)
   useEffect(() => {
     if (route.params?.activeSection) {
-      console.log('TransactionsScaffoldScreen: Setting activeSection from route params:', route.params.activeSection)
-      setActiveSection(route.params.activeSection)
+      // Convert legacy 'receipts' to 'purchases3'
+      const section = route.params.activeSection === 'receipts' ? 'purchases3' : route.params.activeSection
+      console.log('TransactionsScaffoldScreen: Setting activeSection from route params:', section)
+      setActiveSection(section as SectionKey)
     }
   }, [route.params?.activeSection])
 
@@ -363,6 +370,8 @@ export default function TransactionsScaffoldScreen() {
   const [transactions3SourceOfTruth, setTransactions3SourceOfTruth] = useState<Transaction[]>([])
   const [transactions3BankPending, setTransactions3BankPending] = useState<Transaction[]>([])
   const [transactions3BankSourceOfTruth, setTransactions3BankSourceOfTruth] = useState<Transaction[]>([])
+  const [transactions3CardPending, setTransactions3CardPending] = useState<Transaction[]>([])
+  const [transactions3CardSourceOfTruth, setTransactions3CardSourceOfTruth] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingAccountsAndCards, setLoadingAccountsAndCards] = useState(true)
   const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
@@ -379,24 +388,17 @@ export default function TransactionsScaffoldScreen() {
       ? businessUser.businessId
       : nonPersonalMembershipId) ?? membershipIds[0]
 
-  // Also update when screen comes into focus (in case params were set before screen mounted)
-  // Also refresh transactions when screen comes into focus (e.g., after upload)
+  // Refresh transactions when screen comes into focus (e.g., after upload)
+  // Note: Route params are handled in a separate useEffect above
   useFocusEffect(
     useCallback(() => {
-      // Determine current section from route params or state (route params take precedence)
-      const currentSection = route.params?.activeSection || activeSection
-      
-      if (route.params?.activeSection && route.params.activeSection !== activeSection) {
-        console.log('TransactionsScaffoldScreen: Setting activeSection from route params (focus):', route.params.activeSection)
-        setActiveSection(route.params.activeSection)
-      }
-      
       // Refresh transactions when screen comes into focus (to show newly created transactions)
+      // Use activeSection state to determine which section to refresh
       if (businessId) {
         const refreshTransactions = async () => {
           try {
             // If on Purchases3 section, refresh transactions3 data - only purchases
-            if (currentSection === 'purchases3') {
+            if (activeSection === 'purchases3') {
               const [pendingResponse, sourceOfTruthResponse] = await Promise.all([
                 transactions2Api.getTransactions3(businessId, 'pending', {
                   page: 1,
@@ -413,13 +415,9 @@ export default function TransactionsScaffoldScreen() {
               setTransactions3Pending(pendingResponse.transactions || [])
               setTransactions3SourceOfTruth(sourceOfTruthResponse.transactions || [])
               console.log('TransactionsScaffoldScreen: Refreshed transactions3 on focus')
-            } else if (currentSection === 'bank') {
+            } else if (activeSection === 'bank') {
               // For Bank section, refresh transactions3 data using kind=statement_entry filter
-              const [transactions2Response, pendingResponse, verifiedResponse] = await Promise.all([
-                transactions2Api.getTransactions(businessId, {
-                  page: 1,
-                  limit: 200,
-                }),
+              const [pendingResponse, verifiedResponse] = await Promise.all([
                 transactions2Api.getTransactions3(businessId, 'pending', {
                   page: 1,
                   limit: 200,
@@ -435,13 +433,34 @@ export default function TransactionsScaffoldScreen() {
               ])
               
               console.log('TransactionsScaffoldScreen: Refreshed bank transactions on focus', {
-                transactions2: transactions2Response.transactions.length,
                 bankPending: (pendingResponse.transactions || []).length,
                 bankVerified: (verifiedResponse.transactions || []).length,
               })
-              setAllTransactions(transactions2Response.transactions)
               setTransactions3BankPending(pendingResponse.transactions || [])
               setTransactions3BankSourceOfTruth(verifiedResponse.transactions || [])
+            } else if (activeSection === 'cards') {
+              // For Credit Cards section, refresh transactions3 data using kind=statement_entry filter
+              const [pendingResponse, verifiedResponse] = await Promise.all([
+                transactions2Api.getTransactions3(businessId, 'pending', {
+                  page: 1,
+                  limit: 200,
+                  kind: 'statement_entry', // Filter for credit card transactions on backend
+                  status: 'verification:unverified',
+                }),
+                transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+                  page: 1,
+                  limit: 200,
+                  kind: 'statement_entry', // Filter for credit card transactions on backend
+                  status: 'verification:verified',
+                }),
+              ])
+              
+              console.log('TransactionsScaffoldScreen: Refreshed credit card transactions on focus', {
+                cardPending: (pendingResponse.transactions || []).length,
+                cardVerified: (verifiedResponse.transactions || []).length,
+              })
+              setTransactions3CardPending(pendingResponse.transactions || [])
+              setTransactions3CardSourceOfTruth(verifiedResponse.transactions || [])
             } else {
               // For other sections, refresh transactions2 data
               const response = await transactions2Api.getTransactions(businessId, {
@@ -457,7 +476,7 @@ export default function TransactionsScaffoldScreen() {
         }
         refreshTransactions()
       }
-    }, [route.params?.activeSection, businessId, activeSection])
+    }, [businessId, activeSection])
   )
 
   // Fetch bank accounts and credit cards
@@ -542,7 +561,7 @@ export default function TransactionsScaffoldScreen() {
     }, [businessId]),
   )
 
-  // Fetch transactions
+  // Fetch transactions2 data for Sales and Reporting sections (not yet migrated to transactions3)
   useFocusEffect(
     useCallback(() => {
       if (!businessId) {
@@ -553,13 +572,11 @@ export default function TransactionsScaffoldScreen() {
       const fetchTransactions = async () => {
         try {
           setLoading(true)
-          // Fetch all transactions (no classificationKind filter) to include:
-          // - Purchase receipts (classification.kind === 'purchase')
-          // - Bank statements (classification.kind === 'statement_entry' with capture.source === 'bank_statement_ocr')
-          // - Credit card statements (classification.kind === 'statement_entry' with capture.source === 'credit_card_statement_ocr')
+          // Only fetch transactions2 for Sales and Reporting sections (not yet migrated to transactions3)
+          // Bank, Cards, and Purchases3 sections use transactions3 exclusively
           const response = await transactions2Api.getTransactions(businessId, {
             page: 1,
-            limit: 200, // Fetch more to include all transaction types
+            limit: 200,
           })
           setAllTransactions(response.transactions)
         } catch (error) {
@@ -652,58 +669,6 @@ export default function TransactionsScaffoldScreen() {
     }, [businessId, activeSection]),
   )
 
-  // Parse and categorize transactions
-  const parsedTransactions = allTransactions
-    .map((tx) => ({ original: tx, parsed: parseTransaction(tx) }))
-    .filter((item): item is { original: Transaction; parsed: TransactionStub } => item.parsed !== null)
-
-  const needsVerificationTransactions = parsedTransactions
-    .filter((item) => {
-      const metadata = item.original.metadata as {
-        verification?: { status?: string }
-      }
-      return metadata.verification?.status === 'unverified'
-    })
-    .sort((a, b) => {
-      // Sort by updatedAt (most recent first), fallback to createdAt
-      const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.original.metadata as { createdAt?: number }).createdAt ||
-        0
-      const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.original.metadata as { createdAt?: number }).createdAt ||
-        0
-      return bDate - aDate
-    })
-    .slice(0, 3) // Show only 3 most recent
-    .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
-
-  // Verified transactions that need matching (not reporting ready)
-  const verifiedNeedsMatchTransactions = parsedTransactions
-    .filter((item) => {
-      const metadata = item.original.metadata as {
-        verification?: { status?: string }
-        classification?: { kind?: string }
-      }
-      // Only include purchase transactions
-      const isPurchase = metadata.classification?.kind === 'purchase'
-      return (
-        isPurchase &&
-        metadata.verification?.status !== 'unverified' && 
-        !item.parsed.isReportingReady
-      )
-    })
-    .sort((a, b) => {
-      // Sort by updatedAt (most recent first), fallback to createdAt
-      const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.original.metadata as { createdAt?: number }).createdAt ||
-        0
-      const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.original.metadata as { createdAt?: number }).createdAt ||
-        0
-      return bDate - aDate
-    })
-    .slice(0, 3) // Show only 3 most recent
-    .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
 
   // Reporting ready transactions (all sources: receipts, bank, credit cards)
   // Condition: Transaction is reconciled OR (verified with accounting entries) OR (verified cash-only)
@@ -766,113 +731,25 @@ export default function TransactionsScaffoldScreen() {
     })
 
 
-  // Get last 3 receipts that are now Reporting Ready (to show pipeline progress)
-  const recentReportingReadyReceipts: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
-      .filter((tx) => {
-        const metadata = tx.metadata as {
-          capture?: { source?: string; mechanism?: string }
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-        }
-        const capture = metadata.capture
-        const verification = metadata.verification
-        const reconciliation = metadata.reconciliation
-
-        // Check if this is a receipt
-        const isReceipt =
-          capture?.source === 'purchase_invoice_ocr' ||
-          capture?.source === 'manual_entry' ||
-          capture?.mechanism === 'ocr' ||
-          capture?.mechanism === 'manual' ||
-          capture?.source?.includes('purchase')
-
-        if (!isReceipt) {
-          return false
-        }
-
-        // Check if cash-only (fallback for manual entry)
-        const isCashOnly = isCashOnlyTransaction(tx)
-
-        // Check if it's reporting ready
-        // Note: Backend sets reconciliation.status = 'reconciled' for cash when verified via confirmVerification
-        const isReportingReady =
-          verification?.status !== 'unverified' &&
-          (isCashOnly ||
-            reconciliation?.status === 'matched' ||
-            reconciliation?.status === 'reconciled' ||
-            reconciliation?.status === 'exception')
-
-        return isReportingReady
-      })
-      .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt ||
-          0
-        return bDate - aDate
-      })
-      .slice(0, 3) // Get last 3
-      .map((tx) => {
-        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
-        return {
-          id: tx.id,
-          title: tx.summary.thirdPartyName,
-          amount,
-          isReportingReady: true,
-          isCredit: isCreditToAccount(tx),
-          originalTransaction: tx,
-        }
-      })
 
   // Bank transactions that need verification (no reconciliation required)
   // Condition: Has accounting entries (rule matched) but is not yet verified
   // Per docs: Query already filtered by backend for unverified bank transactions (kind=statement_entry)
-  // Now filter client-side for those with accounting entries (rule-matched)
+  // Now filter client-side for those with accounting entries (rule-matched) and bank source
   const bankNeedsVerificationTransactionsRaw: Transaction[] = [
     // Include transactions3 bank transactions from pending collection
     // Backend already filtered for: pending, kind=statement_entry, verification:unverified
-    // Frontend filters for: has accounting entries (rule-matched)
+    // Frontend filters for: bank source AND has accounting entries (rule-matched)
     ...transactions3BankPending
-      .filter((tx) => {
-        // Check if it has accounting entries (rule matched)
-        // Transactions with accounting entries go to "Needs verification" card
-        const hasEntries = hasAccountingEntries(tx)
-        return hasEntries
-      }),
-    // Also include transactions2 bank transactions for backward compatibility
-    ...allTransactions
       .filter((tx) => {
         // Must be a bank transaction
         if (!isBankTransaction(tx)) {
           return false
         }
-
-        const metadata = tx.metadata as {
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-        }
-        
         // Check if it has accounting entries (rule matched)
+        // Transactions with accounting entries go to "Needs verification" card
         const hasEntries = hasAccountingEntries(tx)
-        
-        // Check verification status
-        const verificationStatus = metadata.verification?.status
-        const isVerified = verificationStatus === 'verified'
-        const isException = verificationStatus === 'exception'
-
-        // Check if already reconciled (auto-reconciled transactions skip verification)
-        const reconciliationStatus = metadata.reconciliation?.status
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
-
-        // Needs verification if: has accounting entries AND not verified/exception AND not reconciled
-        return hasEntries && !isVerified && !isException && !isReconciled
+        return hasEntries
       }),
   ]
   
@@ -903,47 +780,22 @@ export default function TransactionsScaffoldScreen() {
   // Bank transactions that need reconciliation
   // Condition: Transaction has no accounting entries (no rule matched)
   // Per docs: Query already filtered by backend for unverified bank transactions (kind=statement_entry)
-  // Now filter client-side for those WITHOUT accounting entries (no rule match)
+  // Now filter client-side for those WITHOUT accounting entries (no rule match) and bank source
   const bankNeedsReconciliationTransactionsRaw: Transaction[] = [
     // Include transactions3 bank transactions from pending collection
     // Backend already filtered for: pending, kind=statement_entry, verification:unverified
-    // Frontend filters for: NO accounting entries (no rule match)
+    // Frontend filters for: bank source AND NO accounting entries (no rule match)
     ...transactions3BankPending
-      .filter((tx) => {
-        // Check if it has accounting entries
-        const hasEntries = hasAccountingEntries(tx)
-        
-        // Transactions WITHOUT accounting entries (no rule matched) go to "Needs reconciliation"
-        return !hasEntries
-      }),
-    // Also include transactions2 bank transactions for backward compatibility
-    ...allTransactions
       .filter((tx) => {
         // Must be a bank transaction
         if (!isBankTransaction(tx)) {
           return false
         }
-
-        const metadata = tx.metadata as {
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-        }
-        const reconciliationStatus = metadata.reconciliation?.status
-
         // Check if it has accounting entries
         const hasEntries = hasAccountingEntries(tx)
         
-        // Check if reconciled
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
-
-        // Needs reconciliation if:
-        // - No accounting entries (no rule matched) - skip verification, go straight to reconciliation
-        // - AND not yet reconciled
-        // IMPORTANT: Do NOT include verified transactions with accounting entries here
-        return !hasEntries && !isReconciled
+        // Transactions WITHOUT accounting entries (no rule matched) go to "Needs reconciliation"
+        return !hasEntries
       }),
   ]
   
@@ -976,30 +828,13 @@ export default function TransactionsScaffoldScreen() {
   const confirmedUnreconcilableBankRaw: Transaction[] = [
     // Include transactions3 bank transactions from source_of_truth collection
     // Backend already filtered for: source_of_truth, kind=statement_entry, verification:verified
+    // Frontend filters for: bank source AND unreconciled status
     ...transactions3BankSourceOfTruth
       .filter((tx) => {
-        const metadata = tx.metadata as {
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-        }
-        const verificationStatus = metadata.verification?.status
-        const reconciliationStatus = metadata.reconciliation?.status
-
-        // Must be verified
-        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-        
-        // Must have reconciliation status = 'unreconciled'
-        const isUnreconciled = reconciliationStatus === 'unreconciled'
-
-        return isVerified && isUnreconciled
-      }),
-    // Also include transactions2 bank transactions for backward compatibility
-    ...allTransactions
-      .filter((tx) => {
+        // Must be a bank transaction
         if (!isBankTransaction(tx)) {
           return false
         }
-
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
@@ -1048,42 +883,13 @@ export default function TransactionsScaffoldScreen() {
   const recentReportingReadyBankRaw: Transaction[] = [
     // Include transactions3 bank transactions from source_of_truth collection
     // Backend already filtered for: source_of_truth, kind=statement_entry, verification:verified
+    // Frontend filters for: bank source AND reporting ready status
     ...transactions3BankSourceOfTruth
-      .filter((tx) => {
-        const metadata = tx.metadata as {
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-        }
-        const verificationStatus = metadata.verification?.status
-        const reconciliationStatus = metadata.reconciliation?.status
-
-        // Check if verified (including exception)
-        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-        
-        // Check if reconciled or not_required (both mean audit ready)
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception' ||
-          reconciliationStatus === 'not_required' // not_required also means audit ready
-
-        // Exclude unreconciled transactions (they go to "Confirmed unreconcilable" card)
-        const isUnreconciled = reconciliationStatus === 'unreconciled'
-
-        // Check if has accounting entries
-        const hasEntries = hasAccountingEntries(tx)
-
-        // Reporting ready if: (reconciled/not_required OR (verified AND has accounting entries)) AND not unreconciled
-        return !isUnreconciled && (isReconciled || (isVerified && hasEntries))
-      }),
-    // Also include transactions2 bank transactions for backward compatibility
-    ...allTransactions
       .filter((tx) => {
         // Must be a bank transaction
         if (!isBankTransaction(tx)) {
           return false
         }
-
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
@@ -1139,49 +945,27 @@ export default function TransactionsScaffoldScreen() {
 
   // Card transactions that need verification (no reconciliation required)
   // Condition: Has accounting entries (rule matched) but is not yet verified
-  // IMPORTANT: Exclude auto-reconciled transactions (they go to Reporting Ready)
-  const cardNeedsVerificationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
+  // Per docs: Query already filtered by backend for unverified credit card transactions (kind=statement_entry)
+  // Now filter client-side for those with accounting entries (rule-matched) and credit card source
+  const cardNeedsVerificationTransactionsRaw: Transaction[] = [
+    // Include transactions3 credit card transactions from pending collection
+    // Backend already filtered for: pending, kind=statement_entry, verification:unverified
+    // Frontend filters for: credit card source AND has accounting entries (rule-matched)
+    ...transactions3CardPending
       .filter((tx) => {
         // Must be a credit card transaction
         if (!isCreditCardTransaction(tx)) {
           return false
         }
-
-        const metadata = tx.metadata as {
-          verification?: { status?: string }
-          reconciliation?: { status?: string }
-        }
-        
         // Check if it has accounting entries (rule matched)
+        // Transactions with accounting entries go to "Needs verification" card
         const hasEntries = hasAccountingEntries(tx)
-        
-        // Check verification status
-        const verificationStatus = metadata.verification?.status
-        const isVerified = verificationStatus === 'verified'
-        const isException = verificationStatus === 'exception'
-
-        // Check if already reconciled (auto-reconciled transactions skip verification)
-        const reconciliationStatus = metadata.reconciliation?.status
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
-
-        // Needs verification if: has accounting entries AND not verified/exception AND not reconciled
-        return hasEntries && !isVerified && !isException && !isReconciled
-      })
-      .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt ||
-          0
-        return bDate - aDate
-      })
-      .slice(0, 3) // Show only 3 most recent
+        return hasEntries
+      }),
+  ]
+  
+  const cardNeedsVerificationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
+    cardNeedsVerificationTransactionsRaw
       .map((tx) => {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
@@ -1192,37 +976,95 @@ export default function TransactionsScaffoldScreen() {
           originalTransaction: tx,
         }
       })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.originalTransaction.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.originalTransaction.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Show only 3 most recent
 
   // Card transactions that need reconciliation
-  // Condition: Transaction has no accounting entries (no rule matched) and is not yet reconciled
-  const cardNeedsReconciliationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
+  // Condition: Transaction has no accounting entries (no rule matched)
+  // Per docs: Query already filtered by backend for unverified credit card transactions (kind=statement_entry)
+  // Now filter client-side for those WITHOUT accounting entries (no rule match) and credit card source
+  const cardNeedsReconciliationTransactionsRaw: Transaction[] = [
+    // Include transactions3 credit card transactions from pending collection
+    // Backend already filtered for: pending, kind=statement_entry, verification:unverified
+    // Frontend filters for: credit card source AND NO accounting entries (no rule match)
+    ...transactions3CardPending
       .filter((tx) => {
         // Must be a credit card transaction
         if (!isCreditCardTransaction(tx)) {
           return false
         }
+        // Check if it has accounting entries
+        const hasEntries = hasAccountingEntries(tx)
+        
+        // Transactions WITHOUT accounting entries (no rule matched) go to "Needs reconciliation"
+        return !hasEntries
+      }),
+  ]
+  
+  const cardNeedsReconciliationTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
+    cardNeedsReconciliationTransactionsRaw
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isCredit: isCreditToAccount(tx),
+          originalTransaction: tx,
+        }
+      })
+      .sort((a, b) => {
+        // Sort by updatedAt (most recent first), fallback to createdAt
+        const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (a.originalTransaction.metadata as { createdAt?: number }).createdAt ||
+          0
+        const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+          (b.originalTransaction.metadata as { createdAt?: number }).createdAt ||
+          0
+        return bDate - aDate
+      })
+      .slice(0, 3) // Show only 3 most recent
 
+  // Card transactions that are confirmed as unreconcilable
+  // Condition: verified credit card transactions with reconciliation.status = 'unreconciled'
+  const confirmedUnreconcilableCardRaw: Transaction[] = [
+    // Include transactions3 credit card transactions from source_of_truth collection
+    // Backend already filtered for: source_of_truth, kind=statement_entry, verification:verified
+    // Frontend filters for: credit card source AND unreconciled status
+    ...transactions3CardSourceOfTruth
+      .filter((tx) => {
+        // Must be a credit card transaction
+        if (!isCreditCardTransaction(tx)) {
+          return false
+        }
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
         }
+        const verificationStatus = metadata.verification?.status
         const reconciliationStatus = metadata.reconciliation?.status
 
-        // Check if it has accounting entries
-        const hasEntries = hasAccountingEntries(tx)
+        // Must be verified
+        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
         
-        // Check if reconciled
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
+        // Must have reconciliation status = 'unreconciled'
+        const isUnreconciled = reconciliationStatus === 'unreconciled'
 
-        // Needs reconciliation if:
-        // - No accounting entries (no rule matched) - skip verification, go straight to reconciliation
-        // - AND not yet reconciled
-        return !hasEntries && !isReconciled
-      })
+        return isVerified && isUnreconciled
+      }),
+  ]
+
+  const confirmedUnreconcilableCard: Array<TransactionStub & { originalTransaction: Transaction }> =
+    confirmedUnreconcilableCardRaw
       .sort((a, b) => {
         // Sort by updatedAt (most recent first), fallback to createdAt
         const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -1233,12 +1075,12 @@ export default function TransactionsScaffoldScreen() {
           0
         return bDate - aDate
       })
-      .slice(0, 3) // Show only 3 most recent
+      .slice(0, 3) // Get last 3
       .map((tx) => {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: tx.summary.thirdPartyName || tx.summary.description || 'Unknown',
           amount,
           isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
@@ -1246,16 +1088,19 @@ export default function TransactionsScaffoldScreen() {
       })
 
   // Get last 3 card transactions that are now Reporting Ready (to show pipeline progress)
-  // Condition: Transaction is reconciled OR (verified with accounting entries)
+  // Condition: Transaction is reconciled OR (verified with accounting entries) OR (verified with reconciliation not_required)
   // Reconciled transactions go directly to Reporting Ready
-  const recentReportingReadyCards: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
+  // IMPORTANT: Exclude unreconciled transactions (they go to "Confirmed unreconcilable" card)
+  const recentReportingReadyCardRaw: Transaction[] = [
+    // Include transactions3 credit card transactions from source_of_truth collection
+    // Backend already filtered for: source_of_truth, kind=statement_entry, verification:verified
+    // Frontend filters for: credit card source AND reporting ready status
+    ...transactions3CardSourceOfTruth
       .filter((tx) => {
         // Must be a credit card transaction
         if (!isCreditCardTransaction(tx)) {
           return false
         }
-
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
@@ -1266,19 +1111,26 @@ export default function TransactionsScaffoldScreen() {
         // Check if verified (including exception)
         const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
         
-        // Check if reconciled
+        // Check if reconciled or not_required (both mean audit ready)
         const isReconciled =
           reconciliationStatus === 'matched' ||
           reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
+          reconciliationStatus === 'exception' ||
+          reconciliationStatus === 'not_required' // not_required also means audit ready
+
+        // Exclude unreconciled transactions (they go to "Confirmed unreconcilable" card)
+        const isUnreconciled = reconciliationStatus === 'unreconciled'
 
         // Check if has accounting entries
         const hasEntries = hasAccountingEntries(tx)
 
-        // Reporting ready if: reconciled OR (verified AND has accounting entries)
-        // Reconciled transactions go directly to Reporting Ready
-        return isReconciled || (isVerified && hasEntries)
-      })
+        // Reporting ready if: (reconciled/not_required OR (verified AND has accounting entries)) AND not unreconciled
+        return !isUnreconciled && (isReconciled || (isVerified && hasEntries))
+      }),
+  ]
+
+  const recentReportingReadyCards: Array<TransactionStub & { originalTransaction: Transaction }> =
+    recentReportingReadyCardRaw
       .sort((a, b) => {
         // Sort by updatedAt (most recent first), fallback to createdAt
         const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -1306,71 +1158,36 @@ export default function TransactionsScaffoldScreen() {
   // These are the complete lists that will be shown when user clicks "View all"
   const getFullTransactions = (columnTitle: string): Array<TransactionStub & { originalTransaction?: Transaction }> => {
     switch (columnTitle) {
-      case 'Needs verification':
-        return parsedTransactions
-          .filter((item) => {
-            const metadata = item.original.metadata as {
-              verification?: { status?: string }
-            }
-            return metadata.verification?.status === 'unverified'
-          })
-          .sort((a, b) => {
-            const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (a.original.metadata as { createdAt?: number }).createdAt ||
-              0
-            const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (b.original.metadata as { createdAt?: number }).createdAt ||
-              0
-            return bDate - aDate
-          })
-          .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
-      
-      case 'Verified, needs match':
-        return parsedTransactions
-          .filter((item) => {
-            const metadata = item.original.metadata as {
-              verification?: { status?: string }
-              classification?: { kind?: string }
-            }
-            // Only include purchase transactions
-            const isPurchase = metadata.classification?.kind === 'purchase'
-            return (
-              isPurchase &&
-              metadata.verification?.status !== 'unverified' && 
-              !item.parsed.isReportingReady
-            )
-          })
-          .sort((a, b) => {
-            const aDate = (a.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (a.original.metadata as { createdAt?: number }).createdAt ||
-              0
-            const bDate = (b.original.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (b.original.metadata as { createdAt?: number }).createdAt ||
-              0
-            return bDate - aDate
-          })
-          .map((item) => ({ ...item.parsed, originalTransaction: item.original }))
-      
       case 'Needs verification (no reconciliation required)':
         if (activeSection === 'bank') {
-          return allTransactions
+          // Use transactions3 data - filter for bank transactions with accounting entries
+          return transactions3BankPending
             .filter((tx) => {
               if (!isBankTransaction(tx)) return false
-              const metadata = tx.metadata as { 
-                verification?: { status?: string }
-                reconciliation?: { status?: string }
-              }
               const hasEntries = hasAccountingEntries(tx)
-              const verificationStatus = metadata.verification?.status
-              const isVerified = verificationStatus === 'verified'
-              const isException = verificationStatus === 'exception'
-              const reconciliationStatus = metadata.reconciliation?.status
-              const isReconciled =
-                reconciliationStatus === 'matched' ||
-                reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
-              // Exclude auto-reconciled transactions (they go to Reporting Ready)
-              return hasEntries && !isVerified && !isException && !isReconciled
+              return hasEntries
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isCredit: isCreditToAccount(tx),
+              originalTransaction: tx,
+            }))
+        } else if (activeSection === 'cards') {
+          // Use transactions3 data - filter for credit card transactions with accounting entries
+          return transactions3CardPending
+            .filter((tx) => {
+              if (!isCreditCardTransaction(tx)) return false
+              const hasEntries = hasAccountingEntries(tx)
+              return hasEntries
             })
             .sort((a, b) => {
               const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -1387,57 +1204,39 @@ export default function TransactionsScaffoldScreen() {
               originalTransaction: tx,
             }))
         } else {
-          return allTransactions
-            .filter((tx) => {
-              if (!isCreditCardTransaction(tx)) return false
-              const metadata = tx.metadata as { 
-                verification?: { status?: string }
-                reconciliation?: { status?: string }
-              }
-              const hasEntries = hasAccountingEntries(tx)
-              const verificationStatus = metadata.verification?.status
-              const isVerified = verificationStatus === 'verified'
-              const isException = verificationStatus === 'exception'
-              const reconciliationStatus = metadata.reconciliation?.status
-              const isReconciled =
-                reconciliationStatus === 'matched' ||
-                reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
-              // Exclude auto-reconciled transactions (they go to Reporting Ready)
-              return hasEntries && !isVerified && !isException && !isReconciled
-            })
-            .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
-              return bDate - aDate
-            })
-            .map((tx) => ({
-              id: tx.id,
-              title: tx.summary.thirdPartyName,
-              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
-              isCredit: isCreditToAccount(tx),
-              originalTransaction: tx,
-            }))
+          return []
         }
       
       case 'Needs reconciliation':
         if (activeSection === 'bank') {
-          return allTransactions
+          // Use transactions3 data - filter for bank transactions without accounting entries
+          return transactions3BankPending
             .filter((tx) => {
               if (!isBankTransaction(tx)) return false
-              const metadata = tx.metadata as {
-                verification?: { status?: string }
-                reconciliation?: { status?: string }
-              }
-              const reconciliationStatus = metadata.reconciliation?.status
               const hasEntries = hasAccountingEntries(tx)
-              const isReconciled =
-                reconciliationStatus === 'matched' ||
-                reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
-              return !hasEntries && !isReconciled
+              return !hasEntries
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isCredit: isCreditToAccount(tx),
+              originalTransaction: tx,
+            }))
+        } else if (activeSection === 'cards') {
+          // Use transactions3 data - filter for credit card transactions without accounting entries
+          return transactions3CardPending
+            .filter((tx) => {
+              if (!isCreditCardTransaction(tx)) return false
+              const hasEntries = hasAccountingEntries(tx)
+              return !hasEntries
             })
             .sort((a, b) => {
               const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -1454,20 +1253,28 @@ export default function TransactionsScaffoldScreen() {
               originalTransaction: tx,
             }))
         } else {
-          return allTransactions
+          return []
+        }
+      
+      case 'Reporting ready':
+        // This case is for legacy receipts section - now handled by Purchases3
+        return []
+      
+      case 'Confirmed unreconcilable':
+        if (activeSection === 'bank') {
+          // Use transactions3 data - filter for verified bank transactions with unreconciled status
+          return transactions3BankSourceOfTruth
             .filter((tx) => {
-              if (!isCreditCardTransaction(tx)) return false
+              if (!isBankTransaction(tx)) return false
               const metadata = tx.metadata as {
                 verification?: { status?: string }
                 reconciliation?: { status?: string }
               }
+              const verificationStatus = metadata.verification?.status
               const reconciliationStatus = metadata.reconciliation?.status
-              const hasEntries = hasAccountingEntries(tx)
-              const isReconciled =
-                reconciliationStatus === 'matched' ||
-                reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
-              return !hasEntries && !isReconciled
+              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+              const isUnreconciled = reconciliationStatus === 'unreconciled'
+              return isVerified && isUnreconciled
             })
             .sort((a, b) => {
               const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -1478,45 +1285,66 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: tx.summary.thirdPartyName || tx.summary.description || 'Unknown',
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
             }))
-        }
-      
-      case 'Reporting ready':
-        if (activeSection === 'receipts') {
-          return allTransactions
+        } else if (activeSection === 'cards') {
+          // Use transactions3 data - filter for verified credit card transactions with unreconciled status
+          return transactions3CardSourceOfTruth
             .filter((tx) => {
+              if (!isCreditCardTransaction(tx)) return false
               const metadata = tx.metadata as {
-                capture?: { source?: string; mechanism?: string }
                 verification?: { status?: string }
                 reconciliation?: { status?: string }
               }
-              const capture = metadata.capture
-              const verification = metadata.verification
-              const reconciliation = metadata.reconciliation
-              const isReceipt =
-                capture?.source === 'purchase_invoice_ocr' ||
-                capture?.source === 'manual_entry' ||
-                capture?.mechanism === 'ocr' ||
-                capture?.mechanism === 'manual' ||
-                capture?.source?.includes('purchase')
-              if (!isReceipt) return false
-              
-              // Check if cash-only (fallback for manual entry)
-              const isCashOnly = isCashOnlyTransaction(tx)
-              
-              // Check if it's reporting ready
-              // Note: Backend sets reconciliation.status = 'reconciled' for cash when verified via confirmVerification
-              const isReportingReady =
-                verification?.status !== 'unverified' &&
-                (isCashOnly ||
-                  reconciliation?.status === 'matched' ||
-                  reconciliation?.status === 'reconciled' ||
-                  reconciliation?.status === 'exception')
-              return isReportingReady
+              const verificationStatus = metadata.verification?.status
+              const reconciliationStatus = metadata.reconciliation?.status
+              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+              const isUnreconciled = reconciliationStatus === 'unreconciled'
+              return isVerified && isUnreconciled
+            })
+            .sort((a, b) => {
+              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (a.metadata as { createdAt?: number }).createdAt || 0
+              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+                (b.metadata as { createdAt?: number }).createdAt || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName || tx.summary.description || 'Unknown',
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isCredit: isCreditToAccount(tx),
+              originalTransaction: tx,
+            }))
+        } else {
+          return []
+        }
+      
+      case 'Verified and audit ready':
+        if (activeSection === 'bank') {
+          // Use transactions3 data - filter for verified bank transactions that are reporting ready
+          return transactions3BankSourceOfTruth
+            .filter((tx) => {
+              if (!isBankTransaction(tx)) return false
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
+              const verificationStatus = metadata.verification?.status
+              const reconciliationStatus = metadata.reconciliation?.status
+              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception' ||
+                reconciliationStatus === 'not_required'
+              const isUnreconciled = reconciliationStatus === 'unreconciled'
+              const hasEntries = hasAccountingEntries(tx)
+              // Exclude unreconciled transactions (they go to "Confirmed unreconcilable" card)
+              return !isUnreconciled && (isReconciled || (isVerified && hasEntries))
             })
             .sort((a, b) => {
               const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -1533,7 +1361,8 @@ export default function TransactionsScaffoldScreen() {
               originalTransaction: tx,
             }))
         } else if (activeSection === 'cards') {
-          return allTransactions
+          // Use transactions3 data - filter for verified credit card transactions that are reporting ready
+          return transactions3CardSourceOfTruth
             .filter((tx) => {
               if (!isCreditCardTransaction(tx)) return false
               const metadata = tx.metadata as {
@@ -1546,9 +1375,12 @@ export default function TransactionsScaffoldScreen() {
               const isReconciled =
                 reconciliationStatus === 'matched' ||
                 reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
+                reconciliationStatus === 'exception' ||
+                reconciliationStatus === 'not_required' // not_required also means audit ready
+              const isUnreconciled = reconciliationStatus === 'unreconciled'
               const hasEntries = hasAccountingEntries(tx)
-              return isReconciled || (isVerified && hasEntries)
+              // Exclude unreconciled transactions (they go to "Confirmed unreconcilable" card)
+              return !isUnreconciled && (isReconciled || (isVerified && hasEntries))
             })
             .sort((a, b) => {
               const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
@@ -1566,73 +1398,6 @@ export default function TransactionsScaffoldScreen() {
             }))
         } else {
           return []
-        }
-      
-      case 'Verified and audit ready':
-        if (activeSection === 'bank') {
-          return allTransactions
-            .filter((tx) => {
-              if (!isBankTransaction(tx)) return false
-              const metadata = tx.metadata as {
-                verification?: { status?: string }
-                reconciliation?: { status?: string }
-              }
-              const verificationStatus = metadata.verification?.status
-              const reconciliationStatus = metadata.reconciliation?.status
-              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-              const isReconciled =
-                reconciliationStatus === 'matched' ||
-                reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
-              const hasEntries = hasAccountingEntries(tx)
-              return isReconciled || (isVerified && hasEntries)
-            })
-            .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
-              return bDate - aDate
-            })
-            .map((tx) => ({
-              id: tx.id,
-              title: tx.summary.thirdPartyName,
-              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
-              isReportingReady: true,
-              originalTransaction: tx,
-            }))
-        } else {
-          return allTransactions
-            .filter((tx) => {
-              if (!isCreditCardTransaction(tx)) return false
-              const metadata = tx.metadata as {
-                verification?: { status?: string }
-                reconciliation?: { status?: string }
-              }
-              const verificationStatus = metadata.verification?.status
-              const reconciliationStatus = metadata.reconciliation?.status
-              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-              const isReconciled =
-                reconciliationStatus === 'matched' ||
-                reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
-              const hasEntries = hasAccountingEntries(tx)
-              return isReconciled || (isVerified && hasEntries)
-            })
-            .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
-              return bDate - aDate
-            })
-            .map((tx) => ({
-              id: tx.id,
-              title: tx.summary.thirdPartyName,
-              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
-              isReportingReady: true,
-              originalTransaction: tx,
-            }))
         }
       
       case 'Invoices submitted pending payment':
@@ -1748,24 +1513,6 @@ export default function TransactionsScaffoldScreen() {
     }
   }
 
-  // Update receiptColumns with real data
-  const receiptColumnsWithData: PipelineColumn[] = [
-    {
-      title: 'Needs verification',
-      actions: ['View all'],
-      transactions: needsVerificationTransactions,
-    },
-    {
-      title: 'Verified, needs match',
-      actions: ['View all'],
-      transactions: verifiedNeedsMatchTransactions,
-    },
-    {
-      title: 'Reporting ready',
-      actions: ['View all'],
-      transactions: recentReportingReadyReceipts,
-    },
-  ]
 
   // Update bankColumns with real data
   const bankColumnsWithData: PipelineColumn[] = [
@@ -2126,7 +1873,7 @@ export default function TransactionsScaffoldScreen() {
   const cardsColumnsWithData: PipelineColumn[] = [
     {
       title: 'Needs verification (no reconciliation required)',
-      actions: ['View all'],
+      actions: ['View all', '+ Add rules'],
       transactions: cardNeedsVerificationTransactions,
     },
     {
@@ -2135,14 +1882,14 @@ export default function TransactionsScaffoldScreen() {
       transactions: cardNeedsReconciliationTransactions,
     },
     {
-      title: 'Reporting ready',
+      title: 'Confirmed unreconcilable',
       actions: ['View all'],
-      transactions: recentReportingReadyCards,
+      transactions: confirmedUnreconcilableCard,
     },
     {
-      title: 'Auto card rules',
-      actions: ['View all', '+ Add rules'],
-      rules: creditCardRules,
+      title: 'Verified and audit ready',
+      actions: ['View all'],
+      transactions: recentReportingReadyCards,
     },
   ]
 
@@ -2184,14 +1931,10 @@ export default function TransactionsScaffoldScreen() {
       // Refresh transactions to show updated reconciliation statuses
       if (response.matched > 0) {
         if (activeSection === 'bank') {
-          // For Bank section, refresh both transactions2 and transactions3 data
+          // For Bank section, refresh transactions3 data
           // Matched bank transactions are archived (removed from "Needs reconciliation")
           // Matched purchase receipts are marked as reconciled (added to "Verified and audit ready")
-          const [transactions2Response, pendingResponse, verifiedResponse] = await Promise.all([
-            transactions2Api.getTransactions(businessId, {
-              page: 1,
-              limit: 200,
-            }),
+          const [pendingResponse, verifiedResponse] = await Promise.all([
             transactions2Api.getTransactions3(businessId, 'pending', {
               page: 1,
               limit: 200,
@@ -2206,16 +1949,29 @@ export default function TransactionsScaffoldScreen() {
             }),
           ])
           
-          setAllTransactions(transactions2Response.transactions)
           setTransactions3BankPending(pendingResponse.transactions || [])
           setTransactions3BankSourceOfTruth(verifiedResponse.transactions || [])
         } else {
-          // For Credit Cards section, refresh transactions2 data
-          const refreshResponse = await transactions2Api.getTransactions(businessId, {
-            page: 1,
-            limit: 200,
-          })
-          setAllTransactions(refreshResponse.transactions)
+          // For Credit Cards section, refresh transactions3 data
+          // Matched credit card transactions are archived (removed from "Needs reconciliation")
+          // Matched purchase receipts are marked as reconciled (added to "Verified and audit ready")
+          const [pendingResponse, verifiedResponse] = await Promise.all([
+            transactions2Api.getTransactions3(businessId, 'pending', {
+              page: 1,
+              limit: 200,
+              kind: 'statement_entry', // Filter for credit card transactions on backend
+              status: 'verification:unverified',
+            }),
+            transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+              page: 1,
+              limit: 200,
+              kind: 'statement_entry', // Filter for credit card transactions on backend
+              status: 'verification:verified',
+            }),
+          ])
+          
+          setTransactions3CardPending(pendingResponse.transactions || [])
+          setTransactions3CardSourceOfTruth(verifiedResponse.transactions || [])
         }
       }
     } catch (error) {
@@ -2240,13 +1996,13 @@ export default function TransactionsScaffoldScreen() {
     return true
   })
 
-  // If current section is bank/cards but no accounts/cards exist, switch to receipts
+  // If current section is bank/cards but no accounts/cards exist, switch to purchases3
   useEffect(() => {
     if (activeSection === 'bank' && bankAccounts.length === 0) {
-      setActiveSection('receipts')
+      setActiveSection('purchases3')
     }
     if (activeSection === 'cards' && creditCards.length === 0) {
-      setActiveSection('receipts')
+      setActiveSection('purchases3')
     }
   }, [activeSection, bankAccounts.length, creditCards.length])
 
@@ -2293,11 +2049,7 @@ export default function TransactionsScaffoldScreen() {
         setTransactions3SourceOfTruth(sourceOfTruthResponse.transactions || [])
       } else if (activeSection === 'bank') {
         // For Bank section, refresh transactions3 data using API-side filtering
-        const [transactions2Response, needsVerificationResponse, needsReconciliationResponse, verifiedResponse] = await Promise.all([
-          transactions2Api.getTransactions(businessId, {
-            page: 1,
-            limit: 200,
-          }),
+        const [needsVerificationResponse, needsReconciliationResponse, verifiedResponse] = await Promise.all([
           // Card 1: Needs verification (rule-matched, unverified)
           transactions2Api.getTransactions3(businessId, 'pending', {
             page: 1,
@@ -2319,27 +2071,65 @@ export default function TransactionsScaffoldScreen() {
         ])
         
         // Filter for bank transactions only (backend may not filter by capture.source)
+        // Use helper function for backward compatibility with both old and new source values
         const bankNeedsVerification = (needsVerificationResponse.transactions || []).filter((tx) => {
           const metadata = tx.metadata as { 
-            capture?: { source?: string }
             reconciliation?: { status?: string }
           }
-          return metadata.capture?.source === 'bank_statement_ocr' && metadata.reconciliation?.status === 'not_required'
+          return isBankTransaction(tx) && metadata.reconciliation?.status === 'not_required'
         })
         
         const bankNeedsReconciliation = (needsReconciliationResponse.transactions || []).filter((tx) => {
-          const metadata = tx.metadata as { capture?: { source?: string } }
-          return metadata.capture?.source === 'bank_statement_ocr'
+          return isBankTransaction(tx)
         })
         
         const bankVerified = (verifiedResponse.transactions || []).filter((tx) => {
-          const metadata = tx.metadata as { capture?: { source?: string } }
-          return metadata.capture?.source === 'bank_statement_ocr'
+          return isBankTransaction(tx)
         })
         
-        setAllTransactions(transactions2Response.transactions)
         setTransactions3BankPending([...bankNeedsVerification, ...bankNeedsReconciliation])
         setTransactions3BankSourceOfTruth(bankVerified)
+      } else if (activeSection === 'cards') {
+        // For Credit Cards section, refresh transactions3 data using API-side filtering
+        const [needsVerificationResponse, needsReconciliationResponse, verifiedResponse] = await Promise.all([
+          // Card 1: Needs verification (rule-matched, unverified)
+          transactions2Api.getTransactions3(businessId, 'pending', {
+            page: 1,
+            limit: 200,
+            status: 'verification:unverified',
+          }),
+          // Card 2: Needs reconciliation (no rule match)
+          transactions2Api.getTransactions3(businessId, 'pending', {
+            page: 1,
+            limit: 200,
+            status: 'reconciliation:pending_bank_match',
+          }),
+          // Card 4: Verified and audit ready
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            status: 'verification:verified',
+          }),
+        ])
+        
+        // Filter for credit card transactions only (backend may not filter by capture.source)
+        const cardNeedsVerification = (needsVerificationResponse.transactions || []).filter((tx) => {
+          const metadata = tx.metadata as { 
+            reconciliation?: { status?: string }
+          }
+          return isCreditCardTransaction(tx) && metadata.reconciliation?.status === 'not_required'
+        })
+        
+        const cardNeedsReconciliation = (needsReconciliationResponse.transactions || []).filter((tx) => {
+          return isCreditCardTransaction(tx)
+        })
+        
+        const cardVerified = (verifiedResponse.transactions || []).filter((tx) => {
+          return isCreditCardTransaction(tx)
+        })
+        
+        setTransactions3CardPending([...cardNeedsVerification, ...cardNeedsReconciliation])
+        setTransactions3CardSourceOfTruth(cardVerified)
       } else {
         // For other sections, refresh transactions2 data
         const response = await transactions2Api.getTransactions(businessId, {
@@ -2469,7 +2259,6 @@ export default function TransactionsScaffoldScreen() {
         {renderSection(
           activeSection,
           navigation,
-          receiptColumnsWithData,
           bankColumnsWithData,
           cardsColumnsWithData,
           salesColumnsWithData,
@@ -2478,7 +2267,6 @@ export default function TransactionsScaffoldScreen() {
           handleReconcileClick,
           reconciling,
           getFullTransactions,
-          needsVerificationTransactions,
           businessId,
           onRefresh,
         )}
@@ -2491,7 +2279,6 @@ export default function TransactionsScaffoldScreen() {
 function renderSection(
   section: SectionKey,
   navigation: StackNavigationProp<TransactionsStackParamList>,
-  receiptColumns: PipelineColumn[],
   bankColumns: PipelineColumn[],
   cardsColumns: PipelineColumn[],
   salesColumns: PipelineColumn[],
@@ -2500,38 +2287,10 @@ function renderSection(
   handleReconcileClick?: () => void,
   reconciling?: boolean,
   getFullTransactions?: (columnTitle: string) => Array<TransactionStub & { originalTransaction?: Transaction }>,
-  needsVerificationTransactions?: Array<TransactionStub & { originalTransaction?: Transaction }>,
   businessId?: string,
   onRefresh?: () => void,
 ) {
   switch (section) {
-    case 'receipts':
-      return (
-        <>
-          {businessId && (
-            <View style={styles.testButtonContainer}>
-              <TouchableOpacity
-                style={styles.testButton}
-                onPress={async () => {
-                  const documentId = 'VOBfr9ijdTim1gBY7m7o'
-                  try {
-                    await transactions2Api.verifyTransaction(documentId, businessId)
-                    Alert.alert('Success', `Transaction ${documentId} verified`)
-                    onRefresh?.()
-                  } catch (error) {
-                    Alert.alert('Error', error instanceof Error ? error.message : 'Failed to verify transaction')
-                  }
-                }}
-              >
-                <Text style={styles.testButtonText}>
-                  🧪 TEST: Verify Transaction (Transactions3)
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          <PipelineRow columns={receiptColumns} navigation={navigation} getFullTransactions={getFullTransactions} pipelineSection={section} />
-        </>
-      )
     case 'purchases3':
       return (
         <PipelineRow 
@@ -2726,6 +2485,13 @@ function PipelineRow({
             </View>
           )}
           {pipelineSection === 'bank' && index === 1 && (
+            <View style={styles.reportingReadySeparator}>
+              <View style={styles.reportingReadyLine} />
+              <Text style={styles.reportingReadyLabel}>Reporting Ready</Text>
+              <View style={styles.reportingReadyLine} />
+            </View>
+          )}
+          {pipelineSection === 'cards' && index === 1 && (
             <View style={styles.reportingReadySeparator}>
               <View style={styles.reportingReadyLine} />
               <Text style={styles.reportingReadyLabel}>Reporting Ready</Text>

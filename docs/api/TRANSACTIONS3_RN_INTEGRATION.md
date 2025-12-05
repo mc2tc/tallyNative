@@ -159,6 +159,483 @@ Find where you handle "Choose Photo" or "Take Photo" for purchase transactions a
 
 ---
 
+## Update Bank Statement Upload
+
+### Current Implementation (transactions2)
+
+**Endpoint:**
+
+```
+POST /authenticated/transactions2/api/transactions
+```
+
+**Request:**
+
+```json
+{
+  "businessId": "business_xyz",
+  "transactionType": "bank_transaction",
+  "inputMethod": "ocr_pdf",
+  "fileUrl": "https://storage.googleapis.com/...",
+  "bankName": "Bank Name",
+  "accountNumber": "12345678",
+  "statementStartDate": "2025-01-01",
+  "statementEndDate": "2025-01-31"
+}
+```
+
+### New Implementation (transactions3)
+
+**Endpoint:**
+
+```
+POST /authenticated/transactions3/api/bank-statements/upload
+```
+
+**Request:**
+
+```json
+{
+  "businessId": "business_xyz",
+  "fileUrl": "https://storage.googleapis.com/...",
+  "bankName": "Bank Name",
+  "accountNumber": "12345678",
+  "statementStartDate": "2025-01-01",
+  "statementEndDate": "2025-01-31"
+}
+```
+
+**Simpler request format** - No need to specify `transactionType` or `inputMethod` (it's implicit in the endpoint).
+
+### Key Changes
+
+1. **Auto-Classification**: Bank statement transactions are automatically classified using rules:
+
+   - **Bank fees** → Auto-classified, creates accounting entries, no reconciliation needed
+   - **Cash withdrawals** → Auto-classified, creates accounting entries, no reconciliation needed
+   - **Other transactions** → Need reconciliation with purchase receipts
+
+2. **Grouped Response**: Transactions are returned grouped by status for easy card population:
+
+   - `needsVerification` - Rule-matched transactions (have accounting entries, need verification)
+   - `needsReconciliation` - Transactions without rule matches (need reconciliation with purchase receipts)
+
+3. **Saved to Pending**: All bank transactions are saved to `transactions3_pending` collection (not source of truth)
+
+---
+
+## Code Update for Bank Statements
+
+### Update Your API Client
+
+**Before:**
+
+```typescript
+// Old transactions2 endpoint
+const response = await fetch(`${API_BASE_URL}/authenticated/transactions2/api/transactions`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+    businessId: businessId,
+    transactionType: 'bank_transaction',
+    inputMethod: 'ocr_pdf',
+    fileUrl: fileUrl,
+    bankName: bankName,
+    accountNumber: accountNumber,
+    statementStartDate: statementStartDate,
+    statementEndDate: statementEndDate,
+  }),
+});
+```
+
+**After:**
+
+```typescript
+// New transactions3 endpoint
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/bank-statements/upload`,
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      businessId: businessId,
+      fileUrl: fileUrl,
+      bankName: bankName,
+      accountNumber: accountNumber,
+      statementStartDate: statementStartDate,
+      statementEndDate: statementEndDate,
+    }),
+  }
+);
+
+const data = await response.json();
+
+// Transactions are already grouped for you!
+const needsVerification = data.transactions.needsVerification; // Rule-matched (bank fees, withdrawals)
+const needsReconciliation = data.transactions.needsReconciliation; // Need to match with purchase receipts
+```
+
+### Bank Statement Response Format
+
+**Success Response (200):**
+
+```json
+{
+  "success": true,
+  "summary": {
+    "totalTransactions": 10,
+    "ruleMatched": 3,
+    "needsReconciliation": 7,
+    "skipped": 0
+  },
+  "transactions": {
+    "needsVerification": [
+      {
+        "id": "tx_bank_001",
+        "metadata": {
+          "verification": {
+            "status": "unverified"
+          },
+          "reconciliation": {
+            "status": "not_required"
+          }
+        },
+        "summary": {
+          "thirdPartyName": "Bank Fee",
+          "totalAmount": 25.0,
+          "transactionDate": 1704067200000,
+          "currency": "GBP"
+        },
+        "accounting": {
+          "debits": [
+            {
+              "chartName": "Fees & Charges",
+              "amount": 25.0
+            }
+          ],
+          "credits": [
+            {
+              "chartName": "Bank",
+              "amount": 25.0
+            }
+          ],
+          "balanced": true
+        }
+      }
+    ],
+    "needsReconciliation": [
+      {
+        "id": "tx_bank_002",
+        "metadata": {
+          "verification": {
+            "status": "unverified"
+          },
+          "reconciliation": {
+            "status": "pending_bank_match"
+          }
+        },
+        "summary": {
+          "thirdPartyName": "SUPPLIER NAME",
+          "totalAmount": 150.0,
+          "transactionDate": 1704067200000,
+          "currency": "GBP"
+        },
+        "accounting": {
+          "debits": [],
+          "credits": [],
+          "balanced": false
+        }
+      }
+    ]
+  },
+  "skipped": []
+}
+```
+
+### Populating the 4 Cards
+
+The response is already grouped for you to populate your cards:
+
+**Card 1: "Needs Verification" (No Reconciliation Required)**
+
+- Use `data.transactions.needsVerification`
+- These are rule-matched transactions (bank fees, cash withdrawals)
+- They have accounting entries already created
+- They just need user verification (no reconciliation needed)
+- Display on card titled "Needs Verification"
+
+**Card 2: "Needs Reconciliation"**
+
+- Use `data.transactions.needsReconciliation`
+- These transactions don't match any rules
+- They need to be matched with purchase receipts
+- No accounting entries created yet
+- Display on card titled "Needs Reconciliation"
+
+**Card 3: "Confirmed Unreconcilable"**
+
+- Query pending transactions that user has marked as unreconcilable (future feature)
+- For now, this card can be empty or show manual entries
+
+**Card 4: "Verified and Audit Ready"**
+
+- Query source of truth transactions that are verified, reconciled, and have accounting entries
+- These are ready for reporting
+- Use the query endpoint (see "Querying Bank Transactions" section below)
+
+---
+
+## Querying Bank Transactions
+
+**IMPORTANT:** When querying bank transactions, **always filter by `kind=statement_entry`** to exclude purchase receipts. Filtering happens on the **backend** for collection, kind, and status.
+
+### Card 1: "Needs Verification" (Rule-Matched Bank Transactions)
+
+**Backend Query (Filters on server):**
+
+- Collection: `pending`
+- Kind: `statement_entry` (bank transactions only)
+- Verification Status: `unverified`
+
+**Frontend Filter (Simple check):**
+
+- Has accounting entries (rule-matched)
+
+```typescript
+// Query backend for pending unverified bank transactions
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/transactions?businessId=${businessId}&collection=pending&kind=statement_entry&status=verification:unverified`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+const data = await response.json();
+
+// Filter client-side for transactions with accounting entries (rule-matched)
+const needsVerification = data.transactions.filter((tx) => {
+  const hasAccountingEntries =
+    (tx.accounting.debits?.length ?? 0) > 0 || (tx.accounting.credits?.length ?? 0) > 0;
+  return hasAccountingEntries;
+});
+```
+
+### Card 2: "Needs Reconciliation" (Bank Transactions Without Rule Matches)
+
+**Backend Query (Filters on server):**
+
+- Collection: `pending`
+- Kind: `statement_entry` (bank transactions only)
+- Verification Status: `unverified`
+
+**Frontend Filter (Simple check):**
+
+- No accounting entries (no rule match)
+
+```typescript
+// Query backend for pending unverified bank transactions
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/transactions?businessId=${businessId}&collection=pending&kind=statement_entry&status=verification:unverified`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+const data = await response.json();
+
+// Filter client-side for transactions WITHOUT accounting entries (no rule match)
+const needsReconciliation = data.transactions.filter((tx) => {
+  const hasAccountingEntries =
+    (tx.accounting.debits?.length ?? 0) > 0 || (tx.accounting.credits?.length ?? 0) > 0;
+  return !hasAccountingEntries;
+});
+```
+
+### Card 3: "Confirmed Unreconcilable"
+
+Query pending transactions that user has marked as unreconcilable (future feature). For now, this card can be empty.
+
+### Card 4: "Verified and Audit Ready"
+
+**Backend Query (Filters on server):**
+
+- Collection: `source_of_truth`
+- Kind: `statement_entry` (bank transactions only)
+- Verification Status: `verified`
+
+**Frontend Filter (Simple checks):**
+
+- Reconciled or not required
+- Has accounting entries
+
+```typescript
+// Query backend for verified bank transactions
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/transactions?businessId=${businessId}&collection=source_of_truth&kind=statement_entry&status=verification:verified`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+const data = await response.json();
+
+// Filter client-side for audit ready
+const auditReady = data.transactions.filter((tx) => {
+  const isReconciled =
+    tx.metadata.reconciliation.status === 'reconciled' ||
+    tx.metadata.reconciliation.status === 'not_required';
+  const hasAccounting =
+    (tx.accounting.debits?.length ?? 0) > 0 || (tx.accounting.credits?.length ?? 0) > 0;
+  return isReconciled && hasAccounting;
+});
+```
+
+### Why Backend + Frontend Filtering?
+
+**Backend filters** (efficient, indexed):
+
+- Collection (`pending`, `source_of_truth`)
+- Transaction kind (`statement_entry` for bank transactions)
+- Verification status (`unverified`, `verified`)
+- Reconciliation status (`pending_bank_match`, `reconciled`)
+
+**Frontend filters** (simple checks):
+
+- Presence of accounting entries (can't be efficiently indexed/queried)
+- Complex conditions (e.g., "reporting ready" = verified + reconciled + has accounting)
+
+**Always use `kind=statement_entry`** when querying bank transactions to exclude purchase receipts!
+
+### UI Flow for Bank Statements
+
+1. **User uploads bank statement PDF** → Calls new endpoint
+2. **Backend processes and groups transactions** → Returns grouped response
+3. **Populate cards immediately**:
+   - Card 1: Show `needsVerification` transactions
+   - Card 2: Show `needsReconciliation` transactions
+4. **User verifies rule-matched transactions** (bank fees, withdrawals) → Move to source of truth
+5. **User reconciles other transactions** → Match with purchase receipts
+
+---
+
+## Querying Bank Transactions for the 4 Cards
+
+**IMPORTANT:** When querying bank transactions, **always filter by `kind=statement_entry`** to exclude purchase receipts.
+
+### Backend vs Frontend Filtering
+
+**Backend Filtering (Recommended):**
+
+- ✅ Collection (`pending`, `source_of_truth`)
+- ✅ Transaction kind (`statement_entry` for bank transactions, `purchase` for receipts)
+- ✅ Verification status (`unverified`, `verified`)
+- ✅ Reconciliation status (`pending_bank_match`, `reconciled`, `not_required`)
+
+**Frontend Filtering (Simple Checks):**
+
+- ✅ Presence of accounting entries (to separate rule-matched from non-rule-matched)
+- ✅ Complex conditions (e.g., "audit ready" = verified + reconciled + has accounting)
+
+### Card 1: "Needs Verification" Query
+
+**Query for pending unverified bank transactions:**
+
+```typescript
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/transactions?businessId=${businessId}&collection=pending&kind=statement_entry&status=verification:unverified`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+const data = await response.json();
+
+// Filter client-side for transactions with accounting entries (rule-matched)
+const needsVerification = data.transactions.filter((tx) => {
+  return (tx.accounting.debits?.length ?? 0) > 0 || (tx.accounting.credits?.length ?? 0) > 0;
+});
+```
+
+**This query:**
+
+- Backend filters: `collection=pending`, `kind=statement_entry`, `status=verification:unverified`
+- Frontend filters: Has accounting entries (rule-matched transactions)
+
+### Card 2: "Needs Reconciliation" Query
+
+**Query for pending unverified bank transactions:**
+
+```typescript
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/transactions?businessId=${businessId}&collection=pending&kind=statement_entry&status=verification:unverified`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+const data = await response.json();
+
+// Filter client-side for transactions WITHOUT accounting entries (no rule match)
+const needsReconciliation = data.transactions.filter((tx) => {
+  return (tx.accounting.debits?.length ?? 0) === 0 && (tx.accounting.credits?.length ?? 0) === 0;
+});
+```
+
+**This query:**
+
+- Backend filters: `collection=pending`, `kind=statement_entry`, `status=verification:unverified`
+- Frontend filters: No accounting entries (transactions needing reconciliation)
+
+### Card 4: "Verified and Audit Ready" Query
+
+**Query for verified bank transactions:**
+
+```typescript
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/transactions?businessId=${businessId}&collection=source_of_truth&kind=statement_entry&status=verification:verified`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+const data = await response.json();
+
+// Filter client-side for audit ready (verified + reconciled + has accounting)
+const auditReady = data.transactions.filter((tx) => {
+  const isReconciled =
+    tx.metadata.reconciliation.status === 'reconciled' ||
+    tx.metadata.reconciliation.status === 'not_required';
+  const hasAccounting =
+    (tx.accounting.debits?.length ?? 0) > 0 || (tx.accounting.credits?.length ?? 0) > 0;
+  return isReconciled && hasAccounting;
+});
+```
+
+**This query:**
+
+- Backend filters: `collection=source_of_truth`, `kind=statement_entry`, `status=verification:verified`
+- Frontend filters: Reconciled/not_required + has accounting entries
+
+---
+
 ## Querying Transactions3
 
 ### Get Pending Transactions (Unverified)
@@ -173,6 +650,9 @@ GET /authenticated/transactions3/api/transactions?businessId=xxx&collection=pend
 
 - `businessId` (required) - Business ID
 - `collection` - `pending` (for unverified), `source_of_truth` (for verified), or `archived` (for archived bank records)
+- `kind` (optional) - Filter by transaction kind:
+  - `statement_entry` - Bank/credit card statement transactions
+  - `purchase` - Purchase receipts
 - `status` (optional) - Filter by status (e.g., `verification:unverified`)
 - `limit` (optional) - Page size (default: 20, max: 100)
 - `page` (optional) - Page number (default: 1)
@@ -315,12 +795,46 @@ const data = await response.json();
 // These transactions have:
 // - metadata.verification.status = 'verified'
 // - metadata.reconciliation.status = 'pending_bank_match'
+// - metadata.reconciliation.type = 'card' | 'bank_transfer' | 'mixed' (distinguishes reconciliation type)
 // - paymentBreakdown contains card/bank_transfer payments (not cash-only)
 ```
 
+**Distinguishing Card vs Bank Transfer:**
+
+Use `metadata.reconciliation.type` to differentiate between card and bank transfer reconciliations (no need to check `paymentBreakdown.type`):
+
+```typescript
+const needsReconciliation = data.transactions;
+
+// Separate by reconciliation type
+const cardTransactions = needsReconciliation.filter(
+  (tx) => tx.metadata.reconciliation.type === 'card'
+);
+
+const bankTransferTransactions = needsReconciliation.filter(
+  (tx) => tx.metadata.reconciliation.type === 'bank_transfer'
+);
+
+const mixedTransactions = needsReconciliation.filter(
+  (tx) => tx.metadata.reconciliation.type === 'mixed'
+);
+
+// Show in appropriate UI sections/cards
+// - Card transactions → "Reconcile to Credit Card" card
+// - Bank transfer transactions → "Reconcile to Bank" card
+// - Mixed transactions → Show in both or create "Mixed Payments" section
+```
+
+**Reconciliation Type Values:**
+
+- `'card'` - Transaction paid with card (needs credit card statement reconciliation)
+- `'bank_transfer'` - Transaction paid with bank transfer (needs bank statement reconciliation)
+- `'mixed'` - Transaction paid with both card and bank transfer
+- `undefined` - Cash-only or other payment method (reconciliation not required or unclear)
+
 **UI Behavior:**
 
-- Show these transactions in the "Reconcile to Bank" card
+- Show transactions in appropriate reconciliation card based on `reconciliation.type`
 - User can match them with bank/credit card statement entries
 - After reconciliation, status changes to `reconciliation.status = 'reconciled'`
 
@@ -611,8 +1125,9 @@ const response = await fetch(
         "verifiedAt": 1704067300000
       },
       "reconciliation": {
-        "status": "pending_bank_match" // ← Card/Bank payment needs reconciliation
-        // OR "not_required" if cash-only
+        "status": "pending_bank_match", // ← Card/Bank payment needs reconciliation
+        "type": "card" // ← Distinguishes: 'card', 'bank_transfer', or 'mixed'
+        // OR status: "not_required" if cash-only (type will be undefined)
       }
     },
     "accounting": {
@@ -647,9 +1162,11 @@ const response = await fetch(
 
 1. **Transaction moved**: From `transactions3_pending` → `transactions3` (source of truth)
 2. **Accounting entries generated**: Debits and credits created based on items and payment methods
-3. **Reconciliation status set**:
-   - Cash-only → `reconciliation.status = 'not_required'`
-   - Card/Bank → `reconciliation.status = 'pending_bank_match'` (needs bank reconciliation)
+3. **Reconciliation status and type set**:
+   - Cash-only → `reconciliation.status = 'not_required'` (no type needed)
+   - Card payment → `reconciliation.status = 'pending_bank_match'`, `reconciliation.type = 'card'`
+   - Bank transfer → `reconciliation.status = 'pending_bank_match'`, `reconciliation.type = 'bank_transfer'`
+   - Mixed (card + bank) → `reconciliation.status = 'pending_bank_match'`, `reconciliation.type = 'mixed'`
 4. **Audit trail updated**: Verification action added to audit trail
 
 ### UI Flow
@@ -670,17 +1187,164 @@ const response = await fetch(
 
 **Reconciliation Logic:**
 
-- If **all** payments are `cash` → `reconciliation.status = 'not_required'`
+- If **all** payments are `cash` → `reconciliation.status = 'not_required'` (type is undefined)
 - If **any** payment is `card` or `bank_transfer` → `reconciliation.status = 'pending_bank_match'`
+  - Only `card` → `reconciliation.type = 'card'`
+  - Only `bank_transfer` → `reconciliation.type = 'bank_transfer'`
+  - Both `card` and `bank_transfer` → `reconciliation.type = 'mixed'`
+
+**Use `reconciliation.type` to distinguish between card and bank transfer reconciliations in the UI.**
+
+---
+
+## Update Credit Card Statement Upload
+
+### Current Implementation (transactions2)
+
+**Endpoint:**
+
+```
+POST /authenticated/transactions2/api/transactions
+```
+
+**Request:**
+
+```json
+{
+  "businessId": "business_xyz",
+  "transactionType": "credit_card_transaction",
+  "inputMethod": "ocr_pdf",
+  "fileUrl": "https://storage.googleapis.com/...",
+  "cardName": "Visa Business Card",
+  "cardNumber": "****1234",
+  "statementStartDate": "2025-01-01",
+  "statementEndDate": "2025-01-31"
+}
+```
+
+### New Implementation (transactions3)
+
+**Endpoint:**
+
+```
+POST /authenticated/transactions3/api/credit-card-statements/upload
+```
+
+**Request:**
+
+```json
+{
+  "businessId": "business_xyz",
+  "fileUrl": "https://storage.googleapis.com/...",
+  "cardName": "Visa Business Card",
+  "cardNumber": "****1234",
+  "statementStartDate": "2025-01-01",
+  "statementEndDate": "2025-01-31"
+}
+```
+
+**Simpler request format** - No need to specify `transactionType` or `inputMethod` (it's implicit in the endpoint).
+
+### Key Changes
+
+1. **Auto-Classification**: Credit card statement transactions are automatically classified using rules:
+
+   - **Credit card fees** → Auto-classified, creates accounting entries, no reconciliation needed
+   - **Interest charges** → Auto-classified, creates accounting entries, no reconciliation needed
+   - **Payments** → Auto-classified, creates accounting entries, no reconciliation needed
+   - **Other transactions** → Need reconciliation with purchase receipts
+
+2. **Grouped Response**: Transactions are returned grouped by status for easy card population:
+
+   - `needsVerification` - Rule-matched transactions (have accounting entries, need verification)
+   - `needsReconciliation` - Transactions without rule matches (need reconciliation with purchase receipts)
+
+3. **Saved to Pending**: All credit card transactions are saved to `transactions3_pending` collection (not source of truth)
+
+4. **Capture Source**: Uses `capture.source = 'credit_card_statement_upload'` to distinguish from bank statements
+
+### Code Update for Credit Card Statements
+
+**Before:**
+
+```typescript
+// Old transactions2 endpoint
+const response = await fetch(`${API_BASE_URL}/authenticated/transactions2/api/transactions`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+    businessId: businessId,
+    transactionType: 'credit_card_transaction',
+    inputMethod: 'ocr_pdf',
+    fileUrl: fileUrl,
+    cardName: cardName,
+    cardNumber: cardNumber,
+    statementStartDate: statementStartDate,
+    statementEndDate: statementEndDate,
+  }),
+});
+```
+
+**After:**
+
+```typescript
+// New transactions3 endpoint
+const response = await fetch(
+  `${API_BASE_URL}/authenticated/transactions3/api/credit-card-statements/upload`,
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      businessId: businessId,
+      fileUrl: fileUrl,
+      cardName: cardName,
+      cardNumber: cardNumber,
+      statementStartDate: statementStartDate,
+      statementEndDate: statementEndDate,
+    }),
+  }
+);
+
+const data = await response.json();
+
+// Transactions are already grouped for you!
+const needsVerification = data.transactions.needsVerification; // Rule-matched (fees, interest, payments)
+const needsReconciliation = data.transactions.needsReconciliation; // Need to match with purchase receipts
+```
+
+### Distinguishing Bank vs Credit Card Transactions
+
+When querying transactions, filter by `capture.source` to distinguish:
+
+```typescript
+const isBankTransaction = (tx: Transaction) =>
+  tx.metadata?.capture?.source === 'bank_statement_upload';
+
+const isCreditCardTransaction = (tx: Transaction) =>
+  tx.metadata?.capture?.source === 'credit_card_statement_upload';
+```
+
+**For Credit Card Transactions Card:**
+
+- Filter queries by `kind=statement_entry` AND `capture.source === 'credit_card_statement_upload'`
+- See `TRANSACTIONS3_CREDIT_CARD_STATEMENT_UPLOAD.md` for detailed query examples
 
 ---
 
 ## Next Steps
 
 1. ✅ **Update purchase photo upload** - Use new transactions3 endpoint (this document)
-2. ✅ **Verification endpoint** - Verify transactions with optional updates (documented above)
-3. ⏳ **Reconciliation endpoint** - Coming soon (to reconcile with bank records)
-4. ⏳ **Update transaction lists** - Query transactions3 collections
+2. ✅ **Update bank statement upload** - Use new transactions3 endpoint (documented above)
+3. ✅ **Update credit card statement upload** - Use new transactions3 endpoint (documented above)
+4. ✅ **Verification endpoint** - Verify transactions with optional updates (documented above)
+5. ✅ **Reconciliation endpoint** - Available at `/authenticated/transactions3/api/reconcile/bank` (handles both bank and credit card)
+6. ⏳ **Update transaction lists** - Query transactions3 collections
 
 ---
 
@@ -696,11 +1360,33 @@ const response = await fetch(
 
 **Quick Update Checklist:**
 
+**Purchase Receipts:**
+
 - [ ] Update API endpoint from `/transactions2/api/transactions` to `/transactions3/api/purchases/ocr`
 - [ ] Remove `transactionType` and `inputMethod` from request body (simpler format)
 - [ ] Update response handling to check `metadata.verification.status = 'unverified'`
+
+**Bank Statements:**
+
+- [ ] Update API endpoint from `/transactions2/api/transactions` to `/transactions3/api/bank-statements/upload`
+- [ ] Remove `transactionType` and `inputMethod` from request body (simpler format)
+- [ ] Use grouped response: `data.transactions.needsVerification` and `data.transactions.needsReconciliation`
+- [ ] Populate Card 1 ("Needs Verification") with rule-matched transactions
+- [ ] Populate Card 2 ("Needs Reconciliation") with transactions needing reconciliation
+
+**Credit Card Statements:**
+
+- [ ] Update API endpoint from `/transactions2/api/transactions` to `/transactions3/api/credit-card-statements/upload`
+- [ ] Remove `transactionType` and `inputMethod` from request body (simpler format)
+- [ ] Use grouped response: `data.transactions.needsVerification` and `data.transactions.needsReconciliation`
+- [ ] Populate Card 1 ("Needs Verification") with rule-matched transactions
+- [ ] Populate Card 2 ("Needs Reconciliation") with transactions needing reconciliation
+- [ ] Filter queries by `capture.source === 'credit_card_statement_upload'` to distinguish from bank transactions
+
+**General:**
+
 - [ ] Update transaction queries to use new transactions3 endpoint
 - [ ] Add UI to show "Needs Verification" transactions
-- [ ] Test with real receipt images
+- [ ] Test with real receipt images, bank statement PDFs, and credit card statement PDFs
 
-**That's it!** The endpoint is simpler and aligns with our new architecture where transaction records are the source of truth.
+**That's it!** The endpoints are simpler and align with our new architecture where transaction records are the source of truth.

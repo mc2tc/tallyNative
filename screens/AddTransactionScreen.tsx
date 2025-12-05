@@ -120,10 +120,12 @@ export default function AddTransactionScreen() {
       
       try {
         // Bank section ALWAYS uses transactions3 bank statement upload endpoint
+        // Credit Cards section ALWAYS uses transactions3 credit card statement upload endpoint
         // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
         // For purchases from receipts section, also use transactions3
         // For other transaction types, use the unified transactions2 endpoint
         const useBankStatementUpload = context?.pipelineSection === 'bank' && isPdf
+        const useCreditCardStatementUpload = context?.pipelineSection === 'cards' && isPdf
         const useTransactions3Purchase = context?.pipelineSection === 'purchases3' || 
           (transactionType === 'purchase' && (inputMethod === 'ocr_image' || inputMethod === 'ocr_pdf'))
         
@@ -144,6 +146,23 @@ export default function AddTransactionScreen() {
             )
           } else {
             throw new Error('Failed to process bank statement')
+          }
+        } else if (useCreditCardStatementUpload) {
+          // Use transactions3 credit card statement upload endpoint
+          // Note: cardName and cardNumber are optional, can be added later if needed
+          response = await transactions2Api.uploadCreditCardStatement(businessId, downloadUrl, {
+            // TODO: Get cardName and cardNumber from creditCards API if context.cardId is available
+          })
+          
+          // The response is grouped - show summary
+          if (response.success) {
+            const summary = response.summary
+            setResultSummary(
+              `Credit card statement processed: ${summary.totalTransactions} transactions. ` +
+              `${summary.ruleMatched} rule-matched, ${summary.needsReconciliation} need reconciliation.`
+            )
+          } else {
+            throw new Error('Failed to process credit card statement')
           }
         } else if (useTransactions3Purchase) {
           response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)

@@ -297,6 +297,56 @@ export const transactions2Api = {
 		)
 	},
 
+	// Transactions3 credit card statement upload endpoint - automatically classifies and groups transactions
+	uploadCreditCardStatement: async (
+		businessId: string,
+		fileUrl: string,
+		options?: {
+			cardName?: string
+			cardNumber?: string
+			statementStartDate?: string
+			statementEndDate?: string
+		},
+	): Promise<{
+		success: boolean
+		summary: {
+			totalTransactions: number
+			ruleMatched: number
+			needsReconciliation: number
+			skipped: number
+		}
+		transactions: {
+			needsVerification: Transaction[]
+			needsReconciliation: Transaction[]
+		}
+		skipped: unknown[]
+	}> => {
+		return api.post<{
+			success: boolean
+			summary: {
+				totalTransactions: number
+				ruleMatched: number
+				needsReconciliation: number
+				skipped: number
+			}
+			transactions: {
+				needsVerification: Transaction[]
+				needsReconciliation: Transaction[]
+			}
+			skipped: unknown[]
+		}>(
+			'/authenticated/transactions3/api/credit-card-statements/upload',
+			{
+				businessId,
+				fileUrl,
+				...(options?.cardName && { cardName: options.cardName }),
+				...(options?.cardNumber && { cardNumber: options.cardNumber }),
+				...(options?.statementStartDate && { statementStartDate: options.statementStartDate }),
+				...(options?.statementEndDate && { statementEndDate: options.statementEndDate }),
+			},
+		)
+	},
+
 	// Transactions3 verify endpoint - verify a pending transaction
 	verifyTransaction: async (
 		transactionId: string,
@@ -407,10 +457,11 @@ export const reconciliationApi = {
 		)
 	},
 
-	// Reconcile credit card transactions with purchase receipts
+	// Reconcile credit card transactions with purchase receipts (transactions3 endpoint)
+	// Note: Uses the same endpoint as bank reconciliation - it handles both bank and credit card
 	reconcileCreditCard: async (businessId: string): Promise<ReconciliationResponse> => {
 		return api.post<ReconciliationResponse>(
-			'/authenticated/transactions2/api/reconcile/credit-card',
+			'/authenticated/transactions3/api/reconcile/bank',
 			{ businessId },
 		)
 	},

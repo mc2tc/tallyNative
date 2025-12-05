@@ -85,10 +85,11 @@ export default function UploadProcessingScreen() {
         })
         
         // Bank section ALWAYS uses transactions3 bank statement upload endpoint (PDF only)
+        // Credit Cards section ALWAYS uses transactions3 credit card statement upload endpoint (PDF only)
         // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
-        // For purchases from receipts section, also use transactions3
         // For other transaction types, use the unified transactions2 endpoint
         const useBankStatementUpload = pipelineSection === 'bank' && isPdf
+        const useCreditCardStatementUpload = pipelineSection === 'cards' && isPdf
         const useTransactions3 = pipelineSection === 'purchases3' || 
           (finalTransactionType === 'purchase' && (finalInputMethod === 'ocr_image' || finalInputMethod === 'ocr_pdf'))
         
@@ -119,6 +120,33 @@ export default function UploadProcessingScreen() {
           } else {
             console.error('UploadProcessing: Bank statement upload failed')
             throw new Error('Failed to process bank statement')
+          }
+        } else if (useCreditCardStatementUpload) {
+          // Use transactions3 credit card statement upload endpoint
+          console.log('UploadProcessing: Using transactions3 credit card statement upload endpoint')
+          response = await transactions2Api.uploadCreditCardStatement(businessId, downloadUrl, {
+            // TODO: Get cardName and cardNumber if available from context
+          })
+          
+          console.log('UploadProcessing: Credit card statement upload response:', {
+            success: response.success,
+            summary: response.summary,
+          })
+          
+          if (response.success) {
+            const summary = response.summary
+            console.log('UploadProcessing: Credit card statement processed successfully', {
+              totalTransactions: summary.totalTransactions,
+              ruleMatched: summary.ruleMatched,
+              needsReconciliation: summary.needsReconciliation,
+            })
+            // Wait a moment to ensure transactions are fully saved before showing success
+            await new Promise(resolve => setTimeout(resolve, 500))
+            setShowSuccess(true)
+            setProcessing(false)
+          } else {
+            console.error('UploadProcessing: Credit card statement upload failed')
+            throw new Error('Failed to process credit card statement')
           }
         } else if (useTransactions3) {
           response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
@@ -220,10 +248,11 @@ export default function UploadProcessingScreen() {
       const timer = setTimeout(() => {
         // Navigate back to transactions screen with the correct section active
         // Map pipelineSection to activeSection
-        const activeSection: 'receipts' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | undefined = 
+        // Note: 'receipts' pipelineSection maps to 'purchases3' activeSection (legacy support)
+        const activeSection: 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | undefined = 
           pipelineSection === 'bank' ? 'bank' : 
           pipelineSection === 'cards' ? 'cards' : 
-          pipelineSection === 'receipts' ? 'receipts' :
+          pipelineSection === 'receipts' || pipelineSection === 'purchases3' ? 'purchases3' :
           pipelineSection === 'sales' ? 'sales' :
           pipelineSection === 'internal' ? 'internal' :
           pipelineSection === 'reporting' ? 'reporting' : undefined
@@ -241,15 +270,17 @@ export default function UploadProcessingScreen() {
               navigation.goBack()
               // After going back, navigate to the same screen with params to update activeSection
               setTimeout(() => {
+                if (!activeSection) return
+                
                 try {
                   // Try TransactionsHome first
                   console.log('UploadProcessing: Navigating to TransactionsHome with activeSection:', activeSection)
-                  navigation.navigate('TransactionsHome' as never, { activeSection } as never)
+                  ;(navigation as StackNavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
                 } catch (e1) {
                   try {
                     // Try ScaffoldHome
                     console.log('UploadProcessing: Navigating to ScaffoldHome with activeSection:', activeSection)
-                    navigation.navigate('ScaffoldHome' as never, { activeSection } as never)
+                    ;(navigation as StackNavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
                   } catch (e2) {
                     console.error('UploadProcessing: Failed to navigate with activeSection:', e2)
                     // Last resort: try to set params on the current route
@@ -268,11 +299,13 @@ export default function UploadProcessingScreen() {
           }, 100)
         } else {
           // If we can't go back, try direct navigation
+          if (!activeSection) return
+          
           try {
-            navigation.navigate('TransactionsHome' as never, { activeSection } as never)
+            ;(navigation as StackNavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
           } catch (e1) {
             try {
-              navigation.navigate('ScaffoldHome' as never, { activeSection } as never)
+              ;(navigation as StackNavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
             } catch (e2) {
               console.error('UploadProcessing: Failed to navigate:', e2)
             }
