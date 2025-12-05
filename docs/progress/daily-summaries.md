@@ -3,7 +3,7 @@
 ## 2025-12-05
 
 ### Summary
-Removed all legacy transactions2 code from refactored sections (Purchases, Bank, Credit Cards) to complete the transactions3 migration. Eliminated the old "receipts" section entirely in favor of "Purchases3", updated all filtering logic to use transactions3 exclusively, and fixed navigation/type errors in upload processing. Added TypeScript type-checking scripts for easier development workflow.
+Removed all legacy transactions2 code from refactored sections (Purchases, Bank, Credit Cards) to complete the transactions3 migration. Eliminated the old "receipts" section entirely in favor of "Purchases3", updated all filtering logic to use transactions3 exclusively, and fixed navigation/type errors in upload processing. Added TypeScript type-checking scripts for easier development workflow. Implemented Accounts Payable card for unpaid purchase transactions, integrated transactions3 manual purchase entry endpoint, and added payment method update functionality for transactions3 transactions.
 
 ### Commits
 
@@ -57,12 +57,41 @@ Removed all legacy transactions2 code from refactored sections (Purchases, Bank,
 
 ---
 
+#### 4. feat: Add Accounts Payable card, transactions3 manual entry, and payment method updates
+**Commit:** `d0af420`  
+**Files Changed:** 27 files, 2475 insertions(+), 110 deletions(-)
+
+**Changes:**
+- Added Accounts Payable card to Purchases3 section for unpaid purchase transactions with Accounts Payable payment method
+- Integrated transactions3 manual purchase entry endpoint (`createPurchaseManual`) - transactions are verified by default and saved directly to source_of_truth
+- Added transactions3 payment method update endpoint support (`updateTransactions3PaymentMethod`) for verified transactions
+- Enhanced transaction filtering with `hasAccountsPayablePayment` helper function to detect Accounts Payable transactions
+- Improved cash transaction filtering and reconciliation status handling (reconciled, not_required statuses)
+- Enhanced transaction fetching to include reconciled and not_required transactions for audit ready card
+- Updated transaction detail screen to support transactions3 payment method updates
+- Enhanced ManualPurchaseEntryScreen with transactions3 integration and proper endpoint usage
+- Fixed various transaction filtering issues across scaffold screens (CashFlow, NetProfit, RevenueGrowth, CurrentRatio)
+- Updated Firebase config and business context constants
+- Added comprehensive API documentation for Accounts Payable integration, manual entry flows, audit ready conditions, cash filtering, reconciliation status handling, Firestore indexes, and related transaction3 workflows
+
+**Files Modified:**
+- `lib/api/transactions2.ts` - Added createPurchaseManual and updateTransactions3PaymentMethod endpoints
+- `screens/TransactionsScaffoldScreen.tsx` - Added Accounts Payable card, enhanced filtering logic
+- `screens/TransactionDetailScreen.tsx` - Added transactions3 payment method update support
+- `screens/ManualPurchaseEntryScreen.tsx` - Integrated transactions3 manual entry endpoint
+- `lib/config/firebase.ts` - Updated Firebase configuration
+- `lib/constants/businessContext.ts` - Updated business context constants
+- Various scaffold and screen files - Fixed transaction filtering issues
+- `docs/api/*.md` - Added 10 new documentation files for Accounts Payable, manual entry, and transactions3 workflows
+
+---
+
 ### Statistics
-- **Total Commits:** 3 (local refactoring work)
-- **Total Files Changed:** 3 files
-- **Total Lines Added:** ~520 insertions
-- **Total Lines Removed:** ~815 deletions
-- **Net Change:** ~-295 lines (code cleanup)
+- **Total Commits:** 4
+- **Total Files Changed:** 30 files
+- **Total Lines Added:** ~2995 insertions
+- **Total Lines Removed:** ~925 deletions
+- **Net Change:** ~+2070 lines
 
 ### Key Features Added
 1. Complete removal of legacy transactions2 code from Purchases, Bank, and Credit Cards sections
@@ -70,6 +99,11 @@ Removed all legacy transactions2 code from refactored sections (Purchases, Bank,
 3. All refactored sections now use transactions3 exclusively
 4. Fixed navigation and type errors in upload processing
 5. Added TypeScript type-checking scripts for development workflow
+6. Accounts Payable card for tracking unpaid purchase transactions
+7. Transactions3 manual purchase entry endpoint integration (verified by default, direct to source_of_truth)
+8. Transactions3 payment method update functionality for verified transactions
+9. Enhanced transaction filtering for Accounts Payable and cash-only transactions
+10. Comprehensive API documentation for Accounts Payable and manual entry workflows
 
 ### Notes
 - **Preserved transactions2 code** for Sales and Reporting Ready sections (will be refactored next)
@@ -77,6 +111,11 @@ Removed all legacy transactions2 code from refactored sections (Purchases, Bank,
 - All bank and credit card transaction filtering now uses transactions3 data exclusively
 - Navigation properly handles legacy 'receipts' pipelineSection values by converting to 'purchases3'
 - Type-checking scripts allow developers to find TypeScript errors without running the app (similar to Next.js build)
+- Accounts Payable transactions are filtered from verified purchase transactions with Accounts Payable payment method
+- Manual purchase entries via transactions3 endpoint are immediately verified and saved to source_of_truth (no pending state)
+- Payment method updates for transactions3 transactions use new PATCH endpoint (different from transactions2 update endpoint)
+- Accounts Payable transactions move through workflow: unpaid → paid by bank/card (reconciliation) → paid by cash (direct to audit ready)
+- Backend must support Accounts Payable payment method detection in various formats (accounts_payable, accounts payable, etc.)
 
 ---
 
