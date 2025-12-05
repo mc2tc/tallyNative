@@ -1856,9 +1856,15 @@ export default function TransactionsScaffoldScreen() {
   // 1. Needs verification - pending transactions with unverified status
   const purchases3NeedsVerification: Array<TransactionStub & { originalTransaction: Transaction }> = transactions3Pending
     .filter((tx) => {
+      const metadata = tx.metadata as {
+        classification?: { kind?: string }
+        verification?: { status?: string }
+      }
       // Only purchase transactions belong in Purchases3 section
-      const metadata = tx.metadata as { classification?: { kind?: string } }
-      return metadata.classification?.kind === 'purchase'
+      const isPurchase = metadata.classification?.kind === 'purchase'
+      // Must be unverified (defensive check - backend should filter but we verify client-side too)
+      const isUnverified = metadata.verification?.status === 'unverified'
+      return isPurchase && isUnverified
     })
     .map((tx) => parseTransaction3(tx))
     .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)

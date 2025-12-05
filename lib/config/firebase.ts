@@ -1,7 +1,10 @@
 // Firebase configuration and initialization
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
-import { getAuth, type Auth } from 'firebase/auth'
+import { initializeAuth, getAuth, type Auth } from 'firebase/auth'
+// @ts-ignore - getReactNativePersistence may not be in type definitions but exists at runtime
+import { getReactNativePersistence } from 'firebase/auth/react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 // Firebase config - these should come from environment variables
 // For now, using placeholder values that need to be configured
@@ -37,7 +40,22 @@ try {
   if (getApps().length === 0) {
     console.log('Initializing Firebase app...')
     app = initializeApp(firebaseConfig)
-    auth = getAuth(app)
+    // Use initializeAuth with AsyncStorage persistence for React Native
+    // This ensures auth state persists across app restarts
+    try {
+      auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage),
+      })
+      console.log('Firebase Auth initialized with AsyncStorage persistence')
+    } catch (authError: any) {
+      // If auth is already initialized, get the existing instance
+      if (authError.code === 'auth/already-initialized') {
+        console.log('Firebase Auth already initialized, getting existing instance')
+        auth = getAuth(app)
+      } else {
+        throw authError
+      }
+    }
     console.log('Firebase initialized successfully')
   } else {
     app = getApps()[0]

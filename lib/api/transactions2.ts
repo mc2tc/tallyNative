@@ -76,9 +76,14 @@ export type Transaction = {
 
 export type TransactionsListResponse = {
 	transactions: Transaction[]
-	total?: number
-	page?: number
-	limit?: number
+	pagination: {
+		page: number
+		limit: number
+		totalCount: number
+		totalPages: number
+		hasNextPage: boolean
+		hasPreviousPage: boolean
+	}
 }
 
 export type SalesManualEntryRequest = {
@@ -155,7 +160,7 @@ export const transactions2Api = {
 			...(options?.classificationKind && { classificationKind: options.classificationKind }),
 		})
 		return api.get<TransactionsListResponse>(
-			`/authenticated/transactions2/api/transactions?${params.toString()}`,
+			`/authenticated/transactions3/api/transactions?${params.toString()}`,
 		)
 	},
 
