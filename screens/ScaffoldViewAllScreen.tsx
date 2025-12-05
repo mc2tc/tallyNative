@@ -93,13 +93,13 @@ export default function ScaffoldViewAllScreen() {
           </View>
         ) : (
           <View style={styles.listContainer}>
-            {items.map((item) => (
+            {items.map((item: TransactionStub) => (
               <View key={item.id} style={styles.listItem}>
                 <View style={styles.itemTextGroup}>
                   <Text style={styles.itemTitle}>{item.title}</Text>
                   {item.verificationItems ? (
                     <View style={styles.verificationItems}>
-                      {item.verificationItems.map((verification, idx) => (
+                      {item.verificationItems.map((verification: { label: string; confirmed?: boolean }, idx: number) => (
                         <View key={idx} style={styles.verificationItem}>
                           <Text style={styles.verificationBullet}>•</Text>
                           <Text style={styles.verificationLabel}>{verification.label}</Text>

@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react'
 import { StyleSheet, Text, View, ScrollView } from 'react-native'
-import { useNavigation, useRoute } from '@react-navigation/native'
-import type { StackNavigationProp, RouteProp } from '@react-navigation/stack'
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 

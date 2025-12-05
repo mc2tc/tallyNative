@@ -86,7 +86,7 @@ export function MainTabNavigator() {
                   CommonActions.reset({
                     index: tabIndex >= 0 ? tabIndex : state.index,
                     routes: newRoutes,
-                  })
+                  } as any)
                 )
               }
             }
@@ -129,7 +129,7 @@ export function MainTabNavigator() {
                   CommonActions.reset({
                     index: tabIndex >= 0 ? tabIndex : state.index,
                     routes: newRoutes,
-                  })
+                  } as any)
                 )
               }
             }
@@ -172,7 +172,7 @@ export function MainTabNavigator() {
                   CommonActions.reset({
                     index: tabIndex >= 0 ? tabIndex : state.index,
                     routes: newRoutes,
-                  })
+                  } as any)
                 )
               }
             }

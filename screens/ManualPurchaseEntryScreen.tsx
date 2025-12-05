@@ -32,6 +32,8 @@ type PurchaseItem = {
   unitCost: number
   amount: number
   amountExcluding?: number
+  vatRate?: number
+  vatAmount?: number
   category?: string
   unit?: string
 }
@@ -139,8 +141,8 @@ export default function ManualPurchaseEntryScreen() {
     fetchAccounts()
   }, [businessId])
 
-  // Calculate item amount when quantity or unitCost changes
-  const updateItemAmount = useCallback((itemId: string, field: 'quantity' | 'unitCost', value: number) => {
+  // Calculate item amount when quantity, unitCost, or VAT changes
+  const updateItemAmount = useCallback((itemId: string, field: 'quantity' | 'unitCost' | 'vatRate' | 'vatAmount', value: number) => {
     setItems((prev) =>
       prev.map((item) => {
         if (item.id === itemId) {
@@ -148,7 +150,42 @@ export default function ManualPurchaseEntryScreen() {
             ...item,
             [field]: value,
           }
-          updated.amount = updated.quantity * updated.unitCost
+          
+          // Calculate base amount (quantity * unitCost)
+          const baseAmount = updated.quantity * updated.unitCost
+          
+          // Calculate VAT
+          if (field === 'vatRate' && value > 0) {
+            // If VAT rate is set, calculate VAT amount
+            updated.vatAmount = baseAmount * (value / 100)
+            updated.amountExcluding = baseAmount
+            updated.amount = baseAmount + (updated.vatAmount || 0)
+          } else if (field === 'vatAmount') {
+            // If VAT amount is set directly
+            updated.amount = baseAmount + value
+            updated.amountExcluding = baseAmount
+            if (baseAmount > 0) {
+              updated.vatRate = (value / baseAmount) * 100
+            }
+          } else {
+            // Recalculate VAT if base amount changes
+            if (updated.vatRate && updated.vatRate > 0) {
+              updated.vatAmount = baseAmount * (updated.vatRate / 100)
+              updated.amountExcluding = baseAmount
+              updated.amount = baseAmount + (updated.vatAmount || 0)
+            } else if (updated.vatAmount && updated.vatAmount > 0) {
+              updated.amount = baseAmount + updated.vatAmount
+              updated.amountExcluding = baseAmount
+              if (baseAmount > 0) {
+                updated.vatRate = (updated.vatAmount / baseAmount) * 100
+              }
+            } else {
+              // No VAT
+              updated.amount = baseAmount
+              updated.amountExcluding = undefined
+            }
+          }
+          
           return updated
         }
         return item
@@ -156,7 +193,7 @@ export default function ManualPurchaseEntryScreen() {
     )
   }, [])
 
-  // Calculate total amount from items and charges
+  // Calculate total amount from items (including VAT) and charges
   useEffect(() => {
     const itemsTotal = items.reduce((sum, item) => sum + item.amount, 0)
     const chargesTotal = charges.reduce((sum, charge) => sum + charge.amount, 0)
@@ -329,45 +366,42 @@ export default function ManualPurchaseEntryScreen() {
     try {
       setSubmitting(true)
 
-      const payload = {
-        businessId,
-        transactionType: 'purchase' as const,
-        inputMethod: 'manual' as const,
-        transactionData: {
-          vendorName: vendorName.trim(),
-          transactionDate,
-          totalAmount: parseFloat(totalAmount),
-          // Include currency if set and different from business default
-          // Backend will default to business currency if not provided
-          ...(currency && currency !== businessCurrency && { currency }),
-          ...(reference.trim() && { reference: reference.trim() }),
-          items: items.map((item) => ({
-            name: item.name.trim(),
-            debitAccount: item.debitAccount,
-            quantity: item.quantity,
-            unitCost: item.unitCost,
-            amount: item.amount,
-            ...(item.amountExcluding && { amountExcluding: item.amountExcluding }),
-            ...(item.category && { category: item.category }),
-            ...(item.unit && { unit: item.unit }),
+      const transactionData = {
+        vendorName: vendorName.trim(),
+        transactionDate,
+        totalAmount: parseFloat(totalAmount),
+        // Include currency if set and different from business default
+        // Backend will default to business currency if not provided
+        ...(currency && currency !== businessCurrency && { currency }),
+        ...(reference.trim() && { reference: reference.trim() }),
+        items: items.map((item) => ({
+          name: item.name.trim(),
+          debitAccount: item.debitAccount,
+          quantity: item.quantity,
+          unitCost: item.unitCost,
+          amount: item.amount,
+          ...(item.amountExcluding && { amountExcluding: item.amountExcluding }),
+          ...(item.vatRate && item.vatRate > 0 && { vatRate: item.vatRate }),
+          ...(item.vatAmount && item.vatAmount > 0 && { vatAmount: item.vatAmount }),
+          ...(item.category && { category: item.category }),
+          ...(item.unit && { unit: item.unit }),
+        })),
+        ...(charges.length > 0 && {
+          charges: charges.map((charge) => ({
+            name: charge.name.trim(),
+            ...(charge.rate && { rate: charge.rate }),
+            amount: charge.amount,
           })),
-          ...(charges.length > 0 && {
-            charges: charges.map((charge) => ({
-              name: charge.name.trim(),
-              ...(charge.rate && { rate: charge.rate }),
-              amount: charge.amount,
-            })),
-          }),
-          paymentType: paymentMethods.map((pm) => ({
-            type: pm.type,
-            amount: pm.amount,
-            ...(pm.chequeNumber && { chequeNumber: pm.chequeNumber }),
-            ...(pm.cardLastFour && { cardLastFour: pm.cardLastFour }),
-          })),
-        },
+        }),
+        paymentType: paymentMethods.map((pm) => ({
+          type: pm.type,
+          amount: pm.amount,
+          ...(pm.chequeNumber && { chequeNumber: pm.chequeNumber }),
+          ...(pm.cardLastFour && { cardLastFour: pm.cardLastFour }),
+        })),
       }
 
-      const response = await transactions2Api.createTransaction(payload)
+      const response = await transactions2Api.createPurchaseManual(businessId, transactionData)
 
       if (response.success) {
         Alert.alert('Success', 'Purchase transaction created successfully.', [
@@ -604,12 +638,53 @@ export default function ManualPurchaseEntryScreen() {
                 </View>
               </View>
 
+              <View style={styles.fieldSpacing} />
+
+              <View style={styles.row}>
+                <View style={styles.halfWidth}>
+                  <Text style={styles.label}>VAT Rate (%)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={item.vatRate && item.vatRate > 0 ? item.vatRate.toString() : ''}
+                    onChangeText={(text) => {
+                      const num = parseFloat(text) || 0
+                      updateItemAmount(item.id, 'vatRate', num)
+                    }}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={GRAYSCALE_SECONDARY}
+                  />
+                </View>
+                <View style={styles.halfWidth}>
+                  <Text style={styles.label}>VAT Amount</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={item.vatAmount && item.vatAmount > 0 ? item.vatAmount.toString() : ''}
+                    onChangeText={(text) => {
+                      const num = parseFloat(text) || 0
+                      updateItemAmount(item.id, 'vatAmount', num)
+                    }}
+                    keyboardType="numeric"
+                    placeholder="0.00"
+                    placeholderTextColor={GRAYSCALE_SECONDARY}
+                  />
+                </View>
+              </View>
+
               <View style={styles.amountRow}>
-                <Text style={styles.amountLabel}>Amount:</Text>
+                <Text style={styles.amountLabel}>Amount (incl. VAT):</Text>
                 <Text style={styles.amountValue}>
                   {item.amount.toFixed(2)}
                 </Text>
               </View>
+              {item.amountExcluding && item.amountExcluding > 0 && (
+                <View style={styles.amountRow}>
+                  <Text style={styles.amountLabel}>Amount (excl. VAT):</Text>
+                  <Text style={styles.amountValue}>
+                    {item.amountExcluding.toFixed(2)}
+                  </Text>
+                </View>
+              )}
             </View>
           ))}
         </View>
@@ -617,7 +692,7 @@ export default function ManualPurchaseEntryScreen() {
         {/* Charges */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Charges (Optional)</Text>
+            <Text style={styles.sectionTitle}>Other Charges (Optional)</Text>
             <TouchableOpacity onPress={addCharge} style={styles.addButton}>
               <MaterialIcons name="add" size={20} color={GRAYSCALE_PRIMARY} />
               <Text style={styles.addButtonText}>Add Charge</Text>
@@ -645,7 +720,7 @@ export default function ManualPurchaseEntryScreen() {
                     prev.map((c) => (c.id === charge.id ? { ...c, name: text } : c)),
                   )
                 }
-                placeholder="e.g., VAT, Service Charge"
+                placeholder="e.g., Service Charge, Delivery Fee"
                 placeholderTextColor={GRAYSCALE_SECONDARY}
               />
 

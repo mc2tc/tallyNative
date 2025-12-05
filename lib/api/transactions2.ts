@@ -247,6 +247,20 @@ export const transactions2Api = {
 		)
 	},
 
+	// Transactions3 manual purchase entry endpoint - verified by default, saves to source of truth
+	createPurchaseManual: async (
+		businessId: string,
+		transactionData: any,
+	): Promise<UnifiedTransactionResponse> => {
+		return api.post<UnifiedTransactionResponse>(
+			'/authenticated/transactions3/api/purchases/manual',
+			{
+				businessId,
+				transactionData,
+			},
+		)
+	},
+
 	// Transactions3 bank statement upload endpoint - automatically classifies and groups transactions
 	uploadBankStatement: async (
 		businessId: string,
@@ -432,6 +446,23 @@ export const transactions2Api = {
 			`/authenticated/transactions3/api/transactions?${params.toString()}`,
 		)
 	},
+
+	// Transactions3 update payment method endpoint - for verified transactions3 transactions
+	updateTransactions3PaymentMethod: async (
+		transactionId: string,
+		businessId: string,
+		paymentMethod: string,
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<Transaction>(
+			`/authenticated/transactions3/api/transactions/${transactionId}?${params.toString()}`,
+			{
+				paymentMethod,
+			},
+		)
+	},
 }
 
 export type ReconciliationMatch = {
@@ -499,19 +530,9 @@ export const healthScoreApi = {
 			businessId,
 			timeframe,
 		})
-		console.log(`[KPIs API] Request: businessId=${businessId}, timeframe=${timeframe}`)
-		try {
-			const response = await api.get<HealthScoreResponse>(
-				`/authenticated/transactions2/api/kpis?${params.toString()}`,
-			)
-			if (response.success && response.data?.healthScore) {
-				console.log(`[KPIs API] Success: overall=${response.data.healthScore.overall}, timeframe=${response.data.healthScore.timeframe}`)
-			}
-			return response
-		} catch (error) {
-			console.error(`[KPIs API] Error: businessId=${businessId}, timeframe=${timeframe}`, error)
-			throw error
-		}
+		return api.get<HealthScoreResponse>(
+			`/authenticated/transactions2/api/kpis?${params.toString()}`,
+		)
 	},
 }
 

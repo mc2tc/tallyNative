@@ -20,6 +20,8 @@ export type ScaffoldStackParamList = {
       subtitle?: string
       verificationItems?: Array<{ label: string; confirmed?: boolean }>
     }>
+    showReconcileButton?: boolean
+    pipelineSection?: string
   }
   TransactionDetail: { transaction: Transaction }
   AddTransaction: { context?: { pipelineSection?: string; bankAccountId?: string; cardId?: string } }

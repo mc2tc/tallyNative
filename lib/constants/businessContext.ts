@@ -81,8 +81,8 @@ export const SUBCATEGORY_OPTIONS = {
 } as const
 
 export function getDefaultSubcategory(mainCategory: string) {
-  const list = SUBCATEGORY_OPTIONS[mainCategory]
-  if (!list || list.length === 0) {
+  const list = SUBCATEGORY_OPTIONS[mainCategory as keyof typeof SUBCATEGORY_OPTIONS]
+  if (!list) {
     return 'Professional Services'
   }
   return list[0].id

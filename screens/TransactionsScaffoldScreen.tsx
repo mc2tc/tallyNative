@@ -291,6 +291,50 @@ function isCashOnlyTransaction(tx: Transaction): boolean {
   }
 }
 
+// Helper function to check if transaction has Accounts Payable as a payment method
+function hasAccountsPayablePayment(tx: Transaction): boolean {
+  try {
+    const accounting = tx.accounting as
+      | {
+          paymentBreakdown?: Array<{ type?: string; paymentType?: string }>
+        }
+      | undefined
+    const details = tx.details as
+      | {
+          paymentType?: Array<{ type?: string }>
+          paymentBreakdown?: Array<{ type?: string }>
+        }
+      | undefined
+    
+    // Check accounting.paymentBreakdown first (most common location)
+    const paymentBreakdown = accounting?.paymentBreakdown
+    // Check details.paymentType (for manual entry)
+    const detailsPaymentType = details?.paymentType
+    // Check details.paymentBreakdown (alternative location)
+    const detailsPaymentBreakdown = details?.paymentBreakdown
+    
+    const allPaymentMethods =
+      paymentBreakdown || detailsPaymentType || detailsPaymentBreakdown || []
+    
+    if (allPaymentMethods.length === 0) {
+      return false
+    }
+    
+    // Check if any payment method is Accounts Payable
+    // Handle both { type: 'accounts_payable' } and { paymentType: 'accounts_payable' } formats
+    // Also check for variations like 'Accounts Payable', 'accounts_payable', etc.
+    return allPaymentMethods.some((pm) => {
+      const paymentType = (pm.type || (pm as { paymentType?: string }).paymentType || '').toLowerCase()
+      return paymentType === 'accounts_payable' || 
+             paymentType === 'accounts payable' ||
+             paymentType === 'accountspayable'
+    })
+  } catch (error) {
+    console.error('Error checking if transaction has Accounts Payable payment:', error)
+    return false
+  }
+}
+
 
 type SectionKey = 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | 'payroll' | 'financialServices'
 
@@ -629,10 +673,28 @@ export default function TransactionsScaffoldScreen() {
             status: 'verification:verified',
           })
 
-          // Combine and deduplicate transactions (some may appear in both)
+          // Fetch reconciled/not_required transactions (for audit ready card)
+          const reconciledResponse = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            kind: 'purchase',
+            status: 'reconciliation:reconciled',
+          })
+
+          // Fetch not_required transactions (cash transactions)
+          const notRequiredResponse = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            kind: 'purchase',
+            status: 'reconciliation:not_required',
+          })
+
+          // Combine and deduplicate transactions (some may appear in multiple queries)
           const allSourceOfTruth = [
             ...(bankReconciliationResponse.transactions || []),
             ...(allVerifiedResponse.transactions || []),
+            ...(reconciledResponse.transactions || []),
+            ...(notRequiredResponse.transactions || []),
           ]
           // Deduplicate by transaction ID
           const uniqueTransactions = allSourceOfTruth.reduce((acc, tx) => {
@@ -650,6 +712,8 @@ export default function TransactionsScaffoldScreen() {
             pending: pendingResponse.transactions?.length || 0,
             bankReconciliation: bankReconciliationResponse.transactions?.length || 0,
             allVerified: allVerifiedResponse.transactions?.length || 0,
+            reconciled: reconciledResponse.transactions?.length || 0,
+            notRequired: notRequiredResponse.transactions?.length || 0,
             totalUnique: uniqueTransactions.length,
             bankReconciliationSample: bankReconciliationResponse.transactions?.[0] ? {
               id: bankReconciliationResponse.transactions[0].id || (bankReconciliationResponse.transactions[0].metadata as any)?.id,
@@ -657,6 +721,23 @@ export default function TransactionsScaffoldScreen() {
               reconciliationStatus: (bankReconciliationResponse.transactions[0].metadata as any)?.reconciliation?.status,
               paymentBreakdown: (bankReconciliationResponse.transactions[0].details as any)?.paymentBreakdown,
             } : null,
+            // Check for cash transactions with not_required status
+            cashTransactions: uniqueTransactions.filter((tx) => {
+              const reconciliationStatus = (tx.metadata as any)?.reconciliation?.status
+              return reconciliationStatus === 'not_required'
+            }).map((tx) => ({
+              id: tx.id || (tx.metadata as any)?.id,
+              verificationStatus: (tx.metadata as any)?.verification?.status,
+              reconciliationStatus: (tx.metadata as any)?.reconciliation?.status,
+              classificationKind: (tx.metadata as any)?.classification?.kind,
+            })),
+            // Sample of all transactions to debug
+            allTransactionsSample: uniqueTransactions.slice(0, 5).map((tx) => ({
+              id: tx.id || (tx.metadata as any)?.id,
+              verificationStatus: (tx.metadata as any)?.verification?.status,
+              reconciliationStatus: (tx.metadata as any)?.reconciliation?.status,
+              classificationKind: (tx.metadata as any)?.classification?.kind,
+            })),
           })
         } catch (error) {
           console.error('Failed to fetch transactions3:', error)
@@ -1260,6 +1341,46 @@ export default function TransactionsScaffoldScreen() {
         // This case is for legacy receipts section - now handled by Purchases3
         return []
       
+      case 'Accounts Payable':
+        // Use transactions3 data - filter for verified purchase transactions with Accounts Payable payment method
+        return transactions3SourceOfTruth
+          .filter((tx) => {
+            const metadata = tx.metadata as {
+              verification?: { status?: string }
+              reconciliation?: { status?: string }
+              classification?: { kind?: string }
+            }
+            
+            // Only purchase transactions belong in Purchases3 section
+            const isPurchase = metadata.classification?.kind === 'purchase'
+            // Must be verified
+            const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
+            // Must have Accounts Payable as payment method
+            const hasAccountsPayable = hasAccountsPayablePayment(tx)
+            // Must not be reconciled yet (not paid)
+            const isReconciled =
+              metadata.reconciliation?.status === 'matched' ||
+              metadata.reconciliation?.status === 'reconciled' ||
+              metadata.reconciliation?.status === 'exception'
+            // Must not be cash-only (cash payments don't go through Accounts Payable)
+            const isCashOnly = isCashOnlyTransaction(tx)
+            
+            return isPurchase && isVerified && hasAccountsPayable && !isReconciled && !isCashOnly
+          })
+          .sort((a, b) => {
+            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (a.metadata as { createdAt?: number }).createdAt || 0
+            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+              (b.metadata as { createdAt?: number }).createdAt || 0
+            return bDate - aDate
+          })
+          .map((tx) => ({
+            id: tx.id,
+            title: tx.summary.thirdPartyName,
+            amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+            originalTransaction: tx,
+          }))
+      
       case 'Confirmed unreconcilable':
         if (activeSection === 'bank') {
           // Use transactions3 data - filter for verified bank transactions with unreconciled status
@@ -1750,7 +1871,7 @@ export default function TransactionsScaffoldScreen() {
     })
     .slice(0, 3)
 
-  // 3. Reconcile to Credit Card - verified transactions with reconciliation.type === 'card'
+  // 4. Reconcile to Credit Card - verified transactions with reconciliation.type === 'card'
   const purchases3ReconcileToCreditCard: Array<TransactionStub & { originalTransaction: Transaction }> = transactions3SourceOfTruth
     .filter((tx) => {
       const metadata = tx.metadata as {
@@ -1781,7 +1902,43 @@ export default function TransactionsScaffoldScreen() {
     })
     .slice(0, 3)
 
-  // 2. Reconcile to bank - verified transactions with reconciliation.type === 'bank_transfer'
+  // 2. Accounts Payable - verified purchase transactions with Accounts Payable payment method that are not yet paid
+  const purchases3AccountsPayable: Array<TransactionStub & { originalTransaction: Transaction }> = transactions3SourceOfTruth
+    .filter((tx) => {
+      const metadata = tx.metadata as {
+        verification?: { status?: string }
+        reconciliation?: { status?: string }
+        classification?: { kind?: string }
+      }
+      
+      // Only purchase transactions belong in Purchases3 section
+      const isPurchase = metadata.classification?.kind === 'purchase'
+      // Must be verified
+      const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
+      // Must have Accounts Payable as payment method
+      const hasAccountsPayable = hasAccountsPayablePayment(tx)
+      // Must not be reconciled yet (not paid)
+      const isReconciled =
+        metadata.reconciliation?.status === 'matched' ||
+        metadata.reconciliation?.status === 'reconciled' ||
+        metadata.reconciliation?.status === 'exception'
+      // Must not be cash-only (cash payments don't go through Accounts Payable)
+      const isCashOnly = isCashOnlyTransaction(tx)
+      
+      return isPurchase && isVerified && hasAccountsPayable && !isReconciled && !isCashOnly
+    })
+    .map((tx) => parseTransaction3(tx))
+    .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)
+    .sort((a, b) => {
+      const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+        (a.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
+      const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
+        (b.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
+      return bDate - aDate
+    })
+    .slice(0, 3)
+
+  // 3. Reconcile to bank - verified transactions with reconciliation.type === 'bank_transfer'
   const purchases3ReconcileToBank: Array<TransactionStub & { originalTransaction: Transaction }> = transactions3SourceOfTruth
     .filter((tx) => {
       const metadata = tx.metadata as {
@@ -1813,7 +1970,7 @@ export default function TransactionsScaffoldScreen() {
     .slice(0, 3)
 
 
-  // 4. Verified, reconciled and audit ready - verified transactions that are fully reconciled
+  // 5. Verified, reconciled and audit ready - verified transactions that are fully reconciled
   const purchases3AuditReady: Array<TransactionStub & { originalTransaction: Transaction }> = transactions3SourceOfTruth
     .filter((tx) => {
       const metadata = tx.metadata as {
@@ -1826,13 +1983,26 @@ export default function TransactionsScaffoldScreen() {
       const isPurchase = metadata.classification?.kind === 'purchase'
       // Must be verified
       const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
-      // Must be reconciled (or not required if cash-only)
-      const isReconciled = metadata.reconciliation?.status === 'matched' ||
-        metadata.reconciliation?.status === 'reconciled' ||
-        metadata.reconciliation?.status === 'exception' ||
+      // Must be reconciled or not required (cash transactions don't need reconciliation)
+      const isReconciled = metadata.reconciliation?.status === 'reconciled' ||
         metadata.reconciliation?.status === 'not_required'
       
-      return isPurchase && isVerified && isReconciled
+      const shouldInclude = isPurchase && isVerified && isReconciled
+      
+      // Debug logging for cash transactions not appearing
+      if (isPurchase && isVerified && metadata.reconciliation?.status === 'not_required' && !shouldInclude) {
+        console.log('DEBUG: Cash transaction filtered out:', {
+          id: tx.id,
+          isPurchase,
+          isVerified,
+          reconciliationStatus: metadata.reconciliation?.status,
+          isReconciled,
+          shouldInclude,
+          metadata: JSON.stringify(metadata, null, 2)
+        })
+      }
+      
+      return shouldInclude
     })
     .map((tx) => parseTransaction3(tx))
     .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)
@@ -1851,6 +2021,11 @@ export default function TransactionsScaffoldScreen() {
       title: 'Needs verification',
       actions: ['View all'],
       transactions: purchases3NeedsVerification,
+    },
+    {
+      title: 'Accounts Payable',
+      actions: ['View all'],
+      transactions: purchases3AccountsPayable,
     },
     {
       title: 'Reconcile to bank',

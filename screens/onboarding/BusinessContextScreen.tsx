@@ -71,7 +71,7 @@ export default function BusinessContextScreen() {
   const createdBy = user?.email || user?.uid || ''
 
   const availableSubcategories = useMemo(() => {
-    return SUBCATEGORY_OPTIONS[mainCategory] ?? [{ id: 'Professional Services', label: 'Professional Services' }]
+    return SUBCATEGORY_OPTIONS[mainCategory as keyof typeof SUBCATEGORY_OPTIONS] ?? [{ id: 'Professional Services', label: 'Professional Services' }]
   }, [mainCategory])
 
   const toggleSupplyType = (id: SupplyTypeId) => {
@@ -247,7 +247,7 @@ export default function BusinessContextScreen() {
             </View>
             <Text style={styles.label}>Subcategory</Text>
             <View style={styles.chipRow}>
-              {availableSubcategories.map((option) => (
+              {availableSubcategories.map((option: { id: string; label: string }) => (
                 <Chip
                   key={option.id}
                   label={option.label}

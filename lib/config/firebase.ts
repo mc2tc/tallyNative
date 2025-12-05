@@ -1,8 +1,7 @@
 // Firebase configuration and initialization
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
-import { getAuth, type Auth, initializeAuth, getReactNativePersistence } from 'firebase/auth'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { getAuth, type Auth } from 'firebase/auth'
 
 // Firebase config - these should come from environment variables
 // For now, using placeholder values that need to be configured
@@ -38,19 +37,11 @@ try {
   if (getApps().length === 0) {
     console.log('Initializing Firebase app...')
     app = initializeApp(firebaseConfig)
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    })
+    auth = getAuth(app)
     console.log('Firebase initialized successfully')
   } else {
     app = getApps()[0]
-    try {
-      auth = getAuth(app)
-    } catch {
-      auth = initializeAuth(app, {
-        persistence: getReactNativePersistence(AsyncStorage),
-      })
-    }
+    auth = getAuth(app)
   }
 } catch (error) {
   console.error('Failed to initialize Firebase:', error)

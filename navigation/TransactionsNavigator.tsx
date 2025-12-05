@@ -54,6 +54,7 @@ export type TransactionsStackParamList = {
     title: string
     items: TransactionStub[]
     showReconcileButton?: boolean
+    pipelineSection?: string
   }
   BankStatementRuleDetail: { rule: BankStatementRule }
   BankStatementRuleCreate: undefined

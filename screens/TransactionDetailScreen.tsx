@@ -99,15 +99,25 @@ export default function TransactionDetailScreen() {
     classification?: TransactionClassification
     businessId?: string
     statementContext?: { isCredit?: boolean }
+    capture?: { source?: string }
   } | undefined
   const isUnverified = transactionMetadata?.verification?.status === 'unverified'
   
   // Check if this is a transactions3 transaction
-  const isTransactions3 = isUnverified
+  // Transactions3 transactions have:
+  // - classification.kind === 'purchase' (for purchases) or 'statement_entry' (for bank/card)
+  // - OR are from transactions3 collections (pending/source_of_truth)
+  // We can detect by checking classification kind or capture source
+  const classification = transactionMetadata?.classification as TransactionClassification | undefined
+  const captureSource = transactionMetadata?.capture?.source
+  const isTransactions3Purchase = classification?.kind === 'purchase'
+  const isTransactions3Statement = classification?.kind === 'statement_entry'
+  const isTransactions3 = isUnverified || isTransactions3Purchase || isTransactions3Statement || 
+    captureSource === 'bank_statement_upload' || 
+    captureSource === 'credit_card_statement_upload' ||
+    captureSource === 'purchase_invoice_ocr'
   
   // Check if this is a bank transaction (statement_entry) vs purchase receipt
-  // Extract classification early so we can use it for isBankTransaction
-  const classification = transactionMetadata?.classification as TransactionClassification | undefined
   const isBankTransaction = classification?.kind === 'statement_entry'
   
   // Check if transaction has accounting entries (to determine if it needs reconciliation)
@@ -499,21 +509,42 @@ export default function TransactionDetailScreen() {
       const methods = await paymentMethodsApi.getPaymentMethods(businessId)
       // Ensure we always set an array, even if API returns something unexpected
       const methodsArray = Array.isArray(methods) ? methods : []
+      
+      // Ensure "Accounts Payable" is always available in the list
+      const accountsPayableOption: PaymentMethodOption = {
+        label: 'Accounts Payable',
+        value: 'accounts_payable',
+        chartName: 'Accounts Payable',
+      }
+      
+      // Check if Accounts Payable already exists in the list
+      const hasAccountsPayable = methodsArray.some(
+        (method) => method.value === 'accounts_payable' || method.value === 'accounts payable' || method.value === 'accountspayable'
+      )
+      
+      // Add Accounts Payable if it doesn't exist
+      if (!hasAccountsPayable) {
+        methodsArray.push(accountsPayableOption)
+      }
+      
       setAvailablePaymentMethods(methodsArray)
     } catch (error) {
       console.error('Failed to fetch payment methods:', error)
       if (error instanceof ApiError) {
         console.error('API Error status:', error.status, 'Message:', error.message, 'Data:', error.data)
       }
+      // Even on error, provide Accounts Payable as a fallback option
+      const accountsPayableOption: PaymentMethodOption = {
+        label: 'Accounts Payable',
+        value: 'accounts_payable',
+        chartName: 'Accounts Payable',
+      }
+      setAvailablePaymentMethods([accountsPayableOption])
+      // Show error but don't close the picker - allow user to select Accounts Payable
       Alert.alert(
-        'Error',
-        error instanceof ApiError
-          ? error.message
-          : 'Failed to load payment methods. Please try again.',
+        'Warning',
+        'Some payment methods may not be available, but you can still select Accounts Payable.',
       )
-      setAvailablePaymentMethods([]) // Ensure it's still an array on error
-      setShowPaymentMethodPicker(false)
-      return
     } finally {
       setLoadingPaymentMethods(false)
     }
@@ -539,9 +570,34 @@ export default function TransactionDetailScreen() {
   const handleSelectPaymentMethod = useCallback(
     async (method: PaymentMethodOption) => {
       if (isTransactions3) {
-        // For transactions3: store locally (will be sent during verification)
-        setSelectedPaymentMethod(method.value)
-        handleClosePaymentMethodPicker()
+        if (isUnverified) {
+          // For unverified transactions3: store locally (will be sent during verification)
+          setSelectedPaymentMethod(method.value)
+          handleClosePaymentMethodPicker()
+        } else {
+          // For verified transactions3: update immediately via transactions3 API
+          setUpdatingPaymentMethod(true)
+          try {
+            const updatedTransaction = await transactions2Api.updateTransactions3PaymentMethod(
+              transaction.id,
+              businessId,
+              method.value,
+            )
+            setTransaction(updatedTransaction)
+            handleClosePaymentMethodPicker()
+          } catch (error) {
+            console.error('Failed to update payment method:', error)
+            let errorMessage = 'Failed to update payment method. Please try again.'
+
+            if (error instanceof ApiError) {
+              errorMessage = error.message
+            }
+
+            Alert.alert('Error', errorMessage)
+          } finally {
+            setUpdatingPaymentMethod(false)
+          }
+        }
       } else {
         // For transactions2: update immediately via API
         setUpdatingPaymentMethod(true)
@@ -567,7 +623,7 @@ export default function TransactionDetailScreen() {
         }
       }
     },
-    [transaction.id, businessId, handleClosePaymentMethodPicker, isTransactions3],
+    [transaction.id, businessId, handleClosePaymentMethodPicker, isTransactions3, isUnverified],
   )
 
   // Fetch chart accounts when opening the picker
