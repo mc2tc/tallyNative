@@ -5,12 +5,16 @@ import { createDrawerNavigator } from '@react-navigation/drawer'
 import { CustomDrawerContent } from './DrawerContent'
 import TestScreen from '../screens/TestScreen'
 import FirestoreTestScreen from '../screens/FirestoreTestScreen'
+import InventoryManagementScreen from '../screens/InventoryManagementScreen'
+import PointOfSaleScreen from '../screens/PointOfSaleScreen'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
   MainTabs: { screen?: string; params?: any }
   Test: undefined
   FirestoreTest: undefined
+  InventoryManagement: undefined
+  PointOfSale: undefined
 }
 
 const Drawer = createDrawerNavigator<AppDrawerParamList>()
@@ -35,6 +39,8 @@ export function AppNavigator() {
       <Drawer.Screen name="MainTabs" component={MainTabNavigator} />
       <Drawer.Screen name="Test" component={TestScreen} />
       <Drawer.Screen name="FirestoreTest" component={FirestoreTestScreen} />
+      <Drawer.Screen name="InventoryManagement" component={InventoryManagementScreen} />
+      <Drawer.Screen name="PointOfSale" component={PointOfSaleScreen} />
     </Drawer.Navigator>
   )
 }

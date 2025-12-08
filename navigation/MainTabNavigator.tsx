@@ -189,7 +189,7 @@ export function MainTabNavigator() {
           tabBarItemStyle: { display: 'none' },
         }}
       />
-      <Tab.Screen name="Help" component={HelpScreen} options={{ title: 'Help' }} />
+      <Tab.Screen name="Help" component={HelpScreen} options={{ title: 'Assistant' }} />
     </Tab.Navigator>
   )
 }

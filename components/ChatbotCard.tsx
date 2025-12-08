@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect } from 'react'
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Modal, Animated, PanResponder, Dimensions } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs'
 
 interface Message {
   id: string
   text: string
   isUser: boolean
   showButtons?: boolean
+  learnMoreOnly?: boolean
 }
 
 export function ChatbotCard() {
@@ -18,18 +20,21 @@ export function ChatbotCard() {
   const DISMISS_OFFSET = SCREEN_HEIGHT // pushed completely off-screen
 
   const insets = useSafeAreaInsets()
+  const tabBarHeight = useBottomTabBarHeight()
   const scrollViewRef = useRef<ScrollView>(null)
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: "Hi, I'm here to help you with your business finances and operations.",
+      text: "Hi John. It looks like we're running low on flour and suet! We have two suppliers and Trethewy's Baking Supplies is the least expensive and they're in the Tally network. Cash is tight but their credit terms are good and cash flow is trending up. Would you like me to make an order?",
       isUser: false,
+      showButtons: true,
     },
     {
       id: '2',
-      text: "With your approval I'll keep an eye on your data, track performance, monitor operations and help find new ways to save and grow.",
+      text: "I noticed from the Production Management System that product output fell in the last batch - waste was up 3.2%. I suggest that you look into this in more detail particulalry as we had a new foreman on that shift! A 3.2% increase in waste on a batch of 1000 traditional pasties equates to £350 off the bottom line!",
       isUser: false,
       showButtons: true,
+      learnMoreOnly: true,
     },
   ])
   const [inputText, setInputText] = useState('')
@@ -149,9 +154,19 @@ export function ChatbotCard() {
     }, 500)
   }
 
+  const PADDING = 12
+  const cardStyle = [
+    styles.card,
+    {
+      marginTop: PADDING,
+      marginBottom: PADDING + tabBarHeight,
+      paddingBottom: PADDING + insets.bottom,
+    },
+  ]
+
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Assistant</Text>
+    <View style={cardStyle}>
+      <Text style={styles.title}>Your Business Assistant</Text>
       
       <ScrollView
         ref={scrollViewRef}
@@ -167,26 +182,46 @@ export function ChatbotCard() {
               <Text style={[styles.messageText, message.isUser && styles.userMessageText]}>
                 {message.text}
               </Text>
-              {message.showButtons && approvalStatus === 'pending' && (
+              {message.showButtons && (
                 <View style={styles.buttonContainer}>
+                  {!message.learnMoreOnly && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        // Hide buttons on this message
+                        setMessages((prev) =>
+                          prev.map((msg) =>
+                            msg.id === message.id ? { ...msg, showButtons: false } : msg
+                          )
+                        )
+                        const yesMessage: Message = {
+                          id: Date.now().toString(),
+                          text: 'Great! I\'ll proceed with the order from Trethewy\'s Baking Supplies.',
+                          isUser: false,
+                        }
+                        setMessages((prev) => [...prev, yesMessage])
+                      }}
+                      style={[styles.actionButton, styles.approveButton]}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.approveButtonText}>Yes please</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     onPress={() => {
-                      setApprovalStatus('approved')
-                      const approvedMessage: Message = {
+                      // Hide buttons on this message
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === message.id ? { ...msg, showButtons: false } : msg
+                        )
+                      )
+                      const moreInfoMessage: Message = {
                         id: Date.now().toString(),
-                        text: 'Great! I\'ll start monitoring your data and will alert you to important insights.',
+                        text: message.learnMoreOnly 
+                          ? 'Here\'s more detailed analysis of the waste increase and recommendations for improvement...'
+                          : 'Here\'s more information about the suppliers and pricing comparison...',
                         isUser: false,
                       }
-                      setMessages((prev) => [...prev, approvedMessage])
-                    }}
-                    style={[styles.actionButton, styles.approveButton]}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.approveButtonText}>Yes please</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setModalVisible(true)
+                      setMessages((prev) => [...prev, moreInfoMessage])
                     }}
                     style={[styles.actionButton, styles.denyButton]}
                     activeOpacity={0.7}
@@ -284,10 +319,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginHorizontal: 16,
-    marginVertical: 12,
     borderWidth: 1,
     borderColor: '#cccccc',
-    maxHeight: 400,
+    flex: 1,
   },
   title: {
     fontSize: 16,
@@ -297,7 +331,7 @@ const styles = StyleSheet.create({
   },
   messagesContainer: {
     marginBottom: 12,
-    height: 250,
+    flex: 1,
   },
   messagesContent: {
     paddingBottom: 8,

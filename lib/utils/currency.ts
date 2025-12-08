@@ -30,7 +30,7 @@ export function formatAmount(
 /**
  * Get currency symbol for common currencies
  */
-function getCurrencySymbol(currency: string): string {
+export function getCurrencySymbol(currency: string): string {
 	const symbols: Record<string, string> = {
 		GBP: '£',
 		USD: '$',

@@ -1,14 +1,15 @@
 // Help tab placeholder screen
 
 import React from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import { StyleSheet, Text, View, ScrollView } from 'react-native'
 import { AppBarLayout } from '../components/AppBarLayout'
+import { ChatbotCard } from '../components/ChatbotCard'
 
 export default function HelpScreen() {
   return (
-    <AppBarLayout title="Help">
+    <AppBarLayout title="Assistant">
       <View style={styles.container}>
-        <Text style={styles.subtitle}>Wireframe placeholder content.</Text>
+        <ChatbotCard />
       </View>
     </AppBarLayout>
   )
@@ -17,10 +18,7 @@ export default function HelpScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#f5f5f5',
-    padding: 24,
   },
   title: {
     fontSize: 24,

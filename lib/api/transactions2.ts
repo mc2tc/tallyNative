@@ -95,7 +95,7 @@ export type SalesManualEntryRequest = {
 	description?: string
 	reference?: string
 	incomeAccount?: string
-	vatAmount?: number // REQUIRED if invoice includes VAT - see TRANSACTIONS2_SALES_MANUAL_ENTRY_API.md
+	vatAmount?: number // REQUIRED if invoice includes VAT - see TRANSACTIONS3_SALES_MANUAL_IMPLEMENTATION.md (migrated to transactions3)
 }
 
 export type SalesManualEntryResponse = {
@@ -115,13 +115,12 @@ export const transactions2Api = {
 	},
 
 	// Create manual sale transaction (invoice)
+	// Migrated to transactions3 endpoint - see TRANSACTIONS3_SALES_MANUAL_IMPLEMENTATION.md
 	createSaleTransaction: async (
 		payload: SalesManualEntryRequest,
 	): Promise<SalesManualEntryResponse> => {
-		const params = new URLSearchParams({
-			businessId: payload.businessId,
-		})
-		const requestBody: {
+		// Build transactionData object (same structure as before)
+		const transactionData: {
 			customerName: string
 			transactionDate: string
 			totalAmount: number
@@ -141,10 +140,17 @@ export const transactions2Api = {
 		}
 		// Include vatAmount if provided (REQUIRED for invoices with VAT)
 		if (payload.vatAmount !== undefined && payload.vatAmount > 0) {
-			requestBody.vatAmount = payload.vatAmount
+			transactionData.vatAmount = payload.vatAmount
 		}
+		
+		// New transactions3 format: businessId at top level, transactionData nested
+		const requestBody = {
+			businessId: payload.businessId,
+			transactionData,
+		}
+		
 		return api.post<SalesManualEntryResponse>(
-			`/authenticated/transactions2/api/sales/manual?${params.toString()}`,
+			`/authenticated/transactions3/api/sales/manual`,
 			requestBody,
 		)
 	},
@@ -165,13 +171,13 @@ export const transactions2Api = {
 	},
 
 	// Get a single transaction by ID
-	// Note: This endpoint should be implemented on the backend
+	// Migrated to transactions3 endpoint - searches source_of_truth, pending, and archived collections
 	getTransaction: async (transactionId: string, businessId: string): Promise<Transaction> => {
 		const params = new URLSearchParams({
 			businessId,
 		})
 		return api.get<Transaction>(
-			`/authenticated/transactions2/api/transactions/${transactionId}?${params.toString()}`,
+			`/authenticated/transactions3/api/transactions/${transactionId}?${params.toString()}`,
 		)
 	},
 
@@ -468,6 +474,26 @@ export const transactions2Api = {
 			},
 		)
 	},
+
+	// Mark invoice as paid (supports both AP and AR invoices)
+	// See TRANSACTIONS3_MARK_INVOICE_PAID.md for details
+	markInvoiceAsPaid: async (
+		transactionId: string,
+		businessId: string,
+		paymentMethod: string,
+		paymentDate?: string,
+	): Promise<{ success: boolean; transactionId: string; transaction: Transaction }> => {
+		const params = new URLSearchParams({
+			businessId,
+			paymentMethod,
+		})
+		if (paymentDate) {
+			params.append('paymentDate', paymentDate)
+		}
+		return api.patch<{ success: boolean; transactionId: string; transaction: Transaction }>(
+			`/authenticated/transactions3/api/transactions/${transactionId}/mark-paid?${params.toString()}`,
+		)
+	},
 }
 
 export type ReconciliationMatch = {
@@ -508,6 +534,7 @@ export type HealthScoreResponse = {
 	data: {
 		healthScore: {
 			overall: number
+			preUnreconciled: number
 			kpiScores: {
 				revenueGrowth: number
 				netProfit: number
@@ -535,9 +562,9 @@ export const healthScoreApi = {
 			businessId,
 			timeframe,
 		})
-		return api.get<HealthScoreResponse>(
-			`/authenticated/transactions2/api/kpis?${params.toString()}`,
-		)
+	return api.get<HealthScoreResponse>(
+		`/authenticated/transactions3/api/kpis?${params.toString()}`,
+	)
 	},
 }
 

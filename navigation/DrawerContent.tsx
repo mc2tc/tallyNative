@@ -14,16 +14,52 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
       <View style={styles.header}>
         <Drawer.Section title="Premium Modules">
           <Drawer.Item
-            label="Test Sum API"
-            icon="calculator-variant"
-            active={activeRouteName === 'Test'}
-            onPress={() => props.navigation.navigate('Test')}
+            label="Inventory"
+            icon="package-variant"
+            active={activeRouteName === 'InventoryManagement'}
+            onPress={() => props.navigation.navigate('InventoryManagement')}
           />
           <Drawer.Item
-            label="Test Firestore"
-            icon="database"
-            active={activeRouteName === 'FirestoreTest'}
-            onPress={() => props.navigation.navigate('FirestoreTest')}
+            label="Production"
+            icon="chart-timeline-variant"
+            active={activeRouteName === 'ProductionManagement'}
+            onPress={() => props.navigation.navigate('ProductionManagement')}
+          />
+          <Drawer.Item
+            label="CRM"
+            icon="account-group"
+            active={activeRouteName === 'CRM'}
+            onPress={() => props.navigation.navigate('CRM')}
+          />
+          <Drawer.Item
+            label="Employees"
+            icon="account-supervisor"
+            active={activeRouteName === 'EmployeeManagement'}
+            onPress={() => props.navigation.navigate('EmployeeManagement')}
+          />
+          <Drawer.Item
+            label="Online Sales"
+            icon="cart"
+            active={activeRouteName === 'OnlineSales'}
+            onPress={() => props.navigation.navigate('OnlineSales')}
+          />
+          <Drawer.Item
+            label="Online Booking"
+            icon="calendar-clock"
+            active={activeRouteName === 'OnlineBooking'}
+            onPress={() => props.navigation.navigate('OnlineBooking')}
+          />
+          <Drawer.Item
+            label="Point of Sale"
+            icon="cash-register"
+            active={activeRouteName === 'PointOfSale'}
+            onPress={() => props.navigation.navigate('PointOfSale')}
+          />
+          <Drawer.Item
+            label="Tally Network"
+            icon="account-network"
+            active={activeRouteName === 'TallyNetwork'}
+            onPress={() => props.navigation.navigate('TallyNetwork')}
           />
         </Drawer.Section>
       </View>

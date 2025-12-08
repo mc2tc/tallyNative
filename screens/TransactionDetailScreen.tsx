@@ -47,6 +47,10 @@ type TransactionAccounting = {
     chartName?: string
     paymentMethod?: string
   }>
+  paymentBreakdown?: Array<{
+    type?: string
+    amount?: number
+  }>
 }
 
 
@@ -68,6 +72,8 @@ export default function TransactionDetailScreen() {
   const [confirmingVerification, setConfirmingVerification] = useState(false)
   // For transactions3: store selected payment method locally until verification (for purchase receipts only)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
+  // Store all payment methods to get proper labels for display
+  const [allPaymentMethods, setAllPaymentMethods] = useState<PaymentMethodOption[]>([])
   // For bank transactions: store edited debit accounts locally until verification
   const [editedItemDebitAccounts, setEditedItemDebitAccounts] = useState<Map<number, string>>(new Map())
   // For "No matching record" workflow
@@ -76,6 +82,11 @@ export default function TransactionDetailScreen() {
   const [unreconcilableAccount, setUnreconcilableAccount] = useState<string>('')
   const [unreconcilableReason, setUnreconcilableReason] = useState<string>('')
   const [showUnreconcilableAccountPicker, setShowUnreconcilableAccountPicker] = useState(false)
+  // For sales transactions: payment status and method
+  const [showSalesPaymentPicker, setShowSalesPaymentPicker] = useState(false)
+  const [selectedSalesPaymentMethod, setSelectedSalesPaymentMethod] = useState<string | null>(null)
+  const [updatingSalesPayment, setUpdatingSalesPayment] = useState(false)
+  const salesPaymentSlideAnim = React.useRef(new Animated.Value(0)).current
   const paymentMethodSlideAnim = React.useRef(new Animated.Value(0)).current
   const slideAnim = React.useRef(new Animated.Value(0)).current
   const insets = useSafeAreaInsets()
@@ -96,12 +107,14 @@ export default function TransactionDetailScreen() {
   // Check if transaction needs verification (transactions3 pending transaction)
   const transactionMetadata = transaction?.metadata as { 
     verification?: { status?: string }
+    reconciliation?: { status?: string }
     classification?: TransactionClassification
     businessId?: string
     statementContext?: { isCredit?: boolean }
     capture?: { source?: string }
   } | undefined
   const isUnverified = transactionMetadata?.verification?.status === 'unverified'
+  const reconciliationStatus = transactionMetadata?.reconciliation?.status
   
   // Check if this is a transactions3 transaction
   // Transactions3 transactions have:
@@ -119,12 +132,30 @@ export default function TransactionDetailScreen() {
   
   // Check if this is a bank transaction (statement_entry) vs purchase receipt
   const isBankTransaction = classification?.kind === 'statement_entry'
+  // Check if classification kind is "purchase"
+  const isPurchase = classification?.kind === 'purchase'
+  // Check if this is a sale transaction (invoice)
+  const isSale = classification?.kind === 'sale'
   
   // Check if transaction has accounting entries (to determine if it needs reconciliation)
   const accounting = transaction?.accounting as {
     debits?: Array<unknown>
     credits?: Array<{ paymentMethod?: string; chartName?: string }>
+    paymentBreakdown?: Array<{ type?: string; amount?: number }>
   } | undefined
+  
+  // For sales transactions: determine if invoice is paid
+  // Paid if: reconciliation status is 'matched', 'reconciled', or 'exception'
+  // Also check if it's cash-only (cash payments are considered paid immediately)
+  const isCashOnlySale = isSale && accounting?.paymentBreakdown?.some(
+    (pm) => pm.type === 'cash' || pm.type?.toLowerCase() === 'cash'
+  )
+  const isSalePaid = isSale && (
+    reconciliationStatus === 'matched' ||
+    reconciliationStatus === 'reconciled' ||
+    reconciliationStatus === 'exception' ||
+    isCashOnlySale
+  )
   const hasAccountingEntries = (accounting?.debits?.length ?? 0) > 0 || (accounting?.credits?.length ?? 0) > 0
   // Bank transaction from "Needs reconciliation" card: unverified, no accounting entries
   const isNeedsReconciliation = isBankTransaction && isUnverified && !hasAccountingEntries
@@ -139,6 +170,37 @@ export default function TransactionDetailScreen() {
       setUnreconcilableDescription(transaction?.summary?.description || transaction?.summary?.thirdPartyName || '')
     }
   }, [isNeedsReconciliation, transaction?.summary?.description, transaction?.summary?.thirdPartyName])
+
+  // Fetch payment methods on mount to get proper labels for display
+  React.useEffect(() => {
+    if (businessId && (isTransactions3 || isPurchase)) {
+      paymentMethodsApi.getPaymentMethods(businessId)
+        .then((methods) => {
+          const methodsArray = Array.isArray(methods) ? methods : []
+          // Ensure "Accounts Payable" is always available
+          const hasAccountsPayable = methodsArray.some(
+            (method) => method.value === 'accounts_payable' || method.value === 'accounts payable' || method.value === 'accountspayable'
+          )
+          if (!hasAccountsPayable) {
+            methodsArray.push({
+              label: 'Accounts Payable',
+              value: 'accounts_payable',
+              chartName: 'Accounts Payable',
+            })
+          }
+          setAllPaymentMethods(methodsArray)
+        })
+        .catch((error) => {
+          console.error('Failed to fetch payment methods for display:', error)
+          // Set Accounts Payable as fallback
+          setAllPaymentMethods([{
+            label: 'Accounts Payable',
+            value: 'accounts_payable',
+            chartName: 'Accounts Payable',
+          }])
+        })
+    }
+  }, [businessId, isTransactions3, isPurchase])
 
   // Safely access transaction properties with fallbacks (moved before callbacks that use them)
   const transactionSummary = transaction?.summary
@@ -626,6 +688,71 @@ export default function TransactionDetailScreen() {
     [transaction.id, businessId, handleClosePaymentMethodPicker, isTransactions3, isUnverified],
   )
 
+  // Handler for sales payment method selection
+  const handleSelectSalesPaymentMethod = useCallback((method: PaymentMethodOption) => {
+    setSelectedSalesPaymentMethod(method.value)
+    handleCloseSalesPaymentPicker()
+  }, [])
+
+  // Handler for closing sales payment picker
+  const handleCloseSalesPaymentPicker = useCallback(() => {
+    Animated.timing(salesPaymentSlideAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowSalesPaymentPicker(false)
+    })
+  }, [salesPaymentSlideAnim])
+
+  // Handler for marking invoice as paid
+  // Calls transactions3 mark-paid endpoint which handles both AP and AR invoices
+  const handleMarkAsPaid = useCallback(async () => {
+    if (!selectedSalesPaymentMethod || !businessId) {
+      Alert.alert('Error', 'Please select a payment method.')
+      return
+    }
+
+    setUpdatingSalesPayment(true)
+    try {
+      // Call transactions3 mark-paid endpoint
+      // Endpoint automatically detects if it's AP (purchase) or AR (sales) invoice
+      const response = await transactions2Api.markInvoiceAsPaid(
+        transaction.id,
+        businessId,
+        selectedSalesPaymentMethod,
+        // Optional: paymentDate - defaults to today for AR invoices
+        // Can be added later if we want to allow users to set payment date
+      )
+
+      console.log('Invoice marked as paid successfully:', response.transactionId)
+      
+      // Update transaction state with the updated transaction from response
+      setTransaction(response.transaction)
+      setSelectedSalesPaymentMethod(null)
+      
+      // Show success message
+      Alert.alert(
+        'Success',
+        'Invoice marked as paid successfully!',
+        [{ text: 'OK' }]
+      )
+    } catch (error) {
+      console.error('Failed to mark invoice as paid:', error)
+      let errorMessage = 'Failed to mark invoice as paid. Please try again.'
+      
+      if (error instanceof ApiError) {
+        errorMessage = error.message
+      } else if (error instanceof Error) {
+        errorMessage = error.message
+      }
+      
+      Alert.alert('Error', errorMessage)
+    } finally {
+      setUpdatingSalesPayment(false)
+    }
+  }, [selectedSalesPaymentMethod, businessId, transaction.id])
+
   // Fetch chart accounts when opening the picker
   const handleEditAccount = useCallback(async (itemIndex: number) => {
     setEditingItemIndex(itemIndex)
@@ -761,11 +888,10 @@ export default function TransactionDetailScreen() {
   // Check if classification kind is "purchase" and get chart name (for transactions2)
   // Note: accounting is already extracted above for hasAccountingEntries check
   const transactionAccounting = transaction?.accounting as TransactionAccounting | undefined
-  const isPurchase = classification?.kind === 'purchase'
   const chartName = isPurchase && !isTransactions3 ? transactionAccounting?.credits?.[0]?.chartName : undefined
 
-  // For transactions3: get payment method from details.paymentBreakdown or use selected one
-  const currentPaymentBreakdown = details?.paymentBreakdown || []
+  // For transactions3: get payment method from accounting.paymentBreakdown or use selected one
+  const currentPaymentBreakdown = accounting?.paymentBreakdown || []
   const currentPaymentMethodType = currentPaymentBreakdown.length > 0 
     ? currentPaymentBreakdown[0].type 
     : undefined
@@ -774,6 +900,14 @@ export default function TransactionDetailScreen() {
   // Get payment method label for display
   const getPaymentMethodLabel = (methodType?: string | null): string | null => {
     if (!methodType) return null
+    // First try to find in allPaymentMethods for proper label
+    const paymentMethod = allPaymentMethods.find(
+      (method) => method.value === methodType || method.value.toLowerCase() === methodType.toLowerCase()
+    )
+    if (paymentMethod) {
+      return paymentMethod.label
+    }
+    // Fallback to hardcoded labels
     const labels: Record<string, string> = {
       cash: 'Cash',
       card: 'Card',
@@ -826,7 +960,7 @@ export default function TransactionDetailScreen() {
           {isTransactions3 && !isBankTransaction && (
             <View style={styles.chartNameRow}>
               <Text style={styles.chartName}>
-                {displayPaymentMethod ? getPaymentMethodLabel(displayPaymentMethod) || 'Payment method' : 'Payment method'}
+                {displayPaymentMethod ? (getPaymentMethodLabel(displayPaymentMethod) || displayPaymentMethod) : 'Select payment method'}
               </Text>
               <TouchableOpacity
                 style={styles.chartNameEditButton}
@@ -991,6 +1125,92 @@ export default function TransactionDetailScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
+
+        {/* Sales Invoice Payment Status Section */}
+        {isSale && (
+          <View style={styles.paymentStatusCard}>
+            <Text style={styles.paymentStatusTitle}>Payment Status</Text>
+            
+            <View style={styles.paymentStatusRow}>
+              <View style={styles.paymentStatusInfo}>
+                <Text style={styles.paymentStatusLabel}>Status:</Text>
+                <View style={styles.paymentStatusBadge}>
+                  <View style={[styles.paymentStatusIndicator, isSalePaid ? styles.paymentStatusPaid : styles.paymentStatusUnpaid]} />
+                  <Text style={styles.paymentStatusText}>
+                    {isSalePaid ? 'Paid' : 'Pending Payment'}
+                  </Text>
+                </View>
+              </View>
+              
+              {isSalePaid && currentPaymentMethodType && (
+                <View style={styles.paymentMethodInfo}>
+                  <Text style={styles.paymentStatusLabel}>Payment Method:</Text>
+                  <Text style={styles.paymentMethodValue}>
+                    {getPaymentMethodLabel(currentPaymentMethodType) || currentPaymentMethodType}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {!isSalePaid && (
+              <View style={styles.markAsPaidSection}>
+                <Text style={styles.markAsPaidLabel}>Mark invoice as paid</Text>
+                <Text style={styles.markAsPaidSubtext}>Select the payment method used to pay this invoice</Text>
+                
+                <TouchableOpacity
+                  style={styles.paymentMethodSelectButton}
+                  onPress={async () => {
+                    salesPaymentSlideAnim.setValue(0)
+                    setShowSalesPaymentPicker(true)
+                    // Load payment methods if not already loaded
+                    if (availablePaymentMethods.length === 0 && businessId) {
+                      setLoadingPaymentMethods(true)
+                      try {
+                        const methods = await paymentMethodsApi.getPaymentMethods(businessId)
+                        const methodsArray = Array.isArray(methods) ? methods : []
+                        setAvailablePaymentMethods(methodsArray)
+                      } catch (error) {
+                        console.error('Failed to fetch payment methods:', error)
+                        setAvailablePaymentMethods([])
+                      } finally {
+                        setLoadingPaymentMethods(false)
+                      }
+                    }
+                    Animated.spring(salesPaymentSlideAnim, {
+                      toValue: 1,
+                      useNativeDriver: true,
+                      tension: 50,
+                      friction: 10,
+                    }).start()
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.paymentMethodSelectText, !selectedSalesPaymentMethod && styles.paymentMethodSelectPlaceholder]}>
+                    {selectedSalesPaymentMethod 
+                      ? (getPaymentMethodLabel(selectedSalesPaymentMethod) || selectedSalesPaymentMethod)
+                      : 'Select payment method'}
+                  </Text>
+                  <MaterialIcons name="arrow-drop-down" size={20} color={GRAYSCALE_PRIMARY} />
+                </TouchableOpacity>
+
+                {selectedSalesPaymentMethod && (
+                  <TouchableOpacity
+                    style={[styles.markAsPaidButton, updatingSalesPayment && styles.markAsPaidButtonDisabled]}
+                    onPress={handleMarkAsPaid}
+                    activeOpacity={0.8}
+                    disabled={updatingSalesPayment}
+                  >
+                    {updatingSalesPayment ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <Text style={styles.markAsPaidButtonText}>Mark as Paid</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/* Account Picker Bottom Sheet */}
@@ -1169,6 +1389,88 @@ export default function TransactionDetailScreen() {
                             )}
                             {updatingPaymentMethod && isSelected && (
                               <ActivityIndicator size="small" color={GRAYSCALE_PRIMARY} style={styles.optionLoader} />
+                            )}
+                          </TouchableOpacity>
+                        )
+                      })
+                    )
+                  })()}
+                </ScrollView>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Sales Payment Method Picker Bottom Sheet */}
+      <Modal
+        visible={showSalesPaymentPicker}
+        transparent
+        animationType="none"
+        onRequestClose={handleCloseSalesPaymentPicker}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={handleCloseSalesPaymentPicker}
+        >
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                transform: [
+                  {
+                    translateY: salesPaymentSlideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [400, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Payment Method</Text>
+                <TouchableOpacity onPress={handleCloseSalesPaymentPicker} style={styles.closeButton}>
+                  <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
+                </TouchableOpacity>
+              </View>
+              {loadingPaymentMethods ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+                  <Text style={styles.loadingText}>Loading payment methods...</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  style={styles.accountList}
+                  contentContainerStyle={{ paddingBottom: insets.bottom }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {(() => {
+                    const methods = Array.isArray(availablePaymentMethods) ? availablePaymentMethods : []
+                    return methods.length === 0 ? (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>No payment methods available</Text>
+                      </View>
+                    ) : (
+                      methods.map((method, idx) => {
+                        const isSelected = selectedSalesPaymentMethod === method.value
+                        return (
+                          <TouchableOpacity
+                            key={idx}
+                            style={[
+                              styles.accountOption,
+                              isSelected && styles.accountOptionSelected,
+                            ]}
+                            onPress={() => handleSelectSalesPaymentMethod(method)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.accountOptionText, isSelected && styles.accountOptionTextSelected]}>
+                              {method.label}
+                            </Text>
+                            {isSelected && (
+                              <MaterialIcons name="check" size={20} color={GRAYSCALE_PRIMARY} style={styles.checkIcon} />
                             )}
                           </TouchableOpacity>
                         )
@@ -1615,6 +1917,121 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     color: '#ffffff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  // Sales Payment Status Styles
+  paymentStatusCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#efefef',
+  },
+  paymentStatusTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 12,
+  },
+  paymentStatusRow: {
+    marginTop: 12,
+  },
+  paymentStatusInfo: {
+    marginBottom: 12,
+  },
+  paymentStatusLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 8,
+  },
+  paymentStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#f6f6f6',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  paymentStatusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  paymentStatusPaid: {
+    backgroundColor: '#4caf50',
+  },
+  paymentStatusUnpaid: {
+    backgroundColor: '#ff9800',
+  },
+  paymentStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  paymentMethodInfo: {
+    marginTop: 8,
+  },
+  paymentMethodValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+    marginTop: 4,
+  },
+  markAsPaidSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  markAsPaidLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 4,
+  },
+  markAsPaidSubtext: {
+    fontSize: 13,
+    color: '#6d6d6d',
+    marginBottom: 12,
+  },
+  paymentMethodSelectButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 12,
+  },
+  paymentMethodSelectText: {
+    fontSize: 15,
+    color: GRAYSCALE_PRIMARY,
+  },
+  paymentMethodSelectPlaceholder: {
+    color: '#6d6d6d',
+  },
+  markAsPaidButton: {
+    backgroundColor: GRAYSCALE_PRIMARY,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markAsPaidButtonDisabled: {
+    opacity: 0.6,
+  },
+  markAsPaidButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
     fontWeight: '600',
   },
 })

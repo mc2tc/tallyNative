@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Animated, PanResponder, Dimensions } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
-import Svg, { Circle, Path, Rect } from 'react-native-svg'
-import { MaterialIcons } from '@expo/vector-icons'
+import Svg, { Path } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import type { HealthScoreResponse } from '../lib/api/transactions2'
@@ -16,20 +15,30 @@ interface CircularMetricProps {
   subtitle?: string
   onSubtitlePress?: () => void
   onPress?: () => void
+  controlCompliance?: number // For large circles: control/compliance score to adjust the display
 }
 
-function CircularMetric({ value, label, progress = 0, size = 'small', subtitle, onSubtitlePress, onPress }: CircularMetricProps) {
+export function CircularMetric({ value, label, progress = 0, size = 'small', subtitle, onSubtitlePress, onPress, controlCompliance }: CircularMetricProps) {
   const isLarge = size === 'large'
-  const circleSize = isLarge ? 160 : 100
-  const strokeWidth = isLarge ? 12 : 8
+  const circleSize = isLarge ? 160 : 70
+  const strokeWidth = isLarge ? 12 : 6
+  // For dual circles: outer (reduced score) and inner (performance score) with clear separation
+  const outerRadius = isLarge && controlCompliance ? (circleSize - strokeWidth) / 2 : (circleSize - strokeWidth) / 2
+  const innerRadius = isLarge && controlCompliance ? (circleSize - strokeWidth) / 2 - 14 : (circleSize - strokeWidth) / 2 // Separation: 14px difference
+  const innerStrokeWidth = isLarge && controlCompliance ? 4 : 6
   const radius = (circleSize - strokeWidth) / 2
   const center = circleSize / 2
+  
+  // Calculate reduced score based on control/compliance (only for large circles)
+  const performanceScore = typeof progress === 'number' ? progress : (typeof value === 'number' ? value : 0)
+  const controlScore = controlCompliance ?? 100
+  const reducedScore = isLarge && controlCompliance ? Math.round(performanceScore * (controlScore / 100)) : performanceScore
 
-  // Arc spans from 8 o'clock (240°) to 4 o'clock (120°)
-  // Total arc is 240° (going clockwise: 240° -> 360° -> 120°)
-  const startAngle = 240 // 8 o'clock position (degrees from top, clockwise)
-  const endAngle = 120 // 4 o'clock position
-  const totalArcDegrees = 240 // Total span from 8 to 4 o'clock
+  // Arc spans from 7:30 (225°) to 4:30 (135°)
+  // Total arc is 270° (going clockwise: 225° -> 360° -> 135°)
+  const startAngle = 225 // 7:30 position (degrees from top, clockwise)
+  const endAngle = 135 // 4:30 position
+  const totalArcDegrees = 270 // Total span from 7:30 to 4:30
   const progressPercent = Math.min(100, Math.max(0, progress))
   const progressAngle = (progressPercent / 100) * totalArcDegrees
   const currentAngle = startAngle + progressAngle
@@ -37,56 +46,147 @@ function CircularMetric({ value, label, progress = 0, size = 'small', subtitle, 
   // Convert degrees to radians
   const toRadians = (degrees: number) => (degrees * Math.PI) / 180
 
-  // Calculate point on circle
+  // Calculate point on circle (kept for backward compatibility, but use getPointOnCircleForRadius)
   const getPointOnCircle = (angle: number) => {
+    return getPointOnCircleForRadius(angle, radius)
+  }
+
+  // Create arc path for progress
+  const createArcPath = (fromAngle: number, toAngle: number, useRadius: number) => {
+    const start = getPointOnCircleForRadius(fromAngle, useRadius)
+    const end = getPointOnCircleForRadius(toAngle, useRadius)
+    // Calculate angle difference going clockwise
+    let angleDiff = toAngle >= fromAngle ? toAngle - fromAngle : (360 - fromAngle) + toAngle
+    // For the background arc (startAngle to endAngle), we know it's 270°
+    if (fromAngle === startAngle && toAngle === endAngle) {
+      angleDiff = totalArcDegrees
+    }
+    const largeArcFlag = angleDiff > 180 ? 1 : 0
+
+    return `M ${start.x} ${start.y} A ${useRadius} ${useRadius} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`
+  }
+  
+  // Calculate point on circle with specific radius
+  const getPointOnCircleForRadius = (angle: number, useRadius: number) => {
     const rad = toRadians(angle - 90) // Subtract 90 to start from top
     return {
-      x: center + radius * Math.cos(rad),
-      y: center + radius * Math.sin(rad),
+      x: center + useRadius * Math.cos(rad),
+      y: center + useRadius * Math.sin(rad),
     }
   }
+  
+  // Calculate angles for reduced score (outer arc)
+  const reducedProgressPercent = Math.min(100, Math.max(0, reducedScore))
+  const reducedProgressAngle = (reducedProgressPercent / 100) * totalArcDegrees
+  const reducedCurrentAngle = startAngle + reducedProgressAngle
 
-  // Create arc path
-  const createArcPath = () => {
-    if (progressAngle === 0) return ''
-
-    const start = getPointOnCircle(startAngle)
-    const end = getPointOnCircle(currentAngle)
-    const largeArcFlag = progressAngle > 180 ? 1 : 0
-
-    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`
-  }
+  // Background arc paths - each circle has its own 0-100 scale
+  const outerBackgroundArcPath = isLarge && controlCompliance 
+    ? createArcPath(startAngle, endAngle, outerRadius)
+    : createArcPath(startAngle, endAngle, radius)
+  const innerBackgroundArcPath = isLarge && controlCompliance
+    ? createArcPath(startAngle, endAngle, innerRadius)
+    : ''
+  
+  // Progress arc paths
+  // Outer arc: reduced score (after control/compliance adjustment)
+  const reducedArcPath = isLarge && controlCompliance && reducedScore > 0 
+    ? createArcPath(startAngle, reducedCurrentAngle, outerRadius) 
+    : ''
+  // Inner arc: performance score (original)
+  const performanceArcPath = isLarge && controlCompliance && performanceScore > 0
+    ? createArcPath(startAngle, currentAngle, innerRadius)
+    : progress > 0 
+      ? createArcPath(startAngle, currentAngle, radius)
+      : ''
 
   const content = (
     <View style={[styles.circleWrapper, { width: circleSize, height: circleSize }]}>
       {/* SVG for circular progress */}
       <Svg width={circleSize} height={circleSize} style={styles.svgContainer}>
-        {/* Background circle */}
-        <Circle
-          cx={center}
-          cy={center}
-          r={radius}
-          stroke="#e0e0e0"
-          strokeWidth={strokeWidth}
-          fill="transparent"
-        />
-        {/* Progress arc */}
-        {progress > 0 && (
-          <Path
-            d={createArcPath()}
-            stroke="#333333"
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            fill="transparent"
-          />
+        {/* For large circles with control/compliance: show two separate concentric circles */}
+        {isLarge && controlCompliance ? (
+          <>
+            {/* Outer circle: Reduced score */}
+            {/* Background arc - shows 0-100 scale for outer circle */}
+            <Path
+              d={outerBackgroundArcPath}
+              stroke="#e0e0e0"
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              fill="transparent"
+            />
+            {/* Progress arc - shows reduced score */}
+            {reducedScore > 0 && (
+              <Path
+                d={reducedArcPath}
+                stroke="#555555"
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+                fill="transparent"
+              />
+            )}
+            
+            {/* Inner circle: Performance score - clearly separated */}
+            {/* Background arc - shows 0-100 scale for inner circle */}
+            <Path
+              d={innerBackgroundArcPath}
+              stroke="#e0e0e0"
+              strokeWidth={innerStrokeWidth}
+              strokeLinecap="round"
+              fill="transparent"
+            />
+            {/* Progress arc - shows performance score */}
+            {performanceScore > 0 && (
+              <Path
+                d={performanceArcPath}
+                stroke="#666666"
+                strokeWidth={innerStrokeWidth}
+                strokeLinecap="round"
+                fill="transparent"
+              />
+            )}
+          </>
+        ) : (
+          /* Regular single circle for small circles or large without control/compliance */
+          <>
+            <Path
+              d={outerBackgroundArcPath}
+              stroke="#e0e0e0"
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              fill="transparent"
+            />
+            {progress > 0 && (
+              <Path
+                d={performanceArcPath}
+                stroke="#555555"
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+                fill="transparent"
+              />
+            )}
+          </>
         )}
       </Svg>
       {/* Center content */}
       <View style={styles.circleContent}>
-        <Text style={[styles.valueText, isLarge && styles.valueTextLarge]}>
-          {typeof value === 'number' ? value.toLocaleString() : value}
-        </Text>
-        <Text style={[styles.labelText, isLarge && styles.labelTextLarge]}>{label}</Text>
+        {/* For large circles with control/compliance: show both scores */}
+        {isLarge && controlCompliance ? (
+          <>
+            <Text style={[styles.valueText, isLarge && styles.valueTextLarge]}>
+              {reducedScore}
+            </Text>
+            <Text style={[styles.valueTextSecondary, isLarge && styles.valueTextSecondaryLarge]}>
+              {performanceScore}
+            </Text>
+          </>
+        ) : (
+          /* Regular display for small circles or large without control/compliance */
+          <Text style={[styles.valueText, isLarge && styles.valueTextLarge]}>
+            {typeof value === 'number' ? value.toLocaleString() : value}
+          </Text>
+        )}
         {subtitle && isLarge && (
           <TouchableOpacity onPress={onSubtitlePress} activeOpacity={0.7}>
             <Text style={styles.subtitleText}>{subtitle}</Text>
@@ -96,15 +196,47 @@ function CircularMetric({ value, label, progress = 0, size = 'small', subtitle, 
     </View>
   )
 
-  if (onPress && size === 'small') {
-    return (
-      <TouchableOpacity
-        style={styles.metricContainer}
-        onPress={onPress}
-        activeOpacity={0.7}
-      >
+  // For small circles, wrap with label below
+  if (size === 'small') {
+    const smallCircleContent = (
+      <View style={styles.smallMetricWrapper}>
         {content}
-      </TouchableOpacity>
+        <Text style={styles.smallMetricLabel}>{label}</Text>
+      </View>
+    )
+
+    if (onPress) {
+      return (
+        <TouchableOpacity
+          style={styles.metricContainer}
+          onPress={onPress}
+          activeOpacity={0.7}
+        >
+          {smallCircleContent}
+        </TouchableOpacity>
+      )
+    }
+
+    return (
+      <View style={styles.metricContainer}>
+        {smallCircleContent}
+      </View>
+    )
+  }
+
+  // For large circles, wrap with label below
+  if (size === 'large') {
+    const largeCircleContent = (
+      <View style={styles.largeMetricWrapper}>
+        {content}
+        <Text style={styles.largeMetricLabel}>{label}</Text>
+      </View>
+    )
+
+    return (
+      <View style={styles.metricContainer}>
+        {largeCircleContent}
+      </View>
     )
   }
 
@@ -127,10 +259,27 @@ interface MetricsCardProps {
     progress?: number
   }>
   currentRatio?: number
+  controlCompliance?: number // Score out of 100 for control/compliance
   healthScore?: HealthScoreResponse['data']['healthScore']
+  timeframe?: 'week' | 'month' | 'quarter'
+  onTimeframeChange?: (timeframe: 'week' | 'month' | 'quarter') => void
 }
 
-export function MetricsCard({ largeMetric, smallMetrics, currentRatio = 60, healthScore }: MetricsCardProps) {
+export function MetricsCard({ 
+  largeMetric, 
+  smallMetrics, 
+  currentRatio = 60,
+  controlCompliance,
+  healthScore,
+  timeframe = 'week',
+  onTimeframeChange,
+}: MetricsCardProps) {
+  // Calculate controlCompliance from healthScore if available
+  // controlCompliance represents the percentage that overall is of preUnreconciled
+  // This shows the impact of unreconciled transactions on the score
+  const calculatedControlCompliance = healthScore?.preUnreconciled && healthScore?.overall
+    ? Math.round((healthScore.overall / healthScore.preUnreconciled) * 100)
+    : controlCompliance
   const SCREEN_HEIGHT = Dimensions.get('window').height
   // TranslateY offsets relative to a full-height container (top: 0, bottom: 0)
   // Keep FULL_SHEET_OFFSET slightly below the very top so the drag handle stays reachable
@@ -140,7 +289,6 @@ export function MetricsCard({ largeMetric, smallMetrics, currentRatio = 60, heal
 
   const insets = useSafeAreaInsets()
   const navigation = useNavigation<StackNavigationProp<HomeStackParamList>>()
-  const [weekOffset, setWeekOffset] = useState(0) // 0 = current week, -1 = previous week, etc.
   const [modalVisible, setModalVisible] = useState(false)
   const [isFullSheet, setIsFullSheet] = useState(false)
   const slideAnim = useRef(new Animated.Value(DISMISS_OFFSET)).current // Start off-screen below
@@ -159,7 +307,38 @@ export function MetricsCard({ largeMetric, smallMetrics, currentRatio = 60, heal
     if (normalizedLabel.includes('net') && normalizedLabel.includes('profit')) {
       return 'NetProfit'
     }
+    if (normalizedLabel.includes('current') && normalizedLabel.includes('ratio')) {
+      return 'CurrentRatio'
+    }
     return null
+  }
+
+  // Helper to render a metric with navigation
+  const renderMetric = (metric: { value: number | string; label: string; progress?: number }, index: number) => {
+    if (!metric) return null
+    const screenName = getScreenName(metric.label)
+    return (
+      <CircularMetric
+        key={index}
+        value={metric.value}
+        label={metric.label}
+        progress={metric.progress}
+        size="small"
+        onPress={
+          screenName && healthScore
+            ? () => {
+                if (screenName === 'RevenueGrowth') {
+                  navigation.navigate('RevenueGrowth', { healthScore })
+                } else if (screenName === 'CashFlow') {
+                  navigation.navigate('CashFlow', { healthScore })
+                } else if (screenName === 'NetProfit') {
+                  navigation.navigate('NetProfit', { healthScore })
+                }
+              }
+            : undefined
+        }
+      />
+    )
   }
 
   useEffect(() => {
@@ -249,130 +428,83 @@ export function MetricsCard({ largeMetric, smallMetrics, currentRatio = 60, heal
     })
   ).current
 
-  // Calculate the Monday and Sunday of the selected week
-  const getWeekRange = (offset: number) => {
-    // Get current date and normalize to midnight to avoid timezone issues
-    const now = new Date()
-    const currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    // Get current day of week (0 = Sunday, 1 = Monday, etc.)
-    const dayOfWeek = currentDate.getDay()
-    // Calculate days to subtract to get to Monday of current week
-    // If today is Sunday (0), we want Monday of this week (subtract 6 days)
-    // If today is Monday (1), we want Monday of this week (subtract 0 days)
-    // etc.
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-    
-    // Start from Monday of current week, then add offset weeks
-    const monday = new Date(currentDate)
-    monday.setDate(currentDate.getDate() - daysToMonday + offset * 7)
-    monday.setHours(0, 0, 0, 0)
-    
-    const sunday = new Date(monday)
-    sunday.setDate(monday.getDate() + 6)
-    sunday.setHours(0, 0, 0, 0)
-    
-    return { monday, sunday }
-  }
-
-  const formatDate = (date: Date) => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    const dayName = days[date.getDay()]
-    const day = date.getDate()
-    const month = date.getMonth() + 1 // Month is 0-indexed
-    return `${dayName} ${day}/${month}`
-  }
-
-  const { monday, sunday } = getWeekRange(weekOffset)
-  const isCurrentWeek = weekOffset === 0
-
-  const handlePreviousWeek = () => {
-    setWeekOffset(weekOffset - 1)
-  }
-
-  const handleNextWeek = () => {
-    if (weekOffset < 0) {
-      setWeekOffset(weekOffset + 1)
-    }
+  const timeframes: Array<'week' | 'month' | 'quarter'> = ['week', 'month', 'quarter']
+  const timeframeLabels = {
+    week: 'Week',
+    month: 'Month',
+    quarter: 'Quarter',
   }
 
   return (
     <View style={styles.card}>
-      {/* Header row with navigation */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          onPress={handlePreviousWeek}
-          style={styles.navButton}
-          activeOpacity={0.7}
-        >
-          <MaterialIcons name="chevron-left" size={24} color="#333333" />
-        </TouchableOpacity>
-        
-        <View style={styles.weekContainer}>
-          <Text style={styles.weekText}>{formatDate(monday)}</Text>
-          <MaterialIcons name="arrow-forward" size={16} color="#333333" style={styles.arrowIcon} />
-          <Text style={styles.weekText}>{formatDate(sunday)}</Text>
+      {/* Timeframe selector */}
+      {onTimeframeChange && (
+        <View style={styles.timeframeContainer}>
+          {timeframes.map((tf) => (
+            <TouchableOpacity
+              key={tf}
+              style={[
+                styles.timeframeButton,
+                timeframe === tf && styles.timeframeButtonActive,
+              ]}
+              onPress={() => onTimeframeChange(tf)}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.timeframeButtonText,
+                  timeframe === tf && styles.timeframeButtonTextActive,
+                ]}
+              >
+                {timeframeLabels[tf]}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-        
-        {!isCurrentWeek ? (
-          <TouchableOpacity
-            onPress={handleNextWeek}
-            style={styles.navButton}
-            activeOpacity={0.7}
-          >
-            <MaterialIcons name="chevron-right" size={24} color="#333333" />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.navButton} />
-        )}
-      </View>
-
-      <CircularMetric
-        value={largeMetric.value}
-        label={largeMetric.label}
-        progress={largeMetric.progress}
-        size="large"
-        subtitle="Learn more"
-        onSubtitlePress={() => setModalVisible(true)}
-      />
-      <View style={styles.smallMetricsRow}>
-        {smallMetrics.map((metric, index) => {
-          const screenName = getScreenName(metric.label)
-          return (
+      )}
+      
+      {/* Layout: Business Health circle on top, KPI circles in a row below */}
+      <View style={styles.metricsContainer}>
+        <View style={styles.metricsLayout}>
+          {/* Business Health circle */}
+          <CircularMetric
+            value={largeMetric.value}
+            label={largeMetric.label}
+            progress={largeMetric.progress}
+            size="large"
+            controlCompliance={calculatedControlCompliance}
+          />
+          
+          {/* Row of KPI circles below */}
+          <View style={styles.kpiRow}>
+            {renderMetric(smallMetrics[0], 0)}
+            {renderMetric(smallMetrics[1], 1)}
+            {renderMetric(smallMetrics[2], 2)}
             <CircularMetric
-              key={index}
-              value={metric.value}
-              label={metric.label}
-              progress={metric.progress}
+              value={Math.round(currentRatio)}
+              label="Current Ratio"
+              progress={currentRatio}
               size="small"
               onPress={
-                screenName && healthScore
+                healthScore
                   ? () => {
-                      if (screenName === 'RevenueGrowth') {
-                        navigation.navigate('RevenueGrowth', { healthScore })
-                      } else if (screenName === 'CashFlow') {
-                        navigation.navigate('CashFlow', { healthScore })
-                      } else if (screenName === 'NetProfit') {
-                        navigation.navigate('NetProfit', { healthScore })
-                      }
+                      navigation.navigate('CurrentRatio', { healthScore })
                     }
                   : undefined
               }
             />
-          )
-        })}
+          </View>
+        </View>
       </View>
       
-      {/* Horizontal progress bar */}
-      <HorizontalProgressBar
-        progress={currentRatio}
-        onPress={
-          healthScore
-            ? () => {
-                navigation.navigate('CurrentRatio', { healthScore })
-              }
-            : undefined
-        }
-      />
+      {/* Learn more button */}
+      <TouchableOpacity
+        style={styles.learnMoreButton}
+        onPress={() => setModalVisible(true)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.learnMoreText}>Learn more</Text>
+      </TouchableOpacity>
       
       {/* Learn More Modal */}
       <Modal
@@ -535,60 +667,6 @@ export function MetricsCard({ largeMetric, smallMetrics, currentRatio = 60, heal
   )
 }
 
-// Horizontal progress bar component
-function HorizontalProgressBar({ progress = 0, onPress }: { progress?: number; onPress?: () => void }) {
-  const barWidth = 160 // Same as large circle size
-  const strokeWidth = 12 // Same as large circle stroke width
-  const progressPercent = Math.min(100, Math.max(0, progress))
-  const progressWidth = (barWidth * progressPercent) / 100
-
-  const content = (
-    <>
-      <Svg width={barWidth} height={strokeWidth}>
-        {/* Background line */}
-        <Rect
-          x="0"
-          y="0"
-          width={barWidth}
-          height={strokeWidth}
-          rx={strokeWidth / 2}
-          ry={strokeWidth / 2}
-          fill="#e0e0e0"
-        />
-        {/* Progress line */}
-        <Rect
-          x="0"
-          y="0"
-          width={progressWidth}
-          height={strokeWidth}
-          rx={strokeWidth / 2}
-          ry={strokeWidth / 2}
-          fill="#333333"
-        />
-      </Svg>
-      <Text style={styles.progressBarLabel}>Current Ratio ({Math.round(progressPercent)})</Text>
-    </>
-  )
-
-  if (onPress) {
-    return (
-      <TouchableOpacity
-        style={styles.progressBarContainer}
-        onPress={onPress}
-        activeOpacity={0.7}
-      >
-        {content}
-      </TouchableOpacity>
-    )
-  }
-
-  return (
-    <View style={styles.progressBarContainer}>
-      {content}
-    </View>
-  )
-}
-
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
@@ -599,34 +677,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#cccccc',
+    position: 'relative',
   },
-  headerRow: {
+  timeframeContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 32,
     width: '100%',
-    marginBottom: 16,
-    paddingHorizontal: 4,
   },
-  navButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weekContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  timeframeButton: {
     flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  weekText: {
-    fontSize: 14,
+  timeframeButtonActive: {
+    backgroundColor: '#555555',
+  },
+  timeframeButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666666',
+  },
+  timeframeButtonTextActive: {
+    color: '#ffffff',
     fontWeight: '600',
-    color: '#333333',
-  },
-  arrowIcon: {
-    marginHorizontal: 8,
   },
   metricContainer: {
     alignItems: 'center',
@@ -655,6 +734,18 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '700',
   },
+  valueTextSecondary: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#666666',
+    marginTop: -4,
+  },
+  valueTextSecondaryLarge: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: '#666666',
+    marginTop: -6,
+  },
   labelText: {
     fontSize: 11,
     color: '#666666',
@@ -670,27 +761,54 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
-  smallMetricsRow: {
+  metricsContainer: {
+    width: '100%',
+    paddingBottom: 40, // Add padding to prevent clash with Learn more button
+  },
+  metricsLayout: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  kpiRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
     marginTop: 24,
     paddingHorizontal: 8,
   },
-  progressBarContainer: {
-    width: '100%',
-    marginTop: 24,
-    paddingHorizontal: 8,
+  smallMetricWrapper: {
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  progressBarSvg: {
-    width: '100%',
-  },
-  progressBarLabel: {
-    fontSize: 12,
+  smallMetricLabel: {
+    fontSize: 11,
     color: '#666666',
     textAlign: 'center',
     marginTop: 8,
+    lineHeight: 14,
+  },
+  largeMetricWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  largeMetricLabel: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginTop: -12,
+    fontWeight: '500',
+  },
+  learnMoreButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  learnMoreText: {
+    fontSize: 13,
+    color: '#666666',
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,

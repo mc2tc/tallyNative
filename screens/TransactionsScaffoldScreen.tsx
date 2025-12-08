@@ -369,6 +369,8 @@ export default function TransactionsScaffoldScreen() {
   const sectionNavScrollRef = useRef<ScrollView>(null)
   const buttonPositionsRef = useRef<Map<string, { x: number; width: number }>>(new Map())
   const containerWidthRef = useRef<number>(0)
+  const [bankInfoCardDismissed, setBankInfoCardDismissed] = useState(false)
+  const [cardsInfoCardDismissed, setCardsInfoCardDismissed] = useState(false)
 
   // Function to center the selected navigation button
   const centerSelectedButton = (sectionKey: string) => {
@@ -416,6 +418,7 @@ export default function TransactionsScaffoldScreen() {
   const [transactions3BankSourceOfTruth, setTransactions3BankSourceOfTruth] = useState<Transaction[]>([])
   const [transactions3CardPending, setTransactions3CardPending] = useState<Transaction[]>([])
   const [transactions3CardSourceOfTruth, setTransactions3CardSourceOfTruth] = useState<Transaction[]>([])
+  const [reportingReadyTransactions3, setReportingReadyTransactions3] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingAccountsAndCards, setLoadingAccountsAndCards] = useState(true)
   const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
@@ -505,6 +508,15 @@ export default function TransactionsScaffoldScreen() {
               })
               setTransactions3CardPending(pendingResponse.transactions || [])
               setTransactions3CardSourceOfTruth(verifiedResponse.transactions || [])
+            } else if (activeSection === 'reporting') {
+              // For reporting section, refresh reporting-ready transactions from transactions3
+              const reportingReadyRes = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+                page: 1,
+                limit: 200,
+                // No kind filter - get all reporting-ready transactions from all sources
+              })
+              setReportingReadyTransactions3(reportingReadyRes.transactions || [])
+              console.log('TransactionsScaffoldScreen: Refreshed reporting-ready transactions on focus, count:', (reportingReadyRes.transactions || []).length)
             } else {
               // For other sections, refresh transactions2 data
               const response = await transactions2Api.getTransactions(businessId, {
@@ -635,6 +647,36 @@ export default function TransactionsScaffoldScreen() {
     }, [businessId]),
   )
 
+  // Fetch reporting-ready transactions from transactions3 source_of_truth collection
+  // Per TRANSACTIONS3_REPORTING_READY_RN_MIGRATION.md: No client-side filtering needed
+  // source_of_truth collection only contains transactions that are already reporting ready
+  useFocusEffect(
+    useCallback(() => {
+      if (!businessId) {
+        return
+      }
+
+      const fetchReportingReadyTransactions = async () => {
+        try {
+          // Fetch all reporting-ready transactions from source_of_truth (all sources, no kind filter)
+          // Per docs: All transactions in source_of_truth are by definition reporting ready
+          const response = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            // No kind filter - get all reporting-ready transactions from all sources
+          })
+          setReportingReadyTransactions3(response.transactions || [])
+          console.log('TransactionsScaffoldScreen: Fetched reporting-ready transactions from transactions3:', (response.transactions || []).length)
+        } catch (error) {
+          console.error('Failed to fetch reporting-ready transactions:', error)
+          setReportingReadyTransactions3([])
+        }
+      }
+
+      fetchReportingReadyTransactions()
+    }, [businessId]),
+  )
+
   // Fetch transactions3 data for Purchases3 section
   useFocusEffect(
     useCallback(() => {
@@ -752,64 +794,28 @@ export default function TransactionsScaffoldScreen() {
 
 
   // Reporting ready transactions (all sources: receipts, bank, credit cards)
-  // Condition: Transaction is reconciled OR (verified with accounting entries) OR (verified cash-only)
-  // Reconciled transactions go directly to Reporting Ready
-  // Cash-only transactions don't need reconciliation
-  // This feeds the Reports screen and the "Reporting ready" section
-  const reportingReadySourceTransactions = allTransactions.filter((tx) => {
-    const metadata = tx.metadata as {
-      verification?: { status?: string }
-      reconciliation?: { status?: string }
-      capture?: { source?: string }
-    }
-    const verificationStatus = metadata.verification?.status
-    const reconciliationStatus = metadata.reconciliation?.status
-
-    // Check if verified (including exception)
-    const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-    
-    // Check if reconciled
-    const isReconciled =
-      reconciliationStatus === 'matched' ||
-      reconciliationStatus === 'reconciled' ||
-      reconciliationStatus === 'exception'
-
-    // Check if has accounting entries
-    const hasEntries = hasAccountingEntries(tx)
-
-    // Check if cash-only (fallback for manual entry transactions that may not have reconciliation.status set)
-    const isCashOnly = isCashOnlyTransaction(tx)
-
-    // Reporting ready if: reconciled OR (verified AND has accounting entries) OR (verified cash-only)
-    // Reconciled transactions go directly to Reporting Ready
-    // Note: Backend sets reconciliation.status = 'reconciled' for cash when verified via confirmVerification
-    // But manual entry transactions may be created as verified, so we check cash-only as fallback
-    // Includes all sources: purchase receipts, bank statements, and credit card statements
-    return isReconciled || (isVerified && hasEntries) || (isVerified && isCashOnly)
-  })
-
-  // Sort reporting ready transactions by most recent first
-  const sortedReportingReadySourceTransactions = reportingReadySourceTransactions.sort((a, b) => {
-    const aMeta = a.metadata as { updatedAt?: number; createdAt?: number }
-    const bMeta = b.metadata as { updatedAt?: number; createdAt?: number }
-    const aDate = aMeta.updatedAt || aMeta.createdAt || 0
-    const bDate = bMeta.updatedAt || bMeta.createdAt || 0
-    return bDate - aDate
-  })
-
-  // Full list of reporting ready transactions (all sources)
+  // Migrated to transactions3: Using source_of_truth collection
+  // Per TRANSACTIONS3_REPORTING_READY_RN_MIGRATION.md: No client-side filtering needed
+  // All transactions in source_of_truth are by definition reporting ready
+  // Sort by most recent first
   const reportingReadyTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
-    sortedReportingReadySourceTransactions.map((tx) => {
-      const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
-      return {
-        id: tx.id,
-        title: tx.summary.thirdPartyName,
-        amount,
-        isReportingReady: true,
-        isCredit: isCreditToAccount(tx),
-        originalTransaction: tx,
-      }
-    })
+    reportingReadyTransactions3
+      .sort((a, b) => {
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
+        return bDate - aDate
+      })
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isReportingReady: true,
+          isCredit: isCreditToAccount(tx),
+          originalTransaction: tx,
+        }
+      })
 
 
 
@@ -847,13 +853,9 @@ export default function TransactionsScaffoldScreen() {
         }
       })
     .sort((a, b) => {
-      // Sort by updatedAt (most recent first), fallback to createdAt
-      const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-        0
-      const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-        0
+      // Sort by transactionDate (most recent first)
+      const aDate = a.originalTransaction.summary.transactionDate || 0
+      const bDate = b.originalTransaction.summary.transactionDate || 0
       return bDate - aDate
     })
     .slice(0, 3) // Show only 3 most recent
@@ -893,13 +895,9 @@ export default function TransactionsScaffoldScreen() {
         }
       })
       .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-          0
+        // Sort by transactionDate (most recent first)
+        const aDate = a.originalTransaction.summary.transactionDate || 0
+        const bDate = b.originalTransaction.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3) // Show only 3 most recent
@@ -936,13 +934,9 @@ export default function TransactionsScaffoldScreen() {
   const confirmedUnreconcilableBank: Array<TransactionStub & { originalTransaction: Transaction }> =
     confirmedUnreconcilableBankRaw
       .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt ||
-          0
+        // Sort by transactionDate (most recent first)
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3) // Get last 3
@@ -1002,13 +996,9 @@ export default function TransactionsScaffoldScreen() {
   const recentReportingReadyBank: Array<TransactionStub & { originalTransaction: Transaction }> =
     recentReportingReadyBankRaw
       .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt ||
-          0
+        // Sort by transactionDate (most recent first)
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3) // Get last 3
@@ -1058,13 +1048,9 @@ export default function TransactionsScaffoldScreen() {
         }
       })
       .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-          0
+        // Sort by transactionDate (most recent first)
+        const aDate = a.originalTransaction.summary.transactionDate || 0
+        const bDate = b.originalTransaction.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3) // Show only 3 most recent
@@ -1104,13 +1090,9 @@ export default function TransactionsScaffoldScreen() {
         }
       })
       .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.originalTransaction.metadata as { createdAt?: number }).createdAt ||
-          0
+        // Sort by transactionDate (most recent first)
+        const aDate = a.originalTransaction.summary.transactionDate || 0
+        const bDate = b.originalTransaction.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3) // Show only 3 most recent
@@ -1147,13 +1129,9 @@ export default function TransactionsScaffoldScreen() {
   const confirmedUnreconcilableCard: Array<TransactionStub & { originalTransaction: Transaction }> =
     confirmedUnreconcilableCardRaw
       .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt ||
-          0
+        // Sort by transactionDate (most recent first)
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3) // Get last 3
@@ -1213,13 +1191,9 @@ export default function TransactionsScaffoldScreen() {
   const recentReportingReadyCards: Array<TransactionStub & { originalTransaction: Transaction }> =
     recentReportingReadyCardRaw
       .sort((a, b) => {
-        // Sort by updatedAt (most recent first), fallback to createdAt
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt ||
-          0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt ||
-          0
+        // Sort by transactionDate (most recent first)
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3) // Get last 3
@@ -1249,10 +1223,8 @@ export default function TransactionsScaffoldScreen() {
               return hasEntries
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1271,10 +1243,8 @@ export default function TransactionsScaffoldScreen() {
               return hasEntries
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1298,10 +1268,8 @@ export default function TransactionsScaffoldScreen() {
               return !hasEntries
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1320,10 +1288,8 @@ export default function TransactionsScaffoldScreen() {
               return !hasEntries
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1368,10 +1334,8 @@ export default function TransactionsScaffoldScreen() {
             return isPurchase && isVerified && hasAccountsPayable && !isReconciled && !isCashOnly
           })
           .sort((a, b) => {
-            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (a.metadata as { createdAt?: number }).createdAt || 0
-            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (b.metadata as { createdAt?: number }).createdAt || 0
+            const aDate = a.summary.transactionDate || 0
+            const bDate = b.summary.transactionDate || 0
             return bDate - aDate
           })
           .map((tx) => ({
@@ -1398,10 +1362,8 @@ export default function TransactionsScaffoldScreen() {
               return isVerified && isUnreconciled
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1427,10 +1389,8 @@ export default function TransactionsScaffoldScreen() {
               return isVerified && isUnreconciled
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1468,10 +1428,8 @@ export default function TransactionsScaffoldScreen() {
               return !isUnreconciled && (isReconciled || (isVerified && hasEntries))
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1504,10 +1462,8 @@ export default function TransactionsScaffoldScreen() {
               return !isUnreconciled && (isReconciled || (isVerified && hasEntries))
             })
             .sort((a, b) => {
-              const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (a.metadata as { createdAt?: number }).createdAt || 0
-              const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-                (b.metadata as { createdAt?: number }).createdAt || 0
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
               return bDate - aDate
             })
             .map((tx) => ({
@@ -1544,10 +1500,8 @@ export default function TransactionsScaffoldScreen() {
             return isUnverified || (verificationStatus !== 'unverified' && !isReconciled && !isCashOnly)
           })
           .sort((a, b) => {
-            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (a.metadata as { createdAt?: number }).createdAt || 0
-            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (b.metadata as { createdAt?: number }).createdAt || 0
+            const aDate = a.summary.transactionDate || 0
+            const bDate = b.summary.transactionDate || 0
             return bDate - aDate
           })
           .map((tx) => ({
@@ -1587,10 +1541,8 @@ export default function TransactionsScaffoldScreen() {
             return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
           })
           .sort((a, b) => {
-            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (a.metadata as { createdAt?: number }).createdAt || 0
-            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (b.metadata as { createdAt?: number }).createdAt || 0
+            const aDate = a.summary.transactionDate || 0
+            const bDate = b.summary.transactionDate || 0
             return bDate - aDate
           })
           .map((tx) => ({
@@ -1600,7 +1552,7 @@ export default function TransactionsScaffoldScreen() {
             originalTransaction: tx,
           }))
       
-      case 'Invoices paid and reconciled':
+      case 'Invoices paid, reconciled and audit ready':
         return allTransactions
           .filter((tx) => {
             if (!isSaleTransaction(tx)) return false
@@ -1615,10 +1567,8 @@ export default function TransactionsScaffoldScreen() {
             return isReconciled
           })
           .sort((a, b) => {
-            const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (a.metadata as { createdAt?: number }).createdAt || 0
-            const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-              (b.metadata as { createdAt?: number }).createdAt || 0
+            const aDate = a.summary.transactionDate || 0
+            const bDate = b.summary.transactionDate || 0
             return bDate - aDate
           })
           .map((tx) => ({
@@ -1628,6 +1578,128 @@ export default function TransactionsScaffoldScreen() {
             isReportingReady: true,
             originalTransaction: tx,
           }))
+      
+      case 'Needs verification':
+        if (activeSection === 'purchases3') {
+          // Use transactions3 data - filter for unverified purchase transactions
+          return transactions3Pending
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                classification?: { kind?: string }
+                verification?: { status?: string }
+              }
+              const isPurchase = metadata.classification?.kind === 'purchase'
+              const isUnverified = metadata.verification?.status === 'unverified'
+              return isPurchase && isUnverified
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        } else {
+          return []
+        }
+      
+      case 'Reconcile to bank':
+        if (activeSection === 'purchases3') {
+          // Use transactions3 data - filter for verified purchase transactions needing bank reconciliation
+          return transactions3SourceOfTruth
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string; type?: string }
+                classification?: { kind?: string }
+              }
+              const isPurchase = metadata.classification?.kind === 'purchase'
+              const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
+              const needsReconciliation = metadata.reconciliation?.status === 'pending_bank_match'
+              const isBankTransferReconciliation = metadata.reconciliation?.type === 'bank_transfer'
+              return isPurchase && isVerified && needsReconciliation && isBankTransferReconciliation
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        } else {
+          return []
+        }
+      
+      case 'Reconcile to Credit Card':
+        if (activeSection === 'purchases3') {
+          // Use transactions3 data - filter for verified purchase transactions needing card reconciliation
+          return transactions3SourceOfTruth
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string; type?: string }
+                classification?: { kind?: string }
+              }
+              const isPurchase = metadata.classification?.kind === 'purchase'
+              const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
+              const needsReconciliation = metadata.reconciliation?.status === 'pending_bank_match'
+              const isCardReconciliation = metadata.reconciliation?.type === 'card'
+              return isPurchase && isVerified && needsReconciliation && isCardReconciliation
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        } else {
+          return []
+        }
+      
+      case 'Verified, reconciled and audit ready':
+        if (activeSection === 'purchases3') {
+          // Use transactions3 data - filter for verified and reconciled purchase transactions
+          return transactions3SourceOfTruth
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+                classification?: { kind?: string }
+              }
+              const isPurchase = metadata.classification?.kind === 'purchase'
+              const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
+              const isReconciled = metadata.reconciliation?.status === 'reconciled' ||
+                metadata.reconciliation?.status === 'not_required'
+              return isPurchase && isVerified && isReconciled
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isReportingReady: true,
+              originalTransaction: tx,
+            }))
+        } else {
+          return []
+        }
       
       default:
         return []
@@ -1688,10 +1760,8 @@ export default function TransactionsScaffoldScreen() {
         return isUnverified || (verificationStatus !== 'unverified' && !isReconciled && !isCashOnly)
       })
       .sort((a, b) => {
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt || 0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt || 0
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3)
@@ -1720,10 +1790,8 @@ export default function TransactionsScaffoldScreen() {
         return isVerified && isCashOnly
       })
       .sort((a, b) => {
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt || 0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt || 0
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3)
@@ -1769,10 +1837,8 @@ export default function TransactionsScaffoldScreen() {
         return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
       })
       .sort((a, b) => {
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt || 0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt || 0
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3)
@@ -1786,7 +1852,7 @@ export default function TransactionsScaffoldScreen() {
         }
       })
 
-  // 4. Invoices paid and reconciled
+  // 4. Invoices paid, reconciled and audit ready
   const invoicesPaidReconciled: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
@@ -1804,10 +1870,8 @@ export default function TransactionsScaffoldScreen() {
         return isReconciled
       })
       .sort((a, b) => {
-        const aDate = (a.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (a.metadata as { createdAt?: number }).createdAt || 0
-        const bDate = (b.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-          (b.metadata as { createdAt?: number }).createdAt || 0
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
         return bDate - aDate
       })
       .slice(0, 3)
@@ -1835,7 +1899,7 @@ export default function TransactionsScaffoldScreen() {
       transactions: invoicesPaidNeedsMatch,
     },
     {
-      title: 'Invoices paid and reconciled',
+      title: 'Invoices paid, reconciled and audit ready',
       actions: ['View all'],
       transactions: invoicesPaidReconciled,
     },
@@ -1869,10 +1933,8 @@ export default function TransactionsScaffoldScreen() {
     .map((tx) => parseTransaction3(tx))
     .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)
     .sort((a, b) => {
-      const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
-      const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
+      const aDate = a.originalTransaction.summary.transactionDate || 0
+      const bDate = b.originalTransaction.summary.transactionDate || 0
       return bDate - aDate
     })
     .slice(0, 3)
@@ -1900,10 +1962,8 @@ export default function TransactionsScaffoldScreen() {
     .map((tx) => parseTransaction3(tx))
     .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)
     .sort((a, b) => {
-      const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
-      const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
+      const aDate = a.originalTransaction.summary.transactionDate || 0
+      const bDate = b.originalTransaction.summary.transactionDate || 0
       return bDate - aDate
     })
     .slice(0, 3)
@@ -1936,10 +1996,8 @@ export default function TransactionsScaffoldScreen() {
     .map((tx) => parseTransaction3(tx))
     .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)
     .sort((a, b) => {
-      const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
-      const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
+      const aDate = a.originalTransaction.summary.transactionDate || 0
+      const bDate = b.originalTransaction.summary.transactionDate || 0
       return bDate - aDate
     })
     .slice(0, 3)
@@ -1967,10 +2025,8 @@ export default function TransactionsScaffoldScreen() {
     .map((tx) => parseTransaction3(tx))
     .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)
     .sort((a, b) => {
-      const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
-      const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
+      const aDate = a.originalTransaction.summary.transactionDate || 0
+      const bDate = b.originalTransaction.summary.transactionDate || 0
       return bDate - aDate
     })
     .slice(0, 3)
@@ -2013,10 +2069,8 @@ export default function TransactionsScaffoldScreen() {
     .map((tx) => parseTransaction3(tx))
     .filter((stub): stub is TransactionStub & { originalTransaction: Transaction } => stub !== null)
     .sort((a, b) => {
-      const aDate = (a.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (a.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
-      const bDate = (b.originalTransaction.metadata as { updatedAt?: number; createdAt?: number }).updatedAt ||
-        (b.originalTransaction.metadata as { createdAt?: number }).createdAt || 0
+      const aDate = a.originalTransaction.summary.transactionDate || 0
+      const bDate = b.originalTransaction.summary.transactionDate || 0
       return bDate - aDate
     })
     .slice(0, 3)
@@ -2215,39 +2269,57 @@ export default function TransactionsScaffoldScreen() {
     try {
       // If on Purchases3 section, refresh transactions3 data
       if (activeSection === 'purchases3') {
-        const [pendingResponse, sourceOfTruthResponse] = await Promise.all([
+        const [pendingResponse, sourceOfTruthResponse, reportingReadyRes] = await Promise.all([
           transactions2Api.getTransactions3(businessId, 'pending', {
             page: 1,
             limit: 200,
+            kind: 'purchase', // Filter for purchase transactions only
             status: 'verification:unverified',
           }),
           transactions2Api.getTransactions3(businessId, 'source_of_truth', {
             page: 1,
             limit: 200,
+            kind: 'purchase', // Filter for purchase transactions only
+          }),
+          // Always refresh reporting-ready transactions (used by reporting section)
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            // No kind filter - get all reporting-ready transactions from all sources
           }),
         ])
         setTransactions3Pending(pendingResponse.transactions || [])
         setTransactions3SourceOfTruth(sourceOfTruthResponse.transactions || [])
+        setReportingReadyTransactions3(reportingReadyRes.transactions || [])
       } else if (activeSection === 'bank') {
         // For Bank section, refresh transactions3 data using API-side filtering
-        const [needsVerificationResponse, needsReconciliationResponse, verifiedResponse] = await Promise.all([
+        const [needsVerificationResponse, needsReconciliationResponse, verifiedResponse, reportingReadyRes] = await Promise.all([
           // Card 1: Needs verification (rule-matched, unverified)
           transactions2Api.getTransactions3(businessId, 'pending', {
             page: 1,
             limit: 200,
+            kind: 'statement_entry', // Filter for bank transactions on backend
             status: 'verification:unverified',
           }),
           // Card 2: Needs reconciliation (no rule match)
           transactions2Api.getTransactions3(businessId, 'pending', {
             page: 1,
             limit: 200,
+            kind: 'statement_entry', // Filter for bank transactions on backend
             status: 'reconciliation:pending_bank_match',
           }),
           // Card 4: Verified and audit ready
           transactions2Api.getTransactions3(businessId, 'source_of_truth', {
             page: 1,
             limit: 200,
+            kind: 'statement_entry', // Filter for bank transactions on backend
             status: 'verification:verified',
+          }),
+          // Always refresh reporting-ready transactions (used by reporting section)
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            // No kind filter - get all reporting-ready transactions from all sources
           }),
         ])
         
@@ -2270,26 +2342,36 @@ export default function TransactionsScaffoldScreen() {
         
         setTransactions3BankPending([...bankNeedsVerification, ...bankNeedsReconciliation])
         setTransactions3BankSourceOfTruth(bankVerified)
+        setReportingReadyTransactions3(reportingReadyRes.transactions || [])
       } else if (activeSection === 'cards') {
         // For Credit Cards section, refresh transactions3 data using API-side filtering
-        const [needsVerificationResponse, needsReconciliationResponse, verifiedResponse] = await Promise.all([
+        const [needsVerificationResponse, needsReconciliationResponse, verifiedResponse, reportingReadyRes] = await Promise.all([
           // Card 1: Needs verification (rule-matched, unverified)
           transactions2Api.getTransactions3(businessId, 'pending', {
             page: 1,
             limit: 200,
+            kind: 'statement_entry', // Filter for credit card transactions on backend
             status: 'verification:unverified',
           }),
           // Card 2: Needs reconciliation (no rule match)
           transactions2Api.getTransactions3(businessId, 'pending', {
             page: 1,
             limit: 200,
+            kind: 'statement_entry', // Filter for credit card transactions on backend
             status: 'reconciliation:pending_bank_match',
           }),
           // Card 4: Verified and audit ready
           transactions2Api.getTransactions3(businessId, 'source_of_truth', {
             page: 1,
             limit: 200,
+            kind: 'statement_entry', // Filter for credit card transactions on backend
             status: 'verification:verified',
+          }),
+          // Always refresh reporting-ready transactions (used by reporting section)
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            // No kind filter - get all reporting-ready transactions from all sources
           }),
         ])
         
@@ -2311,13 +2393,31 @@ export default function TransactionsScaffoldScreen() {
         
         setTransactions3CardPending([...cardNeedsVerification, ...cardNeedsReconciliation])
         setTransactions3CardSourceOfTruth(cardVerified)
-      } else {
-        // For other sections, refresh transactions2 data
-        const response = await transactions2Api.getTransactions(businessId, {
+        setReportingReadyTransactions3(reportingReadyRes.transactions || [])
+      } else if (activeSection === 'reporting') {
+        // For reporting section, only refresh reporting-ready transactions
+        const reportingReadyRes = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
           page: 1,
           limit: 200,
+          // No kind filter - get all reporting-ready transactions from all sources
         })
+        setReportingReadyTransactions3(reportingReadyRes.transactions || [])
+      } else {
+        // For other sections, refresh transactions2 data
+        const [response, reportingReadyRes] = await Promise.all([
+          transactions2Api.getTransactions(businessId, {
+            page: 1,
+            limit: 200,
+          }),
+          // Always refresh reporting-ready transactions (used by reporting section)
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            // No kind filter - get all reporting-ready transactions from all sources
+          }),
+        ])
         setAllTransactions(response.transactions)
+        setReportingReadyTransactions3(reportingReadyRes.transactions || [])
       }
     } catch (error) {
       console.error('Failed to refresh transactions:', error)
@@ -2410,6 +2510,26 @@ export default function TransactionsScaffoldScreen() {
           </View>
         )}
 
+        {activeSection === 'bank' && !bankInfoCardDismissed && (
+          <View style={styles.salesInfoCard}>
+            <View style={styles.salesInfoContent}>
+              <View style={styles.salesInfoTextContainer}>
+                <Text style={styles.salesInfoTitle}>Understanding your Bank pipeline</Text>
+                <Text style={styles.salesInfoBody}>
+                  Bank transactions flow through four stages: (1) Needs verification when matched by rules, (2) Needs reconciliation for unmatched transactions, (3) Confirmed unreconcilable for verified transactions that cannot be matched, (4) Audit ready when verified and reconciled with purchase receipts.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.salesInfoDismissButton}
+                onPress={() => setBankInfoCardDismissed(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.salesInfoDismissIcon}>×</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {activeSection === 'cards' && creditCards.length > 0 && (
           <View style={styles.bankAccountNavWrapper}>
             <ScrollView
@@ -2434,6 +2554,26 @@ export default function TransactionsScaffoldScreen() {
                 )
               })}
             </ScrollView>
+          </View>
+        )}
+
+        {activeSection === 'cards' && !cardsInfoCardDismissed && (
+          <View style={styles.salesInfoCard}>
+            <View style={styles.salesInfoContent}>
+              <View style={styles.salesInfoTextContainer}>
+                <Text style={styles.salesInfoTitle}>Understanding your Credit Cards pipeline</Text>
+                <Text style={styles.salesInfoBody}>
+                  Credit card transactions flow through four stages: (1) Needs verification when matched by rules, (2) Needs reconciliation for unmatched transactions, (3) Confirmed unreconcilable for verified transactions that cannot be matched, (4) Audit ready when verified and reconciled with purchase receipts.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.salesInfoDismissButton}
+                onPress={() => setCardsInfoCardDismissed(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.salesInfoDismissIcon}>×</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -2507,8 +2647,8 @@ function renderSection(
         <View style={styles.reportingCard}>
           <View style={styles.cardTitleRow}>
             <Text style={styles.sectionHeader}>Reporting ready (all sources)</Text>
-            <TouchableOpacity activeOpacity={0.6} style={styles.infoButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
+            <TouchableOpacity activeOpacity={0.6} style={styles.learnMoreButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.learnMoreText}>Learn more</Text>
             </TouchableOpacity>
           </View>
           <CardList items={reportingReadyTransactions.slice(0, 3)} navigation={navigation} />
@@ -2552,6 +2692,9 @@ function PipelineRow({
   getFullTransactions?: (columnTitle: string) => Array<TransactionStub & { originalTransaction?: Transaction }>
   pipelineSection: SectionKey
 }) {
+  const [salesInfoCardDismissed, setSalesInfoCardDismissed] = useState(false)
+  const [purchasesInfoCardDismissed, setPurchasesInfoCardDismissed] = useState(false)
+
   const handleViewAll = (column: PipelineColumn) => {
     // For sales pipeline, use sales leads
     if (pipelineSection === 'sales' && column.salesLeads) {
@@ -2593,11 +2736,62 @@ function PipelineRow({
     <View style={styles.pipelineColumnStack}>
       {columns.map((column, index) => (
         <React.Fragment key={column.title}>
+          {pipelineSection === 'sales' && index === 0 && (
+            <>
+              {!salesInfoCardDismissed && (
+                <View style={styles.salesInfoCard}>
+                  <View style={styles.salesInfoContent}>
+                    <View style={styles.salesInfoTextContainer}>
+                      <Text style={styles.salesInfoTitle}>Understanding your Sales pipeline</Text>
+                      <Text style={styles.salesInfoBody}>
+                        Invoices move through three stages: (1) Submitted and unpaid, (2) Paid but needs matching to bank statements for bank transfers, (3) Audit ready when reconciled with bank records or confirmed as cash payments.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.salesInfoDismissButton}
+                      onPress={() => setSalesInfoCardDismissed(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.salesInfoDismissIcon}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+              <View style={styles.reportingReadySeparator}>
+                <View style={styles.reportingReadyLine} />
+                <Text style={styles.reportingReadyLabel}>Reporting Ready</Text>
+                <View style={styles.reportingReadyLine} />
+              </View>
+            </>
+          )}
+          {pipelineSection === 'purchases3' && index === 0 && (
+            <>
+              {!purchasesInfoCardDismissed && (
+                <View style={styles.salesInfoCard}>
+                  <View style={styles.salesInfoContent}>
+                    <View style={styles.salesInfoTextContainer}>
+                      <Text style={styles.salesInfoTitle}>Understanding your Purchases pipeline</Text>
+                      <Text style={styles.salesInfoBody}>
+                        Purchase receipts move through five stages: (1) Needs verification for new receipts, (2) Accounts Payable for unpaid invoices, (3) Reconcile to bank for bank transfer payments, (4) Reconcile to Credit Card for card payments, (5) Audit ready when verified and reconciled with bank or card statements.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.salesInfoDismissButton}
+                      onPress={() => setPurchasesInfoCardDismissed(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.salesInfoDismissIcon}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </>
+          )}
           <View style={styles.pipelineCard}>
             <View style={styles.pipelineTitleRow}>
               <Text style={styles.pipelineTitle}>{column.title}</Text>
-              <TouchableOpacity activeOpacity={0.6} style={styles.infoButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
+              <TouchableOpacity activeOpacity={0.6} style={styles.learnMoreButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.learnMoreText}>Learn more</Text>
               </TouchableOpacity>
             </View>
             {column.rules ? (
@@ -2979,6 +3173,15 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
+  learnMoreButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  learnMoreText: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+    fontWeight: '400',
+  },
   pipelineActions: {
     marginTop: 12,
     flexDirection: 'row',
@@ -3162,6 +3365,48 @@ const styles = StyleSheet.create({
     color: GRAYSCALE_SECONDARY,
     textTransform: 'uppercase',
     fontWeight: '500',
+  },
+  salesInfoCard: {
+    backgroundColor: SURFACE_BACKGROUND,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e6e6e6',
+  },
+  salesInfoContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  salesInfoTextContainer: {
+    flex: 1,
+  },
+  salesInfoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 8,
+  },
+  salesInfoBody: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    lineHeight: 18,
+  },
+  salesInfoDismissButton: {
+    marginLeft: 8,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+    paddingTop: 0,
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  salesInfoDismissIcon: {
+    fontSize: 22,
+    color: GRAYSCALE_SECONDARY,
+    fontWeight: '300',
+    lineHeight: 20,
   },
   blankSectionContainer: {
     flex: 1,
