@@ -1,5 +1,6 @@
 import React from 'react'
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { MaterialIcons } from '@expo/vector-icons'
 import { CircularMetric } from './MetricsCard'
 
 interface KPIDetailCardProps {
@@ -9,12 +10,18 @@ interface KPIDetailCardProps {
   label: string
   progress: number
   subtitle?: string
+  iconName?: keyof typeof MaterialIcons.glyphMap
   onPress?: () => void
 }
 
-export function KPIDetailCard({ title, metricValue, score, label, progress, subtitle, onPress }: KPIDetailCardProps) {
+export function KPIDetailCard({ title, metricValue, score, label, progress, subtitle, iconName, onPress }: KPIDetailCardProps) {
   const content = (
     <>
+      {iconName && (
+        <View style={styles.iconContainer}>
+          <MaterialIcons name={iconName} size={32} color="#666666" />
+        </View>
+      )}
       <View style={styles.leftContent}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.value}>
@@ -62,6 +69,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  iconContainer: {
+    marginRight: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   leftContent: {
     flex: 1,

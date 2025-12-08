@@ -551,8 +551,12 @@ export function MetricsCard({
 
                 <Text style={styles.modalSectionTitle}>What the score measures</Text>
                 <Text style={styles.modalText}>
-                  We combine four key signals:
+                  We combine five key signals:
                 </Text>
+                <View style={styles.bulletRow}>
+                  <Text style={styles.bulletChar}>•</Text>
+                  <Text style={styles.bulletText}>Control/Compliance: How many of your transactions are validated and authentic?</Text>
+                </View>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
                   <Text style={styles.bulletText}>Revenue Growth: Are your sales growing or shrinking?</Text>
@@ -612,9 +616,13 @@ export function MetricsCard({
                 </View>
 
                 <Text style={styles.modalText}>
-                  We look at all “reporting ready” transactions in that window (i.e. those that have been fully
+                  We look at all "reporting ready" transactions in that window (i.e. those that have been fully
                   processed and are ready for your accounts) and calculate:
                 </Text>
+                <View style={styles.bulletRow}>
+                  <Text style={styles.bulletChar}>•</Text>
+                  <Text style={styles.bulletText}>Your control/compliance score (validated vs unreconciled transactions)</Text>
+                </View>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
                   <Text style={styles.bulletText}>How fast revenue is growing</Text>
@@ -634,9 +642,13 @@ export function MetricsCard({
 
                 <Text style={styles.modalSectionTitle}>How to use it</Text>
                 <Text style={styles.modalText}>
-                  Check the overall score first – it’s your quick “how are we doing?” answer. Then look at the
-                  four sub‑scores:
+                  Check the overall score first – it's your quick "how are we doing?" answer. Then look at the
+                  five sub‑scores:
                 </Text>
+                <View style={styles.bulletRow}>
+                  <Text style={styles.bulletChar}>•</Text>
+                  <Text style={styles.bulletText}>Low control/compliance score → review and reconcile pending transactions to improve validation.</Text>
+                </View>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
                   <Text style={styles.bulletText}>Low cash flow score → focus on cash collections, payments and runway.</Text>

@@ -106,6 +106,13 @@ export default function HomeScreen() {
   const cashCoverageRatio = healthScore?.rawMetrics.cashCoverageRatio ?? 0
   const currentRatioValue = healthScore?.rawMetrics.currentRatio ?? 0
 
+  // Calculate control/compliance score
+  // controlCompliance represents the percentage that overall is of preUnreconciled
+  // This shows the impact of unreconciled transactions on the score
+  const controlComplianceScore = healthScore?.preUnreconciled && healthScore?.overall
+    ? Math.round((healthScore.overall / healthScore.preUnreconciled) * 100)
+    : 100
+
   const businessName = getBusinessNameFromId(businessId)
 
   return (
@@ -163,9 +170,28 @@ export default function HomeScreen() {
         )}
         {!loading && !error && (
           <>
-            <MotivationalCard />
+            <MotivationalCard
+              businessId={businessId}
+              timeframe={timeframe}
+              onPress={() => {
+                navigation.navigate('Insights', { 
+                  healthScore: healthScore || undefined, 
+                  timeframe 
+                })
+              }}
+            />
             
             {/* KPI Detail Cards */}
+            <KPIDetailCard
+              title="Control/Compliance"
+              metricValue={`${controlComplianceScore}%`}
+              score={controlComplianceScore}
+              label="Control/Compliance"
+              progress={controlComplianceScore}
+              subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
+              iconName="assured-workload"
+              onPress={() => healthScore && navigation.navigate('ControlCompliance', { healthScore })}
+            />
             <KPIDetailCard
               title="Revenue Growth"
               metricValue={`${revenueGrowthPercentage > 0 ? '+' : ''}${revenueGrowthPercentage.toFixed(1)}%`}
@@ -173,6 +199,7 @@ export default function HomeScreen() {
               label="Rev. Growth"
               progress={revenueGrowth}
               subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
+              iconName="trending-up"
               onPress={() => healthScore && navigation.navigate('RevenueGrowth', { healthScore })}
             />
             <KPIDetailCard
@@ -182,6 +209,7 @@ export default function HomeScreen() {
               label="Cash Flow"
               progress={cashFlow}
               subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
+              iconName="account-balance-wallet"
               onPress={() => healthScore && navigation.navigate('CashFlow', { healthScore })}
             />
             <KPIDetailCard
@@ -191,6 +219,7 @@ export default function HomeScreen() {
               label="Net Profit"
               progress={netProfit}
               subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
+              iconName="account-balance"
               onPress={() => healthScore && navigation.navigate('NetProfit', { healthScore })}
             />
             <KPIDetailCard
@@ -200,6 +229,7 @@ export default function HomeScreen() {
               label="Current Ratio"
               progress={currentRatio}
               subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
+              iconName="compare-arrows"
               onPress={() => healthScore && navigation.navigate('CurrentRatio', { healthScore })}
             />
           </>

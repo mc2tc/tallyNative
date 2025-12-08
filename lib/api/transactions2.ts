@@ -568,4 +568,41 @@ export const healthScoreApi = {
 	},
 }
 
+export type InsightsResponse = {
+	summary: string
+	explanation: string
+	confidence?: number
+	risks: string[]
+	actions: string[]
+	strategy: {
+		key: string
+		title: string
+		guidance?: string
+		description?: string
+		focusAreas?: string[]
+		leadGenHints?: string[]
+		ctas?: Array<{
+			id: string
+			label: string
+		}>
+	}
+}
+
+export const insightsApi = {
+	getInsights: async (
+		businessId: string,
+		timeframe: 'week' | 'month' | 'quarter' = 'week',
+		model: 'flash' | 'pro' = 'flash',
+	): Promise<InsightsResponse> => {
+		return api.post<InsightsResponse>(
+			'/authenticated/transactions3/api/kpis/insights',
+			{
+				businessId,
+				timeframe,
+				model,
+			},
+		)
+	},
+}
+
 
