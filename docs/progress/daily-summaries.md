@@ -3,7 +3,7 @@
 ## 2025-12-08
 
 ### Summary
-Added Point of Sale and Inventory Management screens with order management functionality, enhanced Home dashboard with comprehensive business health score visualization including KPI detail cards and motivational messaging, significantly improved Revenue Growth screen with detailed metrics, enhanced Transaction Detail screen with invoice marking capabilities, and added comprehensive API documentation for sales manual implementation and invoice payment workflows.
+Added Point of Sale and Inventory Management screens with order management functionality, enhanced Home dashboard with comprehensive business health score visualization including KPI detail cards and motivational messaging, significantly improved Revenue Growth screen with detailed metrics, enhanced Transaction Detail screen with invoice marking capabilities, and added comprehensive API documentation for sales manual implementation and invoice payment workflows. Fixed TypeScript errors in InsightsScreen and MotivationalCard components, and added new Insights and Control Compliance screens.
 
 ### Commits
 
@@ -94,12 +94,42 @@ Added Point of Sale and Inventory Management screens with order management funct
 
 ---
 
+#### 2. fix: Fix TypeScript errors in InsightsScreen and MotivationalCard
+**Commit:** `882770e`  
+**Files Changed:** 11 files, 1678 insertions(+), 101 deletions(-)
+
+**Changes:**
+- Fixed InsightsResponse type usage in MotivationalCard and InsightsScreen (removed non-existent 'data' property)
+- Added explicit types for map callback parameters in InsightsScreen (area, risk, action parameters)
+- Created new InsightsScreen for displaying business insights with summary, strategy, explanation, risks, and actions
+- Created new ControlComplianceScreen for control and compliance metrics
+- Enhanced CashFlowScreen, CurrentRatioScreen, and NetProfitScreen with detailed metrics and visualizations
+- Updated KPIDetailCard and MetricsCard components with improvements
+- Added insights API integration to transactions2 API client
+- Updated HomeNavigator with Insights route
+- All TypeScript type-check errors resolved
+
+**Files Modified:**
+- `components/MotivationalCard.tsx` - Fixed type errors, enhanced with insights integration (102 lines updated)
+- `screens/InsightsScreen.tsx` - New insights screen (new, 267 lines)
+- `screens/ControlComplianceScreen.tsx` - New control compliance screen (new, 130 lines)
+- `screens/CashFlowScreen.tsx` - Enhanced with detailed metrics (398 insertions)
+- `screens/CurrentRatioScreen.tsx` - Enhanced with detailed metrics (366 insertions)
+- `screens/NetProfitScreen.tsx` - Enhanced with detailed metrics (402 insertions)
+- `components/KPIDetailCard.tsx` - Component updates (14 lines updated)
+- `components/MetricsCard.tsx` - Component updates (20 lines updated)
+- `lib/api/transactions2.ts` - Added insights API (37 lines added)
+- `navigation/HomeNavigator.tsx` - Added Insights route (11 lines added)
+- `screens/HomeScreen.tsx` - Minor updates (32 lines updated)
+
+---
+
 ### Statistics
-- **Total Commits:** 1
-- **Total Files Changed:** 22 files
-- **Total Lines Added:** 3297 insertions
-- **Total Lines Removed:** 573 deletions
-- **Net Change:** +2724 lines
+- **Total Commits:** 2
+- **Total Files Changed:** 33 files
+- **Total Lines Added:** 4975 insertions
+- **Total Lines Removed:** 674 deletions
+- **Net Change:** +4301 lines
 
 ### Key Features Added
 1. Point of Sale screen with product grid, shopping cart, and checkout functionality
@@ -114,6 +144,10 @@ Added Point of Sale and Inventory Management screens with order management funct
 10. Comprehensive API documentation for sales manual entry and invoice workflows
 11. Order management components (OrderCard, OrderDetailsCard) for inventory functionality
 12. Pull-to-refresh functionality on Home screen for health score updates
+13. Insights screen displaying business insights with strategy, risks, and recommended actions
+14. Control Compliance screen for control and compliance metrics
+15. Enhanced Cash Flow, Current Ratio, and Net Profit screens with detailed metrics and visualizations
+16. Fixed all TypeScript type-check errors for improved code quality
 
 ### Notes
 - Point of Sale screen uses wireframe grayscale design consistent with app design system
@@ -125,6 +159,9 @@ Added Point of Sale and Inventory Management screens with order management funct
 - API documentation provides backend team with complete specifications for sales manual entry and invoice payment workflows
 - Inventory Management screen demonstrates integration with Tally Network for supplier orders
 - Timeframe selector in MetricsCard allows users to view health scores for different periods (week, month, quarter)
+- InsightsScreen displays comprehensive business insights including strategy recommendations, risk identification, and actionable steps
+- All TypeScript errors resolved - codebase now passes type-checking without errors
+- Enhanced KPI detail screens provide deeper insights into business metrics with detailed breakdowns and visualizations
 
 ---
 
