@@ -61,6 +61,12 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             active={activeRouteName === 'TallyNetwork'}
             onPress={() => props.navigation.navigate('TallyNetwork')}
           />
+          <Drawer.Item
+            label="Financial Services"
+            icon="bank"
+            active={activeRouteName === 'FinancialServices'}
+            onPress={() => props.navigation.navigate('FinancialServices')}
+          />
         </Drawer.Section>
       </View>
     </DrawerContentScrollView>

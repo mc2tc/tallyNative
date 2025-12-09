@@ -7,6 +7,8 @@ import TestScreen from '../screens/TestScreen'
 import FirestoreTestScreen from '../screens/FirestoreTestScreen'
 import InventoryManagementScreen from '../screens/InventoryManagementScreen'
 import PointOfSaleScreen from '../screens/PointOfSaleScreen'
+import FinancialServicesScreen from '../screens/FinancialServicesScreen'
+import InvoiceFinancingScreen from '../screens/InvoiceFinancingScreen'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
@@ -15,6 +17,8 @@ export type AppDrawerParamList = {
   FirestoreTest: undefined
   InventoryManagement: undefined
   PointOfSale: undefined
+  FinancialServices: undefined
+  InvoiceFinancing: undefined
 }
 
 const Drawer = createDrawerNavigator<AppDrawerParamList>()
@@ -41,6 +45,8 @@ export function AppNavigator() {
       <Drawer.Screen name="FirestoreTest" component={FirestoreTestScreen} />
       <Drawer.Screen name="InventoryManagement" component={InventoryManagementScreen} />
       <Drawer.Screen name="PointOfSale" component={PointOfSaleScreen} />
+      <Drawer.Screen name="FinancialServices" component={FinancialServicesScreen} />
+      <Drawer.Screen name="InvoiceFinancing" component={InvoiceFinancingScreen} />
     </Drawer.Navigator>
   )
 }

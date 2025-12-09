@@ -10,6 +10,7 @@ interface Message {
   isUser: boolean
   showButtons?: boolean
   learnMoreOnly?: boolean
+  timestamp?: Date
 }
 
 export function ChatbotCard() {
@@ -25,16 +26,18 @@ export function ChatbotCard() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: "Hi John. It looks like we're running low on flour and suet! We have two suppliers and Trethewy's Baking Supplies is the least expensive and they're in the Tally network. Cash is tight but their credit terms are good and cash flow is trending up. Would you like me to make an order?",
+      text: "Hi John. It looks like we're running low on flour and suet! We have two suppliers and Trethewy's Baking Supplies is the least expensive and they're in the Tally network which guarantees 30 days credit and a 5% discount. Would you like me to make an order?",
       isUser: false,
       showButtons: true,
+      timestamp: new Date(),
     },
     {
       id: '2',
-      text: "I noticed from the Production Management System that product output fell in the last batch - waste was up 3.2%. I suggest that you look into this in more detail particulalry as we had a new foreman on that shift! A 3.2% increase in waste on a batch of 1000 traditional pasties equates to £350 off the bottom line!",
+      text: "I have just notied that we have 3 payments outstading from Birds Café. I'll send an email now with your agreement. Also, worth reminding you of the benefits of invoice financing which Tally can organise on our behalf. Typically would cost 2.5% but we'd be able to collect immediately.",
       isUser: false,
       showButtons: true,
       learnMoreOnly: true,
+      timestamp: new Date(),
     },
   ])
   const [inputText, setInputText] = useState('')
@@ -139,6 +142,7 @@ export function ChatbotCard() {
       id: Date.now().toString(),
       text: inputText,
       isUser: true,
+      timestamp: new Date(),
     }
     setMessages((prev) => [...prev, userMessage])
     setInputText('')
@@ -149,6 +153,7 @@ export function ChatbotCard() {
         id: (Date.now() + 1).toString(),
         text: `You said: "${inputText}". This is a placeholder response.`,
         isUser: false,
+        timestamp: new Date(),
       }
       setMessages((prev) => [...prev, aiMessage])
     }, 500)
@@ -159,9 +164,13 @@ export function ChatbotCard() {
     styles.card,
     {
       marginTop: PADDING,
-      marginBottom: PADDING + tabBarHeight,
+      marginBottom: PADDING + tabBarHeight - 70,
       paddingBottom: PADDING + insets.bottom,
     },
+  ]
+
+  const messagesContainerStyle = [
+    styles.messagesContainer,
   ]
 
   return (
@@ -170,69 +179,93 @@ export function ChatbotCard() {
       
       <ScrollView
         ref={scrollViewRef}
-        style={styles.messagesContainer}
+        style={messagesContainerStyle}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={true}
       >
-        {messages.map((message) => (
-          <View key={message.id}>
-            <View
-              style={[styles.messageBubble, message.isUser ? styles.userMessage : styles.aiMessage]}
-            >
-              <Text style={[styles.messageText, message.isUser && styles.userMessageText]}>
-                {message.text}
-              </Text>
-              {message.showButtons && (
-                <View style={styles.buttonContainer}>
-                  {!message.learnMoreOnly && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        // Hide buttons on this message
-                        setMessages((prev) =>
-                          prev.map((msg) =>
-                            msg.id === message.id ? { ...msg, showButtons: false } : msg
+        {messages.map((message) => {
+          const formatTime = (date?: Date) => {
+            if (!date) return ''
+            const hours = date.getHours().toString().padStart(2, '0')
+            const minutes = date.getMinutes().toString().padStart(2, '0')
+            return `${hours}.${minutes}`
+          }
+
+          return (
+            <View key={message.id} style={styles.messageWrapper}>
+              <View style={styles.messageRow}>
+                {!message.isUser && (
+                  <MaterialIcons 
+                    name="face-retouching-natural" 
+                    size={16} 
+                    color="#666666" 
+                    style={styles.assistantIcon}
+                  />
+                )}
+                <View
+                  style={[styles.messageBubble, message.isUser ? styles.userMessage : styles.aiMessage]}
+                >
+                  <Text style={[styles.messageText, message.isUser && styles.userMessageText]}>
+                    {message.text}
+                  </Text>
+                  {message.showButtons && (
+                    <View style={styles.buttonContainer}>
+                      {!message.learnMoreOnly && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            // Hide buttons on this message
+                            setMessages((prev) =>
+                              prev.map((msg) =>
+                                msg.id === message.id ? { ...msg, showButtons: false } : msg
+                              )
+                            )
+                            const yesMessage: Message = {
+                              id: Date.now().toString(),
+                              text: 'Great! I\'ll proceed with the order from Trethewy\'s Baking Supplies.',
+                              isUser: false,
+                              timestamp: new Date(),
+                            }
+                            setMessages((prev) => [...prev, yesMessage])
+                          }}
+                          style={[styles.actionButton, styles.approveButton]}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.approveButtonText}>Yes please</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => {
+                          // Hide buttons on this message
+                          setMessages((prev) =>
+                            prev.map((msg) =>
+                              msg.id === message.id ? { ...msg, showButtons: false } : msg
+                            )
                           )
-                        )
-                        const yesMessage: Message = {
-                          id: Date.now().toString(),
-                          text: 'Great! I\'ll proceed with the order from Trethewy\'s Baking Supplies.',
-                          isUser: false,
-                        }
-                        setMessages((prev) => [...prev, yesMessage])
-                      }}
-                      style={[styles.actionButton, styles.approveButton]}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.approveButtonText}>Yes please</Text>
-                    </TouchableOpacity>
+                          const moreInfoMessage: Message = {
+                            id: Date.now().toString(),
+                            text: message.learnMoreOnly 
+                              ? 'Here\'s more detailed analysis of the waste increase and recommendations for improvement...'
+                              : 'Here\'s more information about the suppliers and pricing comparison...',
+                            isUser: false,
+                            timestamp: new Date(),
+                          }
+                          setMessages((prev) => [...prev, moreInfoMessage])
+                        }}
+                        style={[styles.actionButton, styles.denyButton]}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.denyButtonText}>Learn more</Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
-                  <TouchableOpacity
-                    onPress={() => {
-                      // Hide buttons on this message
-                      setMessages((prev) =>
-                        prev.map((msg) =>
-                          msg.id === message.id ? { ...msg, showButtons: false } : msg
-                        )
-                      )
-                      const moreInfoMessage: Message = {
-                        id: Date.now().toString(),
-                        text: message.learnMoreOnly 
-                          ? 'Here\'s more detailed analysis of the waste increase and recommendations for improvement...'
-                          : 'Here\'s more information about the suppliers and pricing comparison...',
-                        isUser: false,
-                      }
-                      setMessages((prev) => [...prev, moreInfoMessage])
-                    }}
-                    style={[styles.actionButton, styles.denyButton]}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.denyButtonText}>Learn more</Text>
-                  </TouchableOpacity>
                 </View>
-              )}
+                {!message.isUser && message.timestamp && (
+                  <Text style={styles.timestamp}>{formatTime(message.timestamp)}</Text>
+                )}
+              </View>
             </View>
-          </View>
-        ))}
+          )
+        })}
       </ScrollView>
 
       <View style={styles.inputContainer}>
@@ -330,17 +363,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   messagesContainer: {
-    marginBottom: 12,
     flex: 1,
   },
   messagesContent: {
     paddingBottom: 8,
     flexGrow: 1,
   },
+  messageWrapper: {
+    marginBottom: 16,
+  },
+  messageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   messageBubble: {
-    padding: 10,
+    padding: 12,
     borderRadius: 8,
-    marginBottom: 8,
     maxWidth: '80%',
   },
   userMessage: {
@@ -351,12 +389,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     alignSelf: 'flex-start',
   },
+  assistantIcon: {
+    marginRight: 8,
+  },
   messageText: {
     fontSize: 14,
     color: '#333333',
+    lineHeight: 20,
   },
   userMessageText: {
     color: '#333333',
+  },
+  timestamp: {
+    fontSize: 11,
+    color: '#999999',
+    marginLeft: 8,
   },
   inputContainer: {
     flexDirection: 'row',

@@ -1213,7 +1213,7 @@ export default function TransactionsScaffoldScreen() {
   // These are the complete lists that will be shown when user clicks "View all"
   const getFullTransactions = (columnTitle: string): Array<TransactionStub & { originalTransaction?: Transaction }> => {
     switch (columnTitle) {
-      case 'Needs verification (no reconciliation required)':
+      case 'Needs verification':
         if (activeSection === 'bank') {
           // Use transactions3 data - filter for bank transactions with accounting entries
           return transactions3BankPending
@@ -1258,7 +1258,7 @@ export default function TransactionsScaffoldScreen() {
           return []
         }
       
-      case 'Needs reconciliation':
+      case 'Needs matching':
         if (activeSection === 'bank') {
           // Use transactions3 data - filter for bank transactions without accounting entries
           return transactions3BankPending
@@ -1307,7 +1307,7 @@ export default function TransactionsScaffoldScreen() {
         // This case is for legacy receipts section - now handled by Purchases3
         return []
       
-      case 'Accounts Payable':
+      case 'Unpaid purchases':
         // Use transactions3 data - filter for verified purchase transactions with Accounts Payable payment method
         return transactions3SourceOfTruth
           .filter((tx) => {
@@ -1345,7 +1345,7 @@ export default function TransactionsScaffoldScreen() {
             originalTransaction: tx,
           }))
       
-      case 'Confirmed unreconcilable':
+      case "Couldn't be matched":
         if (activeSection === 'bank') {
           // Use transactions3 data - filter for verified bank transactions with unreconciled status
           return transactions3BankSourceOfTruth
@@ -1404,7 +1404,7 @@ export default function TransactionsScaffoldScreen() {
           return []
         }
       
-      case 'Verified and audit ready':
+      case 'All done':
         if (activeSection === 'bank') {
           // Use transactions3 data - filter for verified bank transactions that are reporting ready
           return transactions3BankSourceOfTruth
@@ -1477,7 +1477,7 @@ export default function TransactionsScaffoldScreen() {
           return []
         }
       
-      case 'Invoices submitted pending payment':
+      case 'Unpaid invoices':
         return allTransactions
           .filter((tx) => {
             if (!isSaleTransaction(tx)) return false
@@ -1511,7 +1511,7 @@ export default function TransactionsScaffoldScreen() {
             originalTransaction: tx,
           }))
       
-      case 'Invoices paid, needs match':
+      case 'Awaiting bank match':
         return allTransactions
           .filter((tx) => {
             if (!isSaleTransaction(tx)) return false
@@ -1552,7 +1552,7 @@ export default function TransactionsScaffoldScreen() {
             originalTransaction: tx,
           }))
       
-      case 'Invoices paid, reconciled and audit ready':
+      case 'All done':
         return allTransactions
           .filter((tx) => {
             if (!isSaleTransaction(tx)) return false
@@ -1607,7 +1607,7 @@ export default function TransactionsScaffoldScreen() {
           return []
         }
       
-      case 'Reconcile to bank':
+      case 'Awaiting bank match':
         if (activeSection === 'purchases3') {
           // Use transactions3 data - filter for verified purchase transactions needing bank reconciliation
           return transactions3SourceOfTruth
@@ -1638,7 +1638,7 @@ export default function TransactionsScaffoldScreen() {
           return []
         }
       
-      case 'Reconcile to Credit Card':
+      case 'Awaiting card match':
         if (activeSection === 'purchases3') {
           // Use transactions3 data - filter for verified purchase transactions needing card reconciliation
           return transactions3SourceOfTruth
@@ -1669,7 +1669,7 @@ export default function TransactionsScaffoldScreen() {
           return []
         }
       
-      case 'Verified, reconciled and audit ready':
+      case 'All done':
         if (activeSection === 'purchases3') {
           // Use transactions3 data - filter for verified and reconciled purchase transactions
           return transactions3SourceOfTruth
@@ -1710,22 +1710,22 @@ export default function TransactionsScaffoldScreen() {
   // Update bankColumns with real data
   const bankColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Needs verification (no reconciliation required)',
+      title: 'Needs verification',
       actions: ['View all', '+ Add rules'],
       transactions: bankNeedsVerificationTransactions,
     },
     {
-      title: 'Needs reconciliation',
+      title: 'Needs matching',
       actions: ['View all'],
       transactions: bankNeedsReconciliationTransactions,
     },
     {
-      title: 'Confirmed unreconcilable',
+      title: "Couldn't be matched",
       actions: ['View all'],
       transactions: confirmedUnreconcilableBank,
     },
     {
-      title: 'Verified and audit ready',
+      title: 'All done',
       actions: ['View all'],
       transactions: recentReportingReadyBank,
     },
@@ -1889,17 +1889,17 @@ export default function TransactionsScaffoldScreen() {
   // Update salesColumns with invoice cards
   const salesColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Invoices submitted pending payment',
+      title: 'Unpaid invoices',
       actions: ['View all'],
       transactions: invoicesPendingPayment,
     },
     {
-      title: 'Invoices paid, needs match',
+      title: 'Awaiting bank match',
       actions: ['View all'],
       transactions: invoicesPaidNeedsMatch,
     },
     {
-      title: 'Invoices paid, reconciled and audit ready',
+      title: 'All done',
       actions: ['View all'],
       transactions: invoicesPaidReconciled,
     },
@@ -2083,22 +2083,22 @@ export default function TransactionsScaffoldScreen() {
       transactions: purchases3NeedsVerification,
     },
     {
-      title: 'Accounts Payable',
+      title: 'Unpaid purchases',
       actions: ['View all'],
       transactions: purchases3AccountsPayable,
     },
     {
-      title: 'Reconcile to bank',
+      title: 'Awaiting bank match',
       actions: ['View all'],
       transactions: purchases3ReconcileToBank,
     },
     {
-      title: 'Reconcile to Credit Card',
+      title: 'Awaiting card match',
       actions: ['View all'],
       transactions: purchases3ReconcileToCreditCard,
     },
     {
-      title: 'Verified, reconciled and audit ready',
+      title: 'All done',
       actions: ['View all'],
       transactions: purchases3AuditReady,
     },
@@ -2107,22 +2107,22 @@ export default function TransactionsScaffoldScreen() {
   // Update cardsColumns with real data
   const cardsColumnsWithData: PipelineColumn[] = [
     {
-      title: 'Needs verification (no reconciliation required)',
+      title: 'Needs verification',
       actions: ['View all', '+ Add rules'],
       transactions: cardNeedsVerificationTransactions,
     },
     {
-      title: 'Needs reconciliation',
+      title: 'Needs matching',
       actions: ['View all'],
       transactions: cardNeedsReconciliationTransactions,
     },
     {
-      title: 'Confirmed unreconcilable',
+      title: "Couldn't be matched",
       actions: ['View all'],
       transactions: confirmedUnreconcilableCard,
     },
     {
-      title: 'Verified and audit ready',
+      title: 'All done',
       actions: ['View all'],
       transactions: recentReportingReadyCards,
     },
@@ -2516,7 +2516,7 @@ export default function TransactionsScaffoldScreen() {
               <View style={styles.salesInfoTextContainer}>
                 <Text style={styles.salesInfoTitle}>Understanding your Bank pipeline</Text>
                 <Text style={styles.salesInfoBody}>
-                  Bank transactions flow through four stages: (1) Needs verification when matched by rules, (2) Needs reconciliation for unmatched transactions, (3) Confirmed unreconcilable for verified transactions that cannot be matched, (4) Audit ready when verified and reconciled with purchase receipts.
+                  When bank transactions come in, Tally's rules automatically handle transactions that don't need matching—like bank fees and recurring payments. Check that these look right and confirm—they immediately show up in your financial reports. For other transactions, use the reconcile button to match them with your purchase receipts. If you click on a transaction and confirm it couldn't be matched (no receipt or evidence), it's marked as such and appears in your reports.
                 </Text>
               </View>
               <TouchableOpacity
@@ -2563,7 +2563,7 @@ export default function TransactionsScaffoldScreen() {
               <View style={styles.salesInfoTextContainer}>
                 <Text style={styles.salesInfoTitle}>Understanding your Credit Cards pipeline</Text>
                 <Text style={styles.salesInfoBody}>
-                  Credit card transactions flow through four stages: (1) Needs verification when matched by rules, (2) Needs reconciliation for unmatched transactions, (3) Confirmed unreconcilable for verified transactions that cannot be matched, (4) Audit ready when verified and reconciled with purchase receipts.
+                  When credit card transactions come in, Tally's rules automatically handle transactions that don't need matching—like fees and recurring payments. Check that these look right and confirm—they immediately show up in your financial reports. For other transactions, use the reconcile button to match them with your purchase receipts. If you click on a transaction and confirm it couldn't be matched (no receipt or evidence), it's marked as such and appears in your reports.
                 </Text>
               </View>
               <TouchableOpacity
@@ -2718,19 +2718,15 @@ function PipelineRow({
     const items = getFullTransactions 
       ? getFullTransactions(column.title) 
       : (column.transactions || [])
-    const effectiveTitle =
-      column.title === 'Needs verification (no reconciliation required)'
-        ? 'Needs verification'
-        : column.title
     navigation.navigate('ScaffoldViewAll', {
       section: column.title,
-      title: effectiveTitle,
+      title: column.title,
       items,
-      showReconcileButton: column.title === 'Needs reconciliation',
+      showReconcileButton: column.title === 'Needs matching',
     })
   }
 
-  const isNeedsReconciliation = (columnTitle: string) => columnTitle === 'Needs reconciliation'
+  const isNeedsReconciliation = (columnTitle: string) => columnTitle === 'Needs matching'
 
   return (
     <View style={styles.pipelineColumnStack}>
@@ -2744,7 +2740,7 @@ function PipelineRow({
                     <View style={styles.salesInfoTextContainer}>
                       <Text style={styles.salesInfoTitle}>Understanding your Sales pipeline</Text>
                       <Text style={styles.salesInfoBody}>
-                        Invoices move through three stages: (1) Submitted and unpaid, (2) Paid but needs matching to bank statements for bank transfers, (3) Audit ready when reconciled with bank records or confirmed as cash payments.
+                        When you create invoices, Tally organises them for you. Check that everything looks right, confirm and they will immediately show up in your financial reports. The other cards on this screen help you stay organised: track unpaid invoices, see payments waiting to be matched with your statements (you'll match them from your bank records), and view completed invoices.
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -2772,7 +2768,7 @@ function PipelineRow({
                     <View style={styles.salesInfoTextContainer}>
                       <Text style={styles.salesInfoTitle}>Understanding your Purchases pipeline</Text>
                       <Text style={styles.salesInfoBody}>
-                        Purchase receipts move through five stages: (1) Needs verification for new receipts, (2) Accounts Payable for unpaid invoices, (3) Reconcile to bank for bank transfer payments, (4) Reconcile to Credit Card for card payments, (5) Audit ready when verified and reconciled with bank or card statements.
+                      When you upload purchase receipts, Tally automatically reads the items and organises them. Check that everything looks right, confirm and they will immediately show up in your financial reports. The other cards on this screen help you stay organised: track and manage unpaid purchases, see payments waiting to be reconciled with bank and credit cards statements and view completed transactions.
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -2787,6 +2783,13 @@ function PipelineRow({
               )}
             </>
           )}
+          {(pipelineSection === 'purchases3' && column.title === 'All done') || (pipelineSection === 'sales' && column.title === 'All done') || (pipelineSection === 'bank' && column.title === 'All done') || (pipelineSection === 'cards' && column.title === 'All done') ? (
+            <View style={styles.reportingReadySeparator}>
+              <View style={styles.reportingReadyLine} />
+              <Text style={styles.reportingReadyLabel}>Audit Ready</Text>
+              <View style={styles.reportingReadyLine} />
+            </View>
+          ) : null}
           <View style={styles.pipelineCard}>
             <View style={styles.pipelineTitleRow}>
               <Text style={styles.pipelineTitle}>{column.title}</Text>
