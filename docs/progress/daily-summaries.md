@@ -1,5 +1,94 @@
 # Daily Development Summaries
 
+## 2025-12-09
+
+### Summary
+Added Financial Services screens (FinancialServicesScreen and InvoiceFinancingScreen) to provide users with access to various financing options, enhanced ChatbotCard component with timestamps, assistant icon, and updated messaging, and improved TransactionsScaffoldScreen with clearer card titles and user-friendly pipeline descriptions for better UX.
+
+### Commits
+
+#### 1. feat: Add Financial Services screens and improve chatbot UX
+**Commit:** `31e8343`  
+**Files Changed:** 6 files, 375 insertions(+), 99 deletions(-)
+
+**Changes:**
+- Created FinancialServicesScreen displaying list of financial service options:
+  - Services include: Borrowing from Friends & Family, Business Credit Cards & Overdrafts, Invoice Financing, Trade Credit, Merchant Cash Advance, Asset Finance, Lease Financing, Hire Purchase, Medium Term Business Loans
+  - Each service card shows title and subtitle
+  - Navigation to Invoice Financing screen when Invoice Financing card is pressed
+  - Wireframe grayscale design consistent with app design system
+- Created InvoiceFinancingScreen with detailed financing offer display:
+  - Shows offer details from CapitalFlow Solutions supplier
+  - Displays advance rate (up to 90%), fee (2.5% per invoice), payment terms, minimum invoice, and credit check information
+  - Includes description of invoice financing service
+  - "Learn more" button for additional information
+  - Wireframe grayscale design
+- Enhanced ChatbotCard component with improved UX:
+  - Added timestamp support to messages with time display (HH.MM format)
+  - Added assistant icon (face-retouching-natural) to AI messages
+  - Updated initial messages with more relevant business context:
+    - First message about low inventory with supplier recommendation and Tally Network benefits
+    - Second message about outstanding payments and invoice financing benefits
+  - Improved message layout with message wrapper and row structure
+  - Adjusted bottom margin to account for tab bar height
+- Updated TransactionsScaffoldScreen with improved card titles and descriptions:
+  - Changed "Needs verification (no reconciliation required)" to "Needs verification"
+  - Changed "Needs reconciliation" to "Needs matching"
+  - Changed "Accounts Payable" to "Unpaid purchases"
+  - Changed "Confirmed unreconcilable" to "Couldn't be matched"
+  - Changed "Verified and audit ready" / "Verified, reconciled and audit ready" to "All done"
+  - Changed "Invoices submitted pending payment" to "Unpaid invoices"
+  - Changed "Invoices paid, needs match" to "Awaiting bank match"
+  - Changed "Reconcile to bank" to "Awaiting bank match"
+  - Changed "Reconcile to Credit Card" to "Awaiting card match"
+  - Updated pipeline descriptions with more user-friendly explanations:
+    - Bank pipeline: Explains automatic rule matching and reconciliation process
+    - Credit Cards pipeline: Similar explanation for credit card transactions
+    - Sales pipeline: Explains invoice organization and tracking workflow
+    - Purchases pipeline: Explains receipt organization and tracking workflow
+  - Added "Audit Ready" separator line for completed transactions across all pipelines
+  - Updated reconciliation button check to use new "Needs matching" title
+- Added Financial Services navigation:
+  - Added FinancialServices and InvoiceFinancing routes to AppNavigator
+  - Added Financial Services drawer menu item with bank icon
+  - Integrated screens into drawer navigation structure
+
+**Files Modified:**
+- `screens/FinancialServicesScreen.tsx` - New Financial Services screen (new, 85 lines)
+- `screens/InvoiceFinancingScreen.tsx` - New Invoice Financing screen (new, 131 lines)
+- `components/ChatbotCard.tsx` - Enhanced with timestamps, icon, and updated messages (99 lines updated)
+- `screens/TransactionsScaffoldScreen.tsx` - Improved card titles and descriptions (276 lines updated)
+- `navigation/AppNavigator.tsx` - Added Financial Services routes (2 lines added)
+- `navigation/DrawerContent.tsx` - Added Financial Services menu item (6 lines added)
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 6 files
+- **Total Lines Added:** 375 insertions
+- **Total Lines Removed:** 99 deletions
+- **Net Change:** +276 lines
+
+### Key Features Added
+1. Financial Services screen with comprehensive list of financing options
+2. Invoice Financing screen with detailed offer display and supplier information
+3. Enhanced ChatbotCard with timestamps and assistant icon for better UX
+4. Improved pipeline card titles for better clarity and user understanding
+5. User-friendly pipeline descriptions explaining workflow processes
+6. "Audit Ready" visual separator for completed transactions
+7. Financial Services navigation integration in drawer menu
+
+### Notes
+- Financial Services screens follow wireframe design guidelines (black, white, grayscale only)
+- ChatbotCard messages now include timestamps and visual distinction between user and AI messages
+- Pipeline card titles simplified for better user comprehension (e.g., "Needs matching" instead of "Needs reconciliation")
+- Pipeline descriptions rewritten to be more conversational and user-friendly, explaining what Tally does automatically vs. what requires user action
+- "Audit Ready" separator provides visual distinction for completed transactions across all pipeline sections
+- Financial Services drawer menu item uses bank icon for consistency with financial services theme
+
+---
+
 ## 2025-12-08
 
 ### Summary
