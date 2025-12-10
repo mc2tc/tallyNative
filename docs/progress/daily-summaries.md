@@ -1,5 +1,75 @@
 # Daily Development Summaries
 
+## 2025-12-10
+
+### Summary
+Integrated POS sales into the Sales section of TransactionsScaffoldScreen, splitting the "All done" card into separate "POS Sales" and "Sales Invoices" cards below the Audit Ready separator. Added source parameter support to transactions3 API for filtering POS sales, updated Sales section data fetching to include POS sales from transactions3, and fixed TypeScript errors. Added comprehensive backend documentation for POS sales querying requirements and implementation.
+
+### Commits
+
+#### 1. feat: Add POS sales integration, invoice PDF generation, and Sales section enhancements
+**Commit:** `ff608be`  
+**Files Changed:** 19 files, 3750 insertions(+), 99 deletions(-)
+
+**Changes:**
+- Integrated POS sales into Sales section of TransactionsScaffoldScreen:
+  - Added `isPOSSaleTransaction` helper function to identify POS sales by `metadata.capture.source === 'pos_one_off_item'`
+  - Added `transactions3POSSales` state to store POS sales fetched from transactions3
+  - Updated Sales section to fetch POS sales from transactions3 `source_of_truth` collection with `kind=sale` and `source=pos_one_off_item` filters
+  - Split "All done" card into two separate cards:
+    - "POS Sales": Shows audit-ready POS transactions (automatically verified)
+    - "Sales Invoices": Shows reconciled regular sales invoices (excluding POS sales)
+  - Updated "Audit Ready" separator to appear once before "POS Sales" card
+  - Updated `getFullTransactions` function to handle "POS Sales" and "Sales Invoices" card titles
+  - Updated both `useFocusEffect` and `onRefresh` handlers to fetch POS sales when Sales section is active
+- Enhanced transactions3 API with source parameter support:
+  - Added `source?: string` parameter to `getTransactions3` options
+  - Passes `source` query parameter to backend API for filtering by `metadata.capture.source`
+  - Enables backend filtering of POS sales (`source=pos_one_off_item`) for better performance
+- Fixed TypeScript errors:
+  - Fixed duplicate `totalLabel` style property in PointOfSaleScreen by renaming first occurrence to `totalLabelSmall`
+  - Fixed navigation type issue in ScaffoldViewAllScreen by simplifying navigation type to `StackNavigationProp<TransactionsStackParamList>`
+- Added comprehensive backend documentation:
+  - Created `POS_SALES_QUERYING_BACKEND_REQUIREMENTS.md` with API endpoint specifications and filtering requirements
+  - Created `POS_SALES_QUERYING_IMPLEMENTATION.md` documenting backend implementation with source parameter support
+  - Updated requirements document to reflect implemented status
+
+**Files Modified:**
+- `lib/api/transactions2.ts` - Added source parameter support to getTransactions3 (1 line added)
+- `screens/TransactionsScaffoldScreen.tsx` - Major updates for POS sales integration (150+ lines updated)
+- `screens/PointOfSaleScreen.tsx` - Fixed duplicate style property (3 lines updated)
+- `screens/ScaffoldViewAllScreen.tsx` - Fixed navigation type issue (2 lines updated)
+- `docs/api/POS_SALES_QUERYING_BACKEND_REQUIREMENTS.md` - New backend requirements documentation (new, 221 lines)
+- `docs/api/POS_SALES_QUERYING_IMPLEMENTATION.md` - New implementation documentation (new, 303 lines)
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 19 files
+- **Total Lines Added:** 3750 insertions
+- **Total Lines Removed:** 99 deletions
+- **Net Change:** +3651 lines
+
+### Key Features Added
+1. POS sales integration into Sales section with separate "POS Sales" card
+2. Split "All done" card into "POS Sales" and "Sales Invoices" for better organization
+3. Source parameter support in transactions3 API for backend filtering
+4. POS sales fetching from transactions3 source_of_truth collection
+5. Updated Sales section refresh logic to include POS sales
+6. Fixed TypeScript compilation errors
+7. Comprehensive backend documentation for POS sales querying
+
+### Notes
+- POS sales are automatically verified and audit-ready, appearing in `source_of_truth` collection
+- Backend now supports `source` query parameter for filtering transactions by `metadata.capture.source`
+- Frontend uses `source=pos_one_off_item` parameter to fetch only POS sales, reducing payload size
+- "POS Sales" and "Sales Invoices" cards appear below "Audit Ready" separator in Sales section
+- All TypeScript errors resolved - codebase passes type-checking without errors
+- Backend documentation provides complete API specifications for POS sales querying implementation
+
+---
+
 ## 2025-12-09
 
 ### Summary
