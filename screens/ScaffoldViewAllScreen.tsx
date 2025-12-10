@@ -2,9 +2,13 @@
 import React, { useCallback, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons } from '@expo/vector-icons'
 import { api } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
+import type { Transaction } from '../lib/api/transactions2'
+import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
+import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import DragDropReconciliationScreen from './DragDropReconciliationScreen'
 import { AppBarLayout } from '../components/AppBarLayout'
 
@@ -19,6 +23,7 @@ type TransactionStub = {
   amount: string
   subtitle?: string
   verificationItems?: Array<{ label: string; confirmed?: boolean }>
+  originalTransaction?: Transaction
 }
 
 type ScaffoldViewAllRouteParams = {
@@ -35,7 +40,7 @@ type ScaffoldViewAllRouteProp = RouteProp<
 >
 
 export default function ScaffoldViewAllScreen() {
-  const navigation = useNavigation()
+  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const route = useRoute<ScaffoldViewAllRouteProp>()
   const { businessUser, memberships } = useAuth()
   const { title, items, showReconcileButton, section, pipelineSection } = route.params || { 
@@ -84,6 +89,13 @@ export default function ScaffoldViewAllScreen() {
     }
   }, [businessId])
 
+  // Handler for clicking on a transaction item
+  const handleItemPress = useCallback((item: TransactionStub) => {
+    if (item.originalTransaction) {
+      navigation.navigate('TransactionDetail', { transaction: item.originalTransaction })
+    }
+  }, [navigation])
+
   return (
     <AppBarLayout title={title} onBackPress={handleGoBack}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -94,7 +106,13 @@ export default function ScaffoldViewAllScreen() {
         ) : (
           <View style={styles.listContainer}>
             {items.map((item: TransactionStub) => (
-              <View key={item.id} style={styles.listItem}>
+              <TouchableOpacity
+                key={item.id}
+                style={styles.listItem}
+                onPress={() => handleItemPress(item)}
+                activeOpacity={0.7}
+                disabled={!item.originalTransaction}
+              >
                 <View style={styles.itemTextGroup}>
                   <Text style={styles.itemTitle}>{item.title}</Text>
                   {item.verificationItems ? (
@@ -117,7 +135,7 @@ export default function ScaffoldViewAllScreen() {
                   ) : null}
                 </View>
                 <Text style={styles.itemAmount}>{item.amount}</Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}

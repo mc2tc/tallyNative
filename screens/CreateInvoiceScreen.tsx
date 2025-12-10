@@ -8,10 +8,12 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Linking,
 } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
+import * as FileSystem from 'expo-file-system/legacy'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import { businessContextApi } from '../lib/api/businessContext'
@@ -285,17 +287,89 @@ export default function CreateInvoiceScreen() {
         // Don't fail the whole operation if verification fails - the transaction was still created
       }
 
-      // Show success message
-      Alert.alert(
-        'Invoice Created',
-        `Transaction recorded successfully!\n\nTransaction ID: ${transactionResponse.transactionId}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      )
+      // Generate PDF invoice
+      let pdfUrl: string | null = null
+      try {
+        const pdfResponse = await transactions2Api.generateInvoicePDF(
+          transactionResponse.transactionId,
+          businessId
+        )
+        
+        if (pdfResponse.success && pdfResponse.pdfUrl) {
+          pdfUrl = pdfResponse.pdfUrl
+          
+          // Download and save PDF to device
+          try {
+            const fileName = pdfResponse.fileName || `Invoice_${transactionResponse.transactionId}.pdf`
+            // Construct full file path using cacheDirectory
+            const fileUri = `${FileSystem.cacheDirectory}${fileName}`
+            // Download PDF to cache directory
+            await FileSystem.downloadAsync(pdfResponse.pdfUrl, fileUri)
+            
+            // Show success message with option to view PDF
+            // For viewing, use the backend URL directly (works on both platforms)
+            Alert.alert(
+              'Invoice Created',
+              'Invoice PDF generated successfully!',
+              [
+                {
+                  text: 'View PDF',
+                  onPress: async () => {
+                    const canOpen = await Linking.canOpenURL(pdfResponse.pdfUrl)
+                    if (canOpen) {
+                      await Linking.openURL(pdfResponse.pdfUrl)
+                    } else {
+                      Alert.alert('Info', 'Cannot open PDF. You can view it from the transaction detail screen.')
+                    }
+                  },
+                },
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            )
+          } catch (downloadError) {
+            console.error('Failed to download PDF:', downloadError)
+            // PDF was generated but download failed - still show success
+            Alert.alert(
+              'Invoice Created',
+              'Invoice created successfully. PDF generation completed, but download failed. You can download it later from the transaction detail screen.',
+              [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            )
+          }
+        } else {
+          // PDF generation failed but transaction was created
+          Alert.alert(
+            'Invoice Created',
+            'Transaction recorded successfully, but PDF generation failed. You can generate it later from the transaction detail screen.',
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.goBack(),
+              },
+            ]
+          )
+        }
+      } catch (pdfError) {
+        console.error('PDF generation failed:', pdfError)
+        // Transaction was created successfully, but PDF generation failed
+        Alert.alert(
+          'Invoice Created',
+          'Transaction recorded successfully, but PDF generation failed. You can generate it later from the transaction detail screen.',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        )
+      }
     } catch (error) {
       console.error('Failed to create invoice:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to create invoice. Please try again.'

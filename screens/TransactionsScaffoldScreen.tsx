@@ -150,6 +150,16 @@ function isCreditCardTransaction(tx: Transaction): boolean {
   return metadata.capture?.source === 'credit_card_statement_upload'
 }
 
+// Helper function to check if transaction is a POS sale
+function isPOSSaleTransaction(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    capture?: { source?: string }
+    classification?: { kind?: string }
+  }
+  // POS sales have source = 'pos_one_off_item' and kind = 'sale'
+  return metadata.capture?.source === 'pos_one_off_item' && metadata.classification?.kind === 'sale'
+}
+
 // Helper function to check if transaction is a sale transaction (invoice)
 function isSaleTransaction(tx: Transaction): boolean {
   const metadata = tx.metadata as {
@@ -336,7 +346,7 @@ function hasAccountsPayablePayment(tx: Transaction): boolean {
 }
 
 
-type SectionKey = 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | 'payroll' | 'financialServices'
+type SectionKey = 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' | 'payroll'
 
 // Base section nav - will be filtered based on available accounts/cards
 const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
@@ -346,7 +356,6 @@ const baseSectionNav: Array<{ key: SectionKey; label: string }> = [
   { key: 'internal', label: 'Internal' },
   { key: 'bank', label: 'Bank' },
   { key: 'cards', label: 'Credit Cards' },
-  { key: 'financialServices', label: 'Financial Services' },
   { key: 'reporting', label: 'Reporting Ready' },
 ]
 
@@ -419,6 +428,7 @@ export default function TransactionsScaffoldScreen() {
   const [transactions3CardPending, setTransactions3CardPending] = useState<Transaction[]>([])
   const [transactions3CardSourceOfTruth, setTransactions3CardSourceOfTruth] = useState<Transaction[]>([])
   const [reportingReadyTransactions3, setReportingReadyTransactions3] = useState<Transaction[]>([])
+  const [transactions3POSSales, setTransactions3POSSales] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingAccountsAndCards, setLoadingAccountsAndCards] = useState(true)
   const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
@@ -508,6 +518,27 @@ export default function TransactionsScaffoldScreen() {
               })
               setTransactions3CardPending(pendingResponse.transactions || [])
               setTransactions3CardSourceOfTruth(verifiedResponse.transactions || [])
+            } else if (activeSection === 'sales') {
+              // For Sales section, refresh transactions2 data and POS sales from transactions3
+              const [response, posSalesResponse] = await Promise.all([
+                transactions2Api.getTransactions(businessId, {
+                  page: 1,
+                  limit: 200,
+                }),
+                // Fetch POS sales from transactions3 - use source parameter for backend filtering
+                transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+                  page: 1,
+                  limit: 200,
+                  kind: 'sale',
+                  source: 'pos_one_off_item', // Backend filters for POS sales
+                }),
+              ])
+              setAllTransactions(response.transactions)
+              setTransactions3POSSales(posSalesResponse.transactions || [])
+              console.log('TransactionsScaffoldScreen: Refreshed sales transactions on focus', {
+                transactions2: response.transactions.length,
+                posSales: (posSalesResponse.transactions || []).length,
+              })
             } else if (activeSection === 'reporting') {
               // For reporting section, refresh reporting-ready transactions from transactions3
               const reportingReadyRes = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
@@ -1552,7 +1583,65 @@ export default function TransactionsScaffoldScreen() {
             originalTransaction: tx,
           }))
       
+      case 'POS Sales':
+        return transactions3POSSales
+          .filter((tx) => {
+            // POS sales are automatically verified and audit ready
+            const metadata = tx.metadata as {
+              verification?: { status?: string }
+            }
+            const verificationStatus = metadata.verification?.status
+            const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+            return isVerified
+          })
+          .sort((a, b) => {
+            const aDate = a.summary.transactionDate || 0
+            const bDate = b.summary.transactionDate || 0
+            return bDate - aDate
+          })
+          .map((tx) => ({
+            id: tx.id,
+            title: tx.summary.thirdPartyName,
+            amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+            isReportingReady: true,
+            originalTransaction: tx,
+          }))
+      
+      case 'Sales Invoices':
+        return allTransactions
+          .filter((tx) => {
+            if (!isSaleTransaction(tx)) return false
+            // Exclude POS sales
+            if (isPOSSaleTransaction(tx)) return false
+            const metadata = tx.metadata as {
+              reconciliation?: { status?: string }
+            }
+            const reconciliationStatus = metadata.reconciliation?.status
+            const isReconciled =
+              reconciliationStatus === 'matched' ||
+              reconciliationStatus === 'reconciled' ||
+              reconciliationStatus === 'exception'
+            return isReconciled
+          })
+          .sort((a, b) => {
+            const aDate = a.summary.transactionDate || 0
+            const bDate = b.summary.transactionDate || 0
+            return bDate - aDate
+          })
+          .map((tx) => ({
+            id: tx.id,
+            title: tx.summary.thirdPartyName,
+            amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+            isReportingReady: true,
+            originalTransaction: tx,
+          }))
+      
       case 'All done':
+        // Legacy case for Sales section - now split into 'POS Sales' and 'Sales Invoices'
+        // This case is still used by other sections (bank, cards, purchases3)
+        if (activeSection === 'sales') {
+          return []
+        }
         return allTransactions
           .filter((tx) => {
             if (!isSaleTransaction(tx)) return false
@@ -1852,11 +1941,44 @@ export default function TransactionsScaffoldScreen() {
         }
       })
 
-  // 4. Invoices paid, reconciled and audit ready
-  const invoicesPaidReconciled: Array<TransactionStub & { originalTransaction: Transaction }> =
+  // 4a. POS Sales - audit ready POS transactions
+  const posSalesAuditReady: Array<TransactionStub & { originalTransaction: Transaction }> =
+    transactions3POSSales
+      .filter((tx) => {
+        // POS sales are automatically verified and audit ready
+        // They have reconciliation.status = 'not_required' (cash) or 'pending_bank_match' (card)
+        // But for audit ready, we show all POS sales that are verified
+        const metadata = tx.metadata as {
+          verification?: { status?: string }
+        }
+        const verificationStatus = metadata.verification?.status
+        const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+        return isVerified
+      })
+      .sort((a, b) => {
+        const aDate = a.summary.transactionDate || 0
+        const bDate = b.summary.transactionDate || 0
+        return bDate - aDate
+      })
+      .slice(0, 3)
+      .map((tx) => {
+        const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
+        return {
+          id: tx.id,
+          title: tx.summary.thirdPartyName,
+          amount,
+          isReportingReady: true,
+          originalTransaction: tx,
+        }
+      })
+
+  // 4b. Sales Invoices - reconciled invoices (excluding POS sales)
+  const salesInvoicesAuditReady: Array<TransactionStub & { originalTransaction: Transaction }> =
     allTransactions
       .filter((tx) => {
         if (!isSaleTransaction(tx)) return false
+        // Exclude POS sales
+        if (isPOSSaleTransaction(tx)) return false
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
@@ -1899,9 +2021,14 @@ export default function TransactionsScaffoldScreen() {
       transactions: invoicesPaidNeedsMatch,
     },
     {
-      title: 'All done',
+      title: 'POS Sales',
       actions: ['View all'],
-      transactions: invoicesPaidReconciled,
+      transactions: posSalesAuditReady,
+    },
+    {
+      title: 'Sales Invoices',
+      actions: ['View all'],
+      transactions: salesInvoicesAuditReady,
     },
   ]
 
@@ -2394,6 +2521,30 @@ export default function TransactionsScaffoldScreen() {
         setTransactions3CardPending([...cardNeedsVerification, ...cardNeedsReconciliation])
         setTransactions3CardSourceOfTruth(cardVerified)
         setReportingReadyTransactions3(reportingReadyRes.transactions || [])
+      } else if (activeSection === 'sales') {
+        // For Sales section, refresh transactions2 data and POS sales from transactions3
+        const [response, posSalesResponse, reportingReadyRes] = await Promise.all([
+          transactions2Api.getTransactions(businessId, {
+            page: 1,
+            limit: 200,
+          }),
+          // Fetch POS sales from transactions3 - use source parameter for backend filtering
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            kind: 'sale',
+            source: 'pos_one_off_item', // Backend filters for POS sales
+          }),
+          // Always refresh reporting-ready transactions (used by reporting section)
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            // No kind filter - get all reporting-ready transactions from all sources
+          }),
+        ])
+        setAllTransactions(response.transactions)
+        setTransactions3POSSales(posSalesResponse.transactions || [])
+        setReportingReadyTransactions3(reportingReadyRes.transactions || [])
       } else if (activeSection === 'reporting') {
         // For reporting section, only refresh reporting-ready transactions
         const reportingReadyRes = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
@@ -2640,8 +2791,6 @@ function renderSection(
       return null // TODO: Add Internal Transactions screen
     case 'payroll':
       return null // TODO: Add Payroll screen
-    case 'financialServices':
-      return null // TODO: Add Financial Services screen
     case 'reporting':
       return (
         <View style={styles.reportingCard}>
@@ -2783,7 +2932,10 @@ function PipelineRow({
               )}
             </>
           )}
-          {(pipelineSection === 'purchases3' && column.title === 'All done') || (pipelineSection === 'sales' && column.title === 'All done') || (pipelineSection === 'bank' && column.title === 'All done') || (pipelineSection === 'cards' && column.title === 'All done') ? (
+          {(pipelineSection === 'purchases3' && column.title === 'All done') || 
+           (pipelineSection === 'sales' && column.title === 'POS Sales') || 
+           (pipelineSection === 'bank' && column.title === 'All done') || 
+           (pipelineSection === 'cards' && column.title === 'All done') ? (
             <View style={styles.reportingReadySeparator}>
               <View style={styles.reportingReadyLine} />
               <Text style={styles.reportingReadyLabel}>Audit Ready</Text>

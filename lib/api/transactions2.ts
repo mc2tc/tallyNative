@@ -258,6 +258,37 @@ export const transactions2Api = {
 		)
 	},
 
+	// Transactions3 sales invoice OCR endpoint - processes invoices from images or PDFs
+	// Automatically verified and saved to source_of_truth collection
+	// See TRANSACTIONS3_SALES_OCR_RN_INTEGRATION.md for details
+	createSalesInvoiceOcr: async (
+		businessId: string,
+		fileUrl?: string,
+		pdfUrl?: string,
+	): Promise<UnifiedTransactionResponse> => {
+		return api.post<UnifiedTransactionResponse>(
+			'/authenticated/transactions3/api/sales/ocr',
+			{
+				businessId,
+				...(fileUrl && { fileUrl }),
+				...(pdfUrl && { pdfUrl }),
+			},
+		)
+	},
+
+	// Transactions3 invoice PDF generation endpoint - generates PDF and uploads to cloud storage
+	// Returns PDF URL for download
+	// See INVOICE_PDF_GENERATION_BACKEND_REQUIREMENTS.md for backend implementation details
+	generateInvoicePDF: async (
+		transactionId: string,
+		businessId: string,
+	): Promise<{ success: boolean; pdfUrl: string; fileName: string }> => {
+		return api.post<{ success: boolean; pdfUrl: string; fileName: string }>(
+			`/authenticated/transactions3/api/sales/${transactionId}/generate-pdf`,
+			{ businessId },
+		)
+	},
+
 	// Transactions3 manual purchase entry endpoint - verified by default, saves to source of truth
 	createPurchaseManual: async (
 		businessId: string,
@@ -443,7 +474,7 @@ export const transactions2Api = {
 	getTransactions3: async (
 		businessId: string,
 		collection: 'pending' | 'source_of_truth' | 'archived',
-		options?: { page?: number; limit?: number; status?: string; kind?: string },
+		options?: { page?: number; limit?: number; status?: string; kind?: string; source?: string },
 	): Promise<TransactionsListResponse> => {
 		const params = new URLSearchParams({
 			businessId,
@@ -451,6 +482,7 @@ export const transactions2Api = {
 			...(options?.page && { page: options.page.toString() }),
 			...(options?.limit && { limit: options.limit.toString() }),
 			...(options?.status && { status: options.status }),
+			...(options?.source && { source: options.source }),
 			...(options?.kind && { kind: options.kind }),
 		})
 		return api.get<TransactionsListResponse>(
@@ -600,6 +632,50 @@ export const insightsApi = {
 				businessId,
 				timeframe,
 				model,
+			},
+		)
+	},
+}
+
+export type POSSaleTransactionRequest = {
+	businessId: string
+	items: Array<{
+		itemId: string
+		name: string
+		price: number
+		quantity: number
+		description?: string
+	}>
+	payment: {
+		type: 'cash' | 'card'
+		subtotal: number
+		vat: number
+		total: number
+	}
+	metadata?: {
+		source?: string
+		createdAt?: number
+	}
+}
+
+export type POSSaleTransactionResponse = {
+	success: boolean
+	transactionId: string
+	message?: string
+}
+
+export const posSaleTransactionApi = {
+	createPOSSaleTransaction: async (
+		request: POSSaleTransactionRequest,
+	): Promise<POSSaleTransactionResponse> => {
+		return api.post<POSSaleTransactionResponse>(
+			'/authenticated/transactions3/api/sales/pos',
+			{
+				...request,
+				metadata: {
+					source: 'pos_one_off_item',
+					...request.metadata,
+				},
 			},
 		)
 	},

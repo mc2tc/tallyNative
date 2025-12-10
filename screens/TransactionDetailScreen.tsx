@@ -1,9 +1,10 @@
 // Transaction detail screen - displays full transaction summary information
 import React, { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Animated } from 'react-native'
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Animated, Linking, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons'
+import * as FileSystem from 'expo-file-system/legacy'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import type { Transaction } from '../lib/api/transactions2'
@@ -86,6 +87,9 @@ export default function TransactionDetailScreen() {
   const [showSalesPaymentPicker, setShowSalesPaymentPicker] = useState(false)
   const [selectedSalesPaymentMethod, setSelectedSalesPaymentMethod] = useState<string | null>(null)
   const [updatingSalesPayment, setUpdatingSalesPayment] = useState(false)
+  // For invoice PDF: generation and download
+  const [generatingPDF, setGeneratingPDF] = useState(false)
+  const [invoicePdfUrl, setInvoicePdfUrl] = useState<string | null>(null)
   const salesPaymentSlideAnim = React.useRef(new Animated.Value(0)).current
   const paymentMethodSlideAnim = React.useRef(new Animated.Value(0)).current
   const slideAnim = React.useRef(new Animated.Value(0)).current
@@ -705,6 +709,88 @@ export default function TransactionDetailScreen() {
     })
   }, [salesPaymentSlideAnim])
 
+  // Handler for generating invoice PDF
+  const handleGenerateInvoicePDF = useCallback(async () => {
+    if (!businessId || !transaction?.id) {
+      Alert.alert('Error', 'Cannot generate PDF: missing transaction information')
+      return
+    }
+
+    setGeneratingPDF(true)
+    try {
+      const pdfResponse = await transactions2Api.generateInvoicePDF(transaction.id, businessId)
+      
+      if (pdfResponse.success && pdfResponse.pdfUrl) {
+        setInvoicePdfUrl(pdfResponse.pdfUrl)
+        Alert.alert('Success', 'Invoice PDF generated successfully!', [
+          {
+            text: 'View PDF',
+            onPress: () => {
+              Linking.openURL(pdfResponse.pdfUrl).catch((err) => {
+                console.error('Failed to open PDF URL:', err)
+                Alert.alert('Error', 'Failed to open PDF. Please try downloading it instead.')
+              })
+            },
+          },
+          { text: 'OK' },
+        ])
+      } else {
+        throw new Error('PDF generation failed')
+      }
+    } catch (error) {
+      console.error('Failed to generate invoice PDF:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate PDF. Please try again.'
+      Alert.alert('Error', errorMessage)
+    } finally {
+      setGeneratingPDF(false)
+    }
+  }, [businessId, transaction?.id])
+
+  // Handler for downloading invoice PDF
+  const handleDownloadInvoicePDF = useCallback(async () => {
+    if (!invoicePdfUrl) {
+      // If PDF URL not available, generate it first
+      await handleGenerateInvoicePDF()
+      return
+    }
+
+    try {
+      // Open PDF URL directly from backend - this allows user to view and save
+      // Works on both iOS and Android (browser/PDF viewer will handle download)
+      const canOpen = await Linking.canOpenURL(invoicePdfUrl)
+      if (canOpen) {
+        await Linking.openURL(invoicePdfUrl)
+      } else {
+        Alert.alert('Error', 'Cannot open PDF. Please try again.')
+      }
+    } catch (error) {
+      console.error('Failed to open PDF:', error)
+      Alert.alert('Error', 'Failed to open PDF. Please try again.')
+    }
+  }, [invoicePdfUrl, handleGenerateInvoicePDF])
+
+  // Handler for viewing invoice PDF (opens in browser/app)
+  const handleViewInvoicePDF = useCallback(async () => {
+    if (!invoicePdfUrl) {
+      // If PDF URL not available, generate it first
+      await handleGenerateInvoicePDF()
+      return
+    }
+
+    try {
+      // Open PDF URL directly from backend (works on both iOS and Android)
+      const canOpen = await Linking.canOpenURL(invoicePdfUrl)
+      if (canOpen) {
+        await Linking.openURL(invoicePdfUrl)
+      } else {
+        Alert.alert('Error', 'Cannot open PDF. Please try downloading it instead.')
+      }
+    } catch (error) {
+      console.error('Failed to open PDF URL:', error)
+      Alert.alert('Error', 'Failed to open PDF. Please try downloading it instead.')
+    }
+  }, [invoicePdfUrl, handleGenerateInvoicePDF])
+
   // Handler for marking invoice as paid
   // Calls transactions3 mark-paid endpoint which handles both AP and AR invoices
   const handleMarkAsPaid = useCallback(async () => {
@@ -1150,6 +1236,37 @@ export default function TransactionDetailScreen() {
                   </Text>
                 </View>
               )}
+            </View>
+
+            {/* Invoice PDF Actions */}
+            <View style={styles.invoiceActionsSection}>
+              <Text style={styles.invoiceActionsTitle}>Invoice PDF</Text>
+              <View style={styles.invoiceActionsRow}>
+                <TouchableOpacity
+                  style={[styles.invoiceActionButton, generatingPDF && styles.invoiceActionButtonDisabled]}
+                  onPress={handleViewInvoicePDF}
+                  disabled={generatingPDF}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="visibility" size={18} color="#ffffff" />
+                  <Text style={styles.invoiceActionButtonText}>View Invoice</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.invoiceActionButton, styles.invoiceActionButtonSecondary, generatingPDF && styles.invoiceActionButtonDisabled]}
+                  onPress={handleDownloadInvoicePDF}
+                  disabled={generatingPDF}
+                  activeOpacity={0.7}
+                >
+                  {generatingPDF ? (
+                    <ActivityIndicator size="small" color={GRAYSCALE_PRIMARY} />
+                  ) : (
+                    <MaterialIcons name="download" size={18} color={GRAYSCALE_PRIMARY} />
+                  )}
+                  <Text style={[styles.invoiceActionButtonText, styles.invoiceActionButtonTextSecondary]}>
+                    {generatingPDF ? 'Generating...' : 'Download'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {!isSalePaid && (
@@ -2033,6 +2150,50 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  // Invoice PDF Actions Styles
+  invoiceActionsSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  invoiceActionsTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 12,
+  },
+  invoiceActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  invoiceActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GRAYSCALE_PRIMARY,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 6,
+  },
+  invoiceActionButtonSecondary: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+  },
+  invoiceActionButtonDisabled: {
+    opacity: 0.6,
+  },
+  invoiceActionButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  invoiceActionButtonTextSecondary: {
+    color: GRAYSCALE_PRIMARY,
   },
 })
 

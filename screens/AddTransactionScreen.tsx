@@ -119,18 +119,40 @@ export default function AddTransactionScreen() {
       const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
       
       try {
+        // Sales section ALWAYS uses transactions3 sales invoice OCR endpoint
         // Bank section ALWAYS uses transactions3 bank statement upload endpoint
         // Credit Cards section ALWAYS uses transactions3 credit card statement upload endpoint
         // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
         // For purchases from receipts section, also use transactions3
         // For other transaction types, use the unified transactions2 endpoint
+        const useSalesInvoiceOcr = context?.pipelineSection === 'sales'
         const useBankStatementUpload = context?.pipelineSection === 'bank' && isPdf
         const useCreditCardStatementUpload = context?.pipelineSection === 'cards' && isPdf
         const useTransactions3Purchase = context?.pipelineSection === 'purchases3' || 
           (transactionType === 'purchase' && (inputMethod === 'ocr_image' || inputMethod === 'ocr_pdf'))
         
         let response
-        if (useBankStatementUpload) {
+        if (useSalesInvoiceOcr) {
+          // Use transactions3 sales invoice OCR endpoint
+          // For images: use fileUrl, for PDFs: use pdfUrl
+          response = await transactions2Api.createSalesInvoiceOcr(
+            businessId,
+            isPdf ? undefined : downloadUrl,
+            isPdf ? downloadUrl : undefined
+          )
+          
+          if (response.success) {
+            setResultSummary(`Invoice processed successfully`)
+          } else if (response.logged) {
+            // Transaction type/input method not yet implemented (501)
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Sales invoice OCR is not yet implemented. This request has been logged for future implementation.`
+            )
+          } else {
+            throw new Error(response.message || 'Failed to process invoice')
+          }
+        } else if (useBankStatementUpload) {
           // Use transactions3 bank statement upload endpoint
           // Note: bankName and accountNumber are optional, can be added later if needed
           response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
@@ -204,7 +226,7 @@ export default function AddTransactionScreen() {
         throw error
       }
     },
-    [businessId, getTransactionType],
+    [businessId, getTransactionType, context],
   )
 
   const pickFromLibrary = useCallback(async () => {
@@ -305,9 +327,52 @@ export default function AddTransactionScreen() {
         return
       }
       
-      // For PDFs, navigate to processing screen
+      // For PDFs, handle sales invoices directly, others navigate to processing screen
       if (isPdf) {
         const transactionType = getTransactionType()
+        const isSalesContext = context?.pipelineSection === 'sales'
+        
+        if (isSalesContext) {
+          // Handle sales invoice PDFs directly using sales invoice OCR endpoint
+          setIsPdfFile(true)
+          setPdfFileName(file.name || 'document.pdf')
+          setLastImageUri(null)
+          
+          const downloadUrl = await uploadReceiptAndGetUrl({
+            businessId,
+            localUri: file.uri,
+            fileNameHint: file.name ?? undefined,
+            contentType: file.mimeType ?? undefined,
+          })
+          
+          try {
+            const response = await transactions2Api.createSalesInvoiceOcr(
+              businessId,
+              undefined, // fileUrl not used for PDFs
+              downloadUrl // pdfUrl
+            )
+            
+            if (response.success) {
+              setResultSummary(`Invoice processed successfully`)
+            } else if (response.logged) {
+              Alert.alert(
+                'Not Yet Available',
+                response.message || `Sales invoice OCR is not yet implemented. This request has been logged for future implementation.`
+              )
+            } else {
+              throw new Error(response.message || 'Failed to process invoice')
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to process invoice'
+            Alert.alert('Error', message)
+            throw error
+          }
+          
+          setBusy(false)
+          return
+        }
+        
+        // For non-sales PDFs, navigate to processing screen
         ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
           pdfFileName: file.name || 'document.pdf',
           pdfUri: file.uri,
@@ -341,31 +406,60 @@ export default function AddTransactionScreen() {
       const inputMethod = 'ocr_image'
       
       try {
+        // Sales section ALWAYS uses transactions3 sales invoice OCR endpoint
         // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
         // For purchases from receipts section, also use transactions3
         // For other transaction types, use the unified transactions2 endpoint
+        const useSalesInvoiceOcr = context?.pipelineSection === 'sales'
         const useTransactions3 = context?.pipelineSection === 'purchases3' || 
           (transactionType === 'purchase' && inputMethod === 'ocr_image')
         
-        const response = useTransactions3
-          ? await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
-          : await transactions2Api.createTransaction({
-              businessId,
-              transactionType,
-              inputMethod,
-              fileUrl: downloadUrl,
-            })
-        
-        if (response.success) {
-          setResultSummary(`Transaction created successfully`)
-        } else if (response.logged) {
-          // Transaction type/input method not yet implemented (501)
-          Alert.alert(
-            'Not Yet Available',
-            response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
-          )
+        let response
+        if (useSalesInvoiceOcr) {
+          // Use transactions3 sales invoice OCR endpoint for images
+          response = await transactions2Api.createSalesInvoiceOcr(businessId, downloadUrl, undefined)
+          
+          if (response.success) {
+            setResultSummary(`Invoice processed successfully`)
+          } else if (response.logged) {
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Sales invoice OCR is not yet implemented. This request has been logged for future implementation.`
+            )
+          } else {
+            throw new Error(response.message || 'Failed to process invoice')
+          }
+        } else if (useTransactions3) {
+          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
+          
+          if (response.success) {
+            setResultSummary(`Transaction created successfully`)
+          } else if (response.logged) {
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
+            )
+          } else {
+            throw new Error(response.message || 'Failed to create transaction')
+          }
         } else {
-          throw new Error(response.message || 'Failed to create transaction')
+          response = await transactions2Api.createTransaction({
+            businessId,
+            transactionType,
+            inputMethod,
+            fileUrl: downloadUrl,
+          })
+          
+          if (response.success) {
+            setResultSummary(`Transaction created successfully`)
+          } else if (response.logged) {
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
+            )
+          } else {
+            throw new Error(response.message || 'Failed to create transaction')
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to create transaction'
@@ -378,7 +472,7 @@ export default function AddTransactionScreen() {
     } finally {
       setBusy(false)
     }
-  }, [businessId, getTransactionType])
+  }, [businessId, getTransactionType, context, navigation])
 
   const handleManualInput = useCallback(async () => {
     const transactionType = getTransactionType()
