@@ -3,11 +3,46 @@
 ## 2025-12-11
 
 ### Summary
-Implemented comprehensive Assistant screen with Security and Operations & Performance features. Created HelpScreen with intro card and two assistant cards, built OversightChatScreen and InsightChatScreen for detailed views, implemented OversightAlertsCard component with alert display and dismiss functionality, added AssistantInfoCard component for card-based navigation, created oversight API client, added AssistantContext for managing unread counts, updated MainTabNavigator to show combined unread count badge, added pull-to-refresh functionality, implemented OversightAlertsInitializer for app-level unread count updates, and added back navigation buttons. Updated card styling with darker grayscale and improved layout, and added comprehensive API documentation files for the oversight system.
+Implemented comprehensive Assistant screen with Security and Operations & Performance features. Created HelpScreen with intro card and two assistant cards, built OversightChatScreen and InsightChatScreen for detailed views, implemented OversightAlertsCard component with alert display and dismiss functionality, added AssistantInfoCard component for card-based navigation, created oversight API client, added AssistantContext for managing unread counts, updated MainTabNavigator to show combined unread count badge, added pull-to-refresh functionality, implemented OversightAlertsInitializer for app-level unread count updates, and added back navigation buttons. Updated card styling with darker grayscale and improved layout, and added comprehensive API documentation files for the oversight system. Integrated new cashflow statement API endpoint, replacing unreliable client-side classification with server-side proper categorization. Updated CashflowReportScreen and ReportsScreen to use dedicated cashflow endpoint, and added backend request documentation.
 
 ### Commits
 
-#### 1. feat: Implement Assistant screen with Security and Operations & Performance features
+#### 1. Integrate new cashflow statement API endpoint
+**Commit:** `21caa8b`  
+**Files Changed:** 5 files, 812 insertions(+), 302 deletions(-)
+
+**Changes:**
+- Added cashflow statement API integration:
+  - Created TypeScript types for `CashflowStatementResponse`, `CashflowActivity`, and `CashflowAccountDetail`
+  - Added `getCashflowStatement()` function to chartAccounts API client
+  - Supports optional query parameters: `startDate`, `endDate`, and `includeDetails`
+  - Endpoint: `GET /api/businesses/{businessId}/cashflow-statement`
+- Updated CashflowReportScreen:
+  - Removed unreliable client-side cashflow classification logic (keyword matching)
+  - Now fetches data directly from dedicated cashflow statement endpoint
+  - Uses structured response with `operating`, `investing`, `financing` activities
+  - Each activity includes `inflows`, `outflows`, and `net` values
+  - Displays revenue and cash flow ratio from API response
+  - Simplified code by removing complex classification calculations
+- Updated ReportsScreen:
+  - Added separate state and fetch function for cashflow data
+  - Cashflow card now uses values from dedicated endpoint instead of calculating from chart accounts
+  - Shows accurate operating, investing, and financing subtotals
+  - Net cash flow calculated from API response
+- Added backend request documentation:
+  - `docs/backend-requests/cashflow-report-endpoint.md` - Initial request document for cashflow endpoint
+  - `docs/backend-requests/CASHFLOW_STATEMENT_RN_NOTE.md` - Backend team's implementation notes and API specification
+
+**Files Modified:**
+- `lib/api/chartAccounts.ts` - Added cashflow statement types and API function (new types and function)
+- `screens/CashflowReportScreen.tsx` - Complete refactor to use new endpoint (removed ~180 lines of classification logic, added ~50 lines of API integration)
+- `screens/ReportsScreen.tsx` - Updated to fetch cashflow from new endpoint (added cashflow state and fetch function)
+- `docs/backend-requests/cashflow-report-endpoint.md` - New backend request document (new, 335 lines)
+- `docs/backend-requests/CASHFLOW_STATEMENT_RN_NOTE.md` - Backend implementation notes (new, 335 lines)
+
+---
+
+#### 2. feat: Implement Assistant screen with Security and Operations & Performance features
 **Commit:** `cf49aef`  
 **Files Changed:** 19 files, 1922 insertions(+), 26 deletions(-)
 
@@ -106,11 +141,11 @@ Implemented comprehensive Assistant screen with Security and Operations & Perfor
 ---
 
 ### Statistics
-- **Total Commits:** 1
-- **Total Files Changed:** 19 files
-- **Total Lines Added:** 1922 insertions
-- **Total Lines Removed:** 26 deletions
-- **Net Change:** +1896 lines
+- **Total Commits:** 2
+- **Total Files Changed:** 24 files
+- **Total Lines Added:** 2734 insertions
+- **Total Lines Removed:** 328 deletions
+- **Net Change:** +2406 lines
 
 ### Key Features Added
 1. HelpScreen with intro card and two assistant feature cards (Security, Operations & Performance)
@@ -126,6 +161,10 @@ Implemented comprehensive Assistant screen with Security and Operations & Perfor
 11. Back navigation buttons on detail screens
 12. Darker grayscale styling for assistant cards
 13. Comprehensive API documentation for oversight system
+14. Cashflow statement API integration with dedicated endpoint
+15. Proper server-side cashflow categorization (operating, investing, financing)
+16. Accurate cashflow inflows/outflows distinction from transaction analysis
+17. Cashflow card on ReportsScreen showing three activity subtotals
 
 ### Notes
 - Security card focuses on fraud, theft, and security risk detection
@@ -137,6 +176,11 @@ Implemented comprehensive Assistant screen with Security and Operations & Perfor
 - ChatbotCard is now reusable for both Security and Operations & Performance contexts
 - All TypeScript types properly defined and codebase passes type-checking
 - Backend API documentation provides complete specifications for oversight system integration
+- Cashflow statement now uses proper server-side classification instead of unreliable client-side keyword matching
+- Cashflow endpoint defaults to current UK tax year if no dates provided
+- Cashflow data includes revenue for cash flow ratio calculation
+- Removed ~180 lines of complex client-side cashflow classification logic
+- CashflowReportScreen structure matches image specification with proper hierarchy and formatting
 
 ---
 
