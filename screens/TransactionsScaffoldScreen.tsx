@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal } from 'react-native'
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
-import { MaterialIcons } from '@expo/vector-icons'
+import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -203,6 +203,33 @@ function hasAccountingEntries(tx: Transaction): boolean {
     (accounting?.debits?.length ?? 0) > 0 ||
     (accounting?.credits?.length ?? 0) > 0
   )
+}
+
+// Helper function to check if transaction is audit ready
+// Audit ready = reconciliation.status is 'matched', 'reconciled', 'exception', or 'not_required'
+function isAuditReady(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    reconciliation?: { status?: string }
+  } | undefined
+  
+  const reconciliationStatus = metadata?.reconciliation?.status
+  
+  // Audit ready if reconciliation status indicates completion
+  return (
+    reconciliationStatus === 'matched' ||
+    reconciliationStatus === 'reconciled' ||
+    reconciliationStatus === 'exception' ||
+    reconciliationStatus === 'not_required'
+  )
+}
+
+// Helper function to check if transaction is unreconciled
+function isUnreconciled(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    reconciliation?: { status?: string }
+  } | undefined
+  
+  return metadata?.reconciliation?.status === 'unreconciled'
 }
 
 // Helper function to check if transaction is a credit to the account (money coming in)
@@ -828,8 +855,8 @@ export default function TransactionsScaffoldScreen() {
   // Migrated to transactions3: Using source_of_truth collection
   // Per TRANSACTIONS3_REPORTING_READY_RN_MIGRATION.md: No client-side filtering needed
   // All transactions in source_of_truth are by definition reporting ready
-  // Sort by most recent first
-  const reportingReadyTransactions: Array<TransactionStub & { originalTransaction: Transaction }> =
+  // Sort by most recent first and separate into inputs (sales/income) and outputs (expenses/purchases)
+  const reportingReadyTransactionsAll: Array<TransactionStub & { originalTransaction: Transaction }> =
     reportingReadyTransactions3
       .sort((a, b) => {
         const aDate = a.summary.transactionDate || 0
@@ -847,6 +874,13 @@ export default function TransactionsScaffoldScreen() {
           originalTransaction: tx,
         }
       })
+
+  // Separate into inputs (credits/income) and outputs (debits/expenses)
+  const reportingReadyInputs = reportingReadyTransactionsAll.filter(tx => tx.isCredit === true)
+  const reportingReadyOutputs = reportingReadyTransactionsAll.filter(tx => tx.isCredit !== true)
+  
+  // For the main card, show a mix: 2 inputs + 1 output (or vice versa if more outputs)
+  const reportingReadyTransactions = reportingReadyTransactionsAll.slice(0, 3)
 
 
 
@@ -2735,7 +2769,9 @@ export default function TransactionsScaffoldScreen() {
           cardsColumnsWithData,
           salesColumnsWithData,
           purchases3ColumnsWithData,
-          reportingReadyTransactions,
+          reportingReadyInputs,
+          reportingReadyOutputs,
+          reportingReadyTransactionsAll,
           handleReconcileClick,
           reconciling,
           getFullTransactions,
@@ -2755,7 +2791,9 @@ function renderSection(
   cardsColumns: PipelineColumn[],
   salesColumns: PipelineColumn[],
   purchases3Columns: PipelineColumn[],
-  reportingReadyTransactions: Array<TransactionStub & { originalTransaction?: Transaction }>,
+  reportingReadyInputs: Array<TransactionStub & { originalTransaction: Transaction }>,
+  reportingReadyOutputs: Array<TransactionStub & { originalTransaction: Transaction }>,
+  reportingReadyTransactionsAll: Array<TransactionStub & { originalTransaction: Transaction }>,
   handleReconcileClick?: () => void,
   reconciling?: boolean,
   getFullTransactions?: (columnTitle: string) => Array<TransactionStub & { originalTransaction?: Transaction }>,
@@ -2793,33 +2831,10 @@ function renderSection(
       return null // TODO: Add Payroll screen
     case 'reporting':
       return (
-        <View style={styles.reportingCard}>
-          <View style={styles.cardTitleRow}>
-            <Text style={styles.sectionHeader}>Reporting ready (all sources)</Text>
-            <TouchableOpacity activeOpacity={0.6} style={styles.learnMoreButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.learnMoreText}>Learn more</Text>
-            </TouchableOpacity>
-          </View>
-          <CardList items={reportingReadyTransactions.slice(0, 3)} navigation={navigation} />
-          <View style={styles.pipelineActions}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={styles.linkButton}
-              onPress={() =>
-                navigation.navigate('ScaffoldViewAll', {
-                  section: 'reporting',
-                  title: 'Reporting ready (all sources)',
-                  items: reportingReadyTransactions,
-                })
-              }
-            >
-              <Text style={styles.linkButtonText}>View all</Text>
-            </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.7} style={styles.linkButton}>
-              <Text style={styles.linkButtonText}>Go to reports</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ReportingReadyList
+          allTransactions={reportingReadyTransactionsAll}
+          navigation={navigation}
+        />
       )
     default:
       return null
@@ -3034,12 +3049,177 @@ function PipelineRow({
   )
 }
 
+// Reporting Ready List Component - shows all transactions directly
+function ReportingReadyList({
+  allTransactions,
+  navigation,
+}: {
+  allTransactions: Array<TransactionStub & { originalTransaction: Transaction }>
+  navigation: StackNavigationProp<TransactionsStackParamList>
+}) {
+  const [showHelpModal, setShowHelpModal] = useState(false)
+
+  const handleItemPress = useCallback((item: TransactionStub & { originalTransaction: Transaction }) => {
+    if (item.originalTransaction) {
+      navigation.navigate('TransactionDetail', { transaction: item.originalTransaction })
+    }
+  }, [navigation])
+
+  return (
+    <>
+      <View style={styles.reportingListContainer}>
+        <View style={styles.cardTitleRowHeader}>
+          <Text style={styles.sectionHeader}>Reporting ready (all sources)</Text>
+          <TouchableOpacity 
+            activeOpacity={0.6} 
+            style={styles.learnMoreButton} 
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            onPress={() => setShowHelpModal(true)}
+          >
+            <Text style={styles.learnMoreText}>Learn more</Text>
+          </TouchableOpacity>
+        </View>
+
+        {allTransactions.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No reporting ready transactions</Text>
+          </View>
+        ) : (
+          <View style={styles.reportingList}>
+            {allTransactions.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.reportingListItem}
+                onPress={() => handleItemPress(item)}
+                activeOpacity={0.7}
+                disabled={!item.originalTransaction}
+              >
+                <View style={styles.reportingItemTextGroup}>
+                  <View style={styles.reportingItemTitleRow}>
+                    <View style={styles.auditIconContainer}>
+                      {item.originalTransaction && isAuditReady(item.originalTransaction) && (
+                        <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
+                      )}
+                      {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
+                        <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
+                      )}
+                    </View>
+                    <Text style={styles.reportingItemTitle}>{item.title}</Text>
+                  </View>
+                </View>
+                <View style={styles.reportingItemAmountContainer}>
+                  <Text style={[
+                    styles.reportingInputOutputIndicator,
+                    item.isCredit ? styles.inputIndicator : styles.outputIndicator
+                  ]}>
+                    {item.isCredit ? '+' : '-'}
+                  </Text>
+                  <Text style={styles.reportingItemAmount}>{item.amount}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* Help Modal */}
+      <Modal
+        visible={showHelpModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowHelpModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.helpModal}>
+            <View style={styles.helpModalHeader}>
+              <Text style={styles.helpModalTitle}>Understanding Reporting Ready Transactions</Text>
+              <TouchableOpacity
+                onPress={() => setShowHelpModal(false)}
+                style={styles.helpModalClose}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.helpModalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.helpModalSectionTitle}>Transaction Categories</Text>
+              <Text style={styles.helpModalText}>
+                Reporting ready transactions are categorized into two types based on their impact on your business:
+              </Text>
+              
+              <View style={styles.helpCategoryCard}>
+                <View style={styles.helpCategoryHeader}>
+                  <View style={[styles.helpCategoryIndicator, styles.inputIndicatorDot]} />
+                  <Text style={styles.helpCategoryTitle}>Inputs (Credits / Income)</Text>
+                </View>
+                <Text style={styles.helpCategoryDescription}>
+                  These are transactions that bring money into your business:
+                </Text>
+                <View style={styles.helpCategoryList}>
+                  <Text style={styles.helpCategoryItem}>• Sales invoices and revenue</Text>
+                  <Text style={styles.helpCategoryItem}>• Bank deposits and credits</Text>
+                  <Text style={styles.helpCategoryItem}>• Credit card payments received</Text>
+                  <Text style={styles.helpCategoryItem}>• Other income transactions</Text>
+                </View>
+              </View>
+
+              <View style={styles.helpCategoryCard}>
+                <View style={styles.helpCategoryHeader}>
+                  <View style={[styles.helpCategoryIndicator, styles.outputIndicatorDot]} />
+                  <Text style={styles.helpCategoryTitle}>Outputs (Debits / Expenses)</Text>
+                </View>
+                <Text style={styles.helpCategoryDescription}>
+                  These are transactions that take money out of your business:
+                </Text>
+                <View style={styles.helpCategoryList}>
+                  <Text style={styles.helpCategoryItem}>• Purchase receipts and expenses</Text>
+                  <Text style={styles.helpCategoryItem}>• Bank withdrawals and debits</Text>
+                  <Text style={styles.helpCategoryItem}>• Credit card charges</Text>
+                  <Text style={styles.helpCategoryItem}>• Other expense transactions</Text>
+                </View>
+              </View>
+
+              <Text style={styles.helpModalSectionTitle}>How Transactions Are Categorized</Text>
+              <Text style={styles.helpModalText}>
+                The system automatically determines if a transaction is an input or output by analyzing:
+              </Text>
+              <View style={styles.helpCategoryList}>
+                <Text style={styles.helpCategoryItem}>• Transaction type (sale, purchase, statement entry)</Text>
+                <Text style={styles.helpCategoryItem}>• Accounting entries (debits and credits)</Text>
+                <Text style={styles.helpCategoryItem}>• Bank statement context (credit vs debit)</Text>
+                <Text style={styles.helpCategoryItem}>• Chart of accounts classification</Text>
+              </View>
+
+              <Text style={styles.helpModalSectionTitle}>Why This Matters</Text>
+              <Text style={styles.helpModalText}>
+                Understanding inputs vs outputs helps you:
+              </Text>
+              <View style={styles.helpCategoryList}>
+                <Text style={styles.helpCategoryItem}>• Track revenue vs expenses accurately</Text>
+                <Text style={styles.helpCategoryItem}>• Generate accurate financial reports</Text>
+                <Text style={styles.helpCategoryItem}>• Understand cash flow patterns</Text>
+                <Text style={styles.helpCategoryItem}>• Make informed business decisions</Text>
+              </View>
+
+              <Text style={styles.helpModalNote}>
+                Note: Some transactions may be complex and require manual review. If you notice a transaction is incorrectly categorized, you can review and adjust it in the transaction detail view.
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  )
+}
+
 function CardList({
   items,
   navigation,
+  showInputOutputIndicator = false,
 }: {
   items: Array<TransactionStub & { originalTransaction?: Transaction }>
   navigation?: StackNavigationProp<TransactionsStackParamList>
+  showInputOutputIndicator?: boolean
 }) {
   const handleCardPress = (item: TransactionStub & { originalTransaction?: Transaction }) => {
     if (item.originalTransaction && navigation) {
@@ -3058,12 +3238,32 @@ function CardList({
           disabled={!item.originalTransaction || !navigation}
         >
           <View style={styles.cardTextGroup}>
-            <Text style={styles.cardTitle}>{item.title}</Text>
-            {item.isCredit && (
+            <View style={styles.cardTitleRow}>
+              <View style={styles.auditIconContainer}>
+                {item.originalTransaction && isAuditReady(item.originalTransaction) && (
+                  <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
+                )}
+                {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
+                  <Ionicons name="shield-outline" size={16} color={GRAYSCALE_SECONDARY} style={{ opacity: 0.5 }} />
+                )}
+              </View>
+              <Text style={styles.cardTitle}>{item.title}</Text>
+            </View>
+            {item.isCredit && !showInputOutputIndicator && (
               <Text style={styles.creditLabel}>credit</Text>
             )}
           </View>
-          <Text style={styles.cardAmount}>{item.amount}</Text>
+          <View style={styles.cardAmountContainer}>
+            {showInputOutputIndicator && (
+              <Text style={[
+                styles.inputOutputIndicator,
+                item.isCredit ? styles.inputIndicator : styles.outputIndicator
+              ]}>
+                {item.isCredit ? '+' : '-'}
+              </Text>
+            )}
+            <Text style={styles.cardAmount}>{item.amount}</Text>
+          </View>
         </TouchableOpacity>
       ))}
     </View>
@@ -3293,7 +3493,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
   },
-  cardTitleRow: {
+  cardTitleRowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -3390,10 +3590,21 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  auditIconContainer: {
+    width: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cardTitle: {
     fontSize: 14,
     fontWeight: '500',
     color: GRAYSCALE_PRIMARY,
+    flex: 1,
   },
   creditLabel: {
     marginTop: 2,
@@ -3436,18 +3647,90 @@ const styles = StyleSheet.create({
   verificationCheck: {
     marginLeft: 2,
   },
+  cardAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   cardAmount: {
     fontSize: 14,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
   },
-  reportingCard: {
-    backgroundColor: CARD_BACKGROUND,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#e5e5e5',
+  inputOutputIndicator: {
+    fontSize: 16,
+    fontWeight: '700',
+    width: 16,
+    textAlign: 'center',
+  },
+  // Reporting Ready List Styles
+  reportingListContainer: {
     marginBottom: 24,
+  },
+  reportingListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  reportingList: {
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#efefef',
+    overflow: 'hidden',
+  },
+  reportingListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  reportingItemTextGroup: {
+    flex: 1,
+    marginRight: 12,
+  },
+  reportingItemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reportingItemTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+    flex: 1,
+  },
+  reportingItemAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  reportingInputOutputIndicator: {
+    fontSize: 16,
+    fontWeight: '700',
+    width: 16,
+    textAlign: 'center',
+  },
+  reportingItemAmount: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#efefef',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: GRAYSCALE_SECONDARY,
   },
   bodyText: {
     fontSize: 13,
@@ -3578,6 +3861,123 @@ const styles = StyleSheet.create({
   blankSectionSubtext: {
     fontSize: 14,
     color: GRAYSCALE_SECONDARY,
+  },
+  // Reporting Ready Card Styles
+  inputIndicator: {
+    color: GRAYSCALE_PRIMARY, // Grayscale for + indicator text
+  },
+  outputIndicator: {
+    color: GRAYSCALE_PRIMARY, // Grayscale for - indicator text
+  },
+  inputIndicatorDot: {
+    backgroundColor: '#4caf50', // Green for input indicator dots in help modal
+  },
+  outputIndicatorDot: {
+    backgroundColor: '#ff9800', // Orange for output indicator dots in help modal
+  },
+  // Help Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  helpModal: {
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  helpModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#efefef',
+  },
+  helpModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    flex: 1,
+    marginRight: 12,
+  },
+  helpModalClose: {
+    padding: 4,
+  },
+  helpModalContent: {
+    padding: 20,
+  },
+  helpModalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  helpModalText: {
+    fontSize: 14,
+    color: GRAYSCALE_SECONDARY,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  helpCategoryCard: {
+    backgroundColor: SURFACE_BACKGROUND,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e6e6e6',
+  },
+  helpCategoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  helpCategoryIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  helpCategoryTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  helpCategoryDescription: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  helpCategoryList: {
+    marginTop: 4,
+  },
+  helpCategoryItem: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  helpModalNote: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+    fontStyle: 'italic',
+    marginTop: 20,
+    padding: 12,
+    backgroundColor: SURFACE_BACKGROUND,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4caf50',
   },
 })
 

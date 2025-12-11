@@ -3,7 +3,7 @@ import React, { useCallback, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
-import { MaterialIcons } from '@expo/vector-icons'
+import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { api } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
 import type { Transaction } from '../lib/api/transactions2'
@@ -24,6 +24,7 @@ type TransactionStub = {
   subtitle?: string
   verificationItems?: Array<{ label: string; confirmed?: boolean }>
   originalTransaction?: Transaction
+  isCredit?: boolean // True if this is a credit to the account (money coming in)
 }
 
 type ScaffoldViewAllRouteParams = {
@@ -38,6 +39,33 @@ type ScaffoldViewAllRouteProp = RouteProp<
   { ScaffoldViewAll: ScaffoldViewAllRouteParams } | { [key: string]: any },
   'ScaffoldViewAll'
 >
+
+// Helper function to check if transaction is audit ready
+// Audit ready = reconciliation.status is 'matched', 'reconciled', 'exception', or 'not_required'
+function isAuditReady(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    reconciliation?: { status?: string }
+  } | undefined
+  
+  const reconciliationStatus = metadata?.reconciliation?.status
+  
+  // Audit ready if reconciliation status indicates completion
+  return (
+    reconciliationStatus === 'matched' ||
+    reconciliationStatus === 'reconciled' ||
+    reconciliationStatus === 'exception' ||
+    reconciliationStatus === 'not_required'
+  )
+}
+
+// Helper function to check if transaction is unreconciled
+function isUnreconciled(tx: Transaction): boolean {
+  const metadata = tx.metadata as {
+    reconciliation?: { status?: string }
+  } | undefined
+  
+  return metadata?.reconciliation?.status === 'unreconciled'
+}
 
 export default function ScaffoldViewAllScreen() {
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
@@ -54,6 +82,7 @@ export default function ScaffoldViewAllScreen() {
   // Determine if this is bank or cards section based on pipelineSection (more reliable than title)
   const isBankSection = pipelineSection === 'bank' || title.toLowerCase().includes('bank')
   const isCardsSection = pipelineSection === 'cards' || title.toLowerCase().includes('card') || title.toLowerCase().includes('credit')
+  const isReportingSection = section === 'reporting' || title.toLowerCase().includes('reporting ready')
   const [showDragDrop, setShowDragDrop] = useState(false)
 
   // Choose businessId (same logic as TransactionsScaffoldScreen)
@@ -114,7 +143,17 @@ export default function ScaffoldViewAllScreen() {
                 disabled={!item.originalTransaction}
               >
                 <View style={styles.itemTextGroup}>
-                  <Text style={styles.itemTitle}>{item.title}</Text>
+                  <View style={styles.itemTitleRow}>
+                    <View style={styles.auditIconContainer}>
+                      {item.originalTransaction && isAuditReady(item.originalTransaction) && (
+                        <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
+                      )}
+                      {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
+                        <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
+                      )}
+                    </View>
+                    <Text style={styles.itemTitle}>{item.title}</Text>
+                  </View>
                   {item.verificationItems ? (
                     <View style={styles.verificationItems}>
                       {item.verificationItems.map((verification: { label: string; confirmed?: boolean }, idx: number) => (
@@ -134,7 +173,17 @@ export default function ScaffoldViewAllScreen() {
                     <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
                   ) : null}
                 </View>
-                <Text style={styles.itemAmount}>{item.amount}</Text>
+                <View style={styles.itemAmountContainer}>
+                  {isReportingSection && (
+                    <Text style={[
+                      styles.inputOutputIndicator,
+                      item.isCredit ? styles.inputIndicator : styles.outputIndicator
+                    ]}>
+                      {item.isCredit ? '+' : '-'}
+                    </Text>
+                  )}
+                  <Text style={styles.itemAmount}>{item.amount}</Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -225,21 +274,49 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
+  itemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  auditIconContainer: {
+    width: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   itemTitle: {
     fontSize: 15,
     fontWeight: '500',
     color: GRAYSCALE_PRIMARY,
-    marginBottom: 4,
+    flex: 1,
   },
   itemSubtitle: {
     fontSize: 12,
     color: GRAYSCALE_SECONDARY,
     marginTop: 2,
   },
+  itemAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   itemAmount: {
     fontSize: 15,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
+  },
+  inputOutputIndicator: {
+    fontSize: 16,
+    fontWeight: '700',
+    width: 16,
+    textAlign: 'center',
+  },
+  inputIndicator: {
+    color: GRAYSCALE_PRIMARY, // Grayscale for inputs/income
+  },
+  outputIndicator: {
+    color: GRAYSCALE_PRIMARY, // Grayscale for outputs/expenses
   },
   verificationItems: {
     marginTop: 4,

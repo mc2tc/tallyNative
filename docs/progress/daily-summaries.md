@@ -1,5 +1,145 @@
 # Daily Development Summaries
 
+## 2025-12-11
+
+### Summary
+Implemented comprehensive Assistant screen with Security and Operations & Performance features. Created HelpScreen with intro card and two assistant cards, built OversightChatScreen and InsightChatScreen for detailed views, implemented OversightAlertsCard component with alert display and dismiss functionality, added AssistantInfoCard component for card-based navigation, created oversight API client, added AssistantContext for managing unread counts, updated MainTabNavigator to show combined unread count badge, added pull-to-refresh functionality, implemented OversightAlertsInitializer for app-level unread count updates, and added back navigation buttons. Updated card styling with darker grayscale and improved layout, and added comprehensive API documentation files for the oversight system.
+
+### Commits
+
+#### 1. feat: Implement Assistant screen with Security and Operations & Performance features
+**Commit:** `cf49aef`  
+**Files Changed:** 19 files, 1922 insertions(+), 26 deletions(-)
+
+**Changes:**
+- Created HelpScreen with intro card and two assistant cards:
+  - Intro card explaining assistant purpose as "right hand" providing security protection and operational guidance
+  - Security card with "View alerts" action linking to OversightChatScreen
+  - Operations & Performance card with "Get insights" action linking to InsightChatScreen
+  - Both cards display unread count badges and have darker grayscale styling
+  - Added pull-to-refresh functionality that calls oversight API check and updates unread counts
+- Created OversightChatScreen for Security detailed view:
+  - Displays OversightAlertsCard showing security alerts with severity, unread status, and dismiss functionality
+  - Shows Security Assistant chatbot card below alerts
+  - 50/50 vertical split layout with scrollable sections
+  - Back button navigation to HelpScreen
+- Created InsightChatScreen for Operations & Performance detailed view:
+  - Displays Operations & Performance Assistant chatbot card
+  - Back button navigation to HelpScreen
+  - Added bottom padding for better spacing
+- Implemented OversightAlertsCard component:
+  - Fetches and displays oversight alerts with severity indicators (critical, warning, info)
+  - Shows alert details: rule name, message, detected date, unread status
+  - Implements "Got it" dismiss button that calls dismissAlert API
+  - Updates global unread count via AssistantContext
+  - Handles loading, error, and empty states
+  - Supports pull-to-refresh with oversight API check
+  - Uses detectedAt or createdAt for date display with robust formatting
+  - Exposes refresh method via useImperativeHandle for parent components
+- Created AssistantInfoCard component:
+  - Reusable card component for displaying assistant features
+  - Shows title, description, unread count badge, and action button
+  - Customizable action text (defaults to "Open")
+  - Darker grayscale styling for bottom cards
+  - Separator line between title and description
+  - "View details" button positioned at bottom right
+- Created oversight API client (`lib/api/oversight.ts`):
+  - `check()` method to trigger new oversight evaluation
+  - `getAlerts()` method to fetch alerts with filters (unread, severity, limit, page, status)
+  - `getAlertDetails()` method to retrieve details for specific alert
+  - `dismissAlert()` method to mark alert as resolved
+- Created AssistantContext (`lib/context/OversightAlertsContext.tsx`):
+  - Manages unread counts for both oversight and insight assistant types
+  - Provides `oversightUnreadCount`, `setOversightUnreadCount`, `insightUnreadCount`, `setInsightUnreadCount`
+  - Includes legacy support for `unreadCount` and `setUnreadCount` (maps to oversight)
+  - Exports `useAssistant()` hook for combined access
+- Created OversightAlertsInitializer component:
+  - Fetches initial oversight unread count when app starts
+  - Updates AssistantContext to ensure badge displays on app launch
+  - Runs when user is authenticated and businessId is available
+- Updated MainTabNavigator:
+  - Changed Help tab icon from 'help-outline' to 'face-retouching-natural' (chatbot icon)
+  - Uses `useAssistant()` hook to retrieve both unread counts
+  - Calculates `totalUnreadCount = oversightUnreadCount + insightUnreadCount`
+  - Sets `tabBarBadge` on Help tab to show combined unread count (only if > 0)
+  - Custom badge styling with red background
+- Updated navigation:
+  - Added OversightChat and InsightChat routes to AppNavigator
+  - Integrated screens into DrawerNavigator
+  - Added back button navigation from detail screens to HelpScreen
+- Enhanced ChatbotCard component:
+  - Made `title` and `initialMessages` configurable via props
+  - Fixed tabBarHeight calculation to prevent errors when used outside BottomTabNavigator
+  - Updated cardStyle to support flex: 1 height within constrained containers
+- Added comprehensive API documentation:
+  - `MICRO_BUSINESS_OVERSIGHT_SYSTEM.md` - Background and core philosophy of oversight system
+  - `RN_TESTING_READY.md` - Backend API readiness for React Native testing with authentication, authorization, error handling, and example API calls
+  - `OVERSIGHT_ALERTS_DATE_FORMAT.md` - Date format specifications for alerts
+- Updated type definitions:
+  - Added `OversightCheckRequest`, `OversightCheckResponse` types
+  - Added `OversightAlert` type with `status`, `resolvedAt`, `resolvedBy`, `detectedAt` fields
+  - Added `OversightAlertsResponse` with `message` field
+  - Added `OversightAlertDismissResponse` type
+  - Made date fields flexible to handle various date types (ISO strings, timestamps, Firestore timestamps)
+
+**Files Modified:**
+- `screens/HelpScreen.tsx` - Complete redesign with intro card and two assistant cards (150 lines updated)
+- `screens/OversightChatScreen.tsx` - New Security detail screen (new, 77 lines)
+- `screens/InsightChatScreen.tsx` - New Operations & Performance detail screen (new, 33 lines)
+- `components/OversightAlertsCard.tsx` - New alert display component (new, 525 lines)
+- `components/AssistantInfoCard.tsx` - New reusable card component (new, 132 lines)
+- `components/OversightAlertsInitializer.tsx` - New initializer component (new, 53 lines)
+- `lib/api/oversight.ts` - New oversight API client (new, 94 lines)
+- `lib/context/OversightAlertsContext.tsx` - New context for unread counts (new, 51 lines)
+- `lib/hooks/useSafeTabBarHeight.ts` - New hook for safe tab bar height (new, 28 lines)
+- `lib/types/api.ts` - Added oversight-related types (71 lines added)
+- `navigation/AppNavigator.tsx` - Added new routes (6 lines added)
+- `navigation/MainTabNavigator.tsx` - Updated Help tab icon and badge (23 lines updated)
+- `navigation/RootNavigator.tsx` - Integrated OversightAlertsInitializer (3 lines added)
+- `components/ChatbotCard.tsx` - Made configurable for both assistant types (28 lines updated)
+- `App.tsx` - Minor updates (5 lines updated)
+- `components/MotivationalCard.tsx` - Minor updates (4 lines updated)
+- `docs/api/MICRO_BUSINESS_OVERSIGHT_SYSTEM.md` - New documentation (new, 446 lines)
+- `docs/api/RN_TESTING_READY.md` - New API documentation (new, 170 lines)
+- `docs/api/OVERSIGHT_ALERTS_DATE_FORMAT.md` - New date format documentation (new, 49 lines)
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 19 files
+- **Total Lines Added:** 1922 insertions
+- **Total Lines Removed:** 26 deletions
+- **Net Change:** +1896 lines
+
+### Key Features Added
+1. HelpScreen with intro card and two assistant feature cards (Security, Operations & Performance)
+2. OversightChatScreen for detailed Security alerts and chatbot interaction
+3. InsightChatScreen for Operations & Performance chatbot interaction
+4. OversightAlertsCard component with full alert display, dismiss, and refresh functionality
+5. AssistantInfoCard reusable component for card-based navigation
+6. Oversight API client with check, getAlerts, getAlertDetails, and dismissAlert methods
+7. AssistantContext for managing unread counts for both assistant types
+8. Combined unread count badge on Help tab in bottom navigation
+9. Pull-to-refresh functionality on HelpScreen that triggers oversight API check
+10. OversightAlertsInitializer for app-level unread count initialization
+11. Back navigation buttons on detail screens
+12. Darker grayscale styling for assistant cards
+13. Comprehensive API documentation for oversight system
+
+### Notes
+- Security card focuses on fraud, theft, and security risk detection
+- Operations & Performance card focuses on actionable recommendations for inventory, costs, and cash flow
+- Unread counts are fetched on app launch via OversightAlertsInitializer to ensure badge displays immediately
+- Pull-to-refresh on HelpScreen triggers oversight API check to look for new issues, then updates unread counts
+- Alert dates use `detectedAt` field (or fallback to `createdAt`) with robust formatting handling various date types
+- OversightAlertsCard prevents duplicate API calls using isLoadingRef
+- ChatbotCard is now reusable for both Security and Operations & Performance contexts
+- All TypeScript types properly defined and codebase passes type-checking
+- Backend API documentation provides complete specifications for oversight system integration
+
+---
+
 ## 2025-12-10
 
 ### Summary
