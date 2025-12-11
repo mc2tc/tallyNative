@@ -10,6 +10,7 @@ import { ReportsNavigator } from './ReportsNavigator'
 import SettingsScreen from '../screens/SettingsScreen'
 import ProfileScreen from '../screens/ProfileScreen'
 import HelpScreen from '../screens/HelpScreen'
+import { useAssistant } from '../lib/context/OversightAlertsContext'
 
 export type MainTabParamList = {
   Home: undefined
@@ -28,10 +29,13 @@ const iconMap: Record<keyof MainTabParamList, keyof typeof MaterialIcons.glyphMa
   Reports: 'assessment',
   Settings: 'settings',
   Profile: 'account-circle',
-  Help: 'help-outline',
+  Help: 'face-retouching-natural',
 }
 
 export function MainTabNavigator() {
+  const { oversightUnreadCount, insightUnreadCount } = useAssistant()
+  const totalUnreadCount = oversightUnreadCount + insightUnreadCount
+
   return (
     <Tab.Navigator
       initialRouteName="Home"
@@ -189,7 +193,22 @@ export function MainTabNavigator() {
           tabBarItemStyle: { display: 'none' },
         }}
       />
-      <Tab.Screen name="Help" component={HelpScreen} options={{ title: 'Assistant' }} />
+      <Tab.Screen
+        name="Help"
+        component={HelpScreen}
+        options={() => ({
+          title: 'Assistant',
+          tabBarBadge: totalUnreadCount > 0 ? totalUnreadCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: '#d32f2f',
+            color: '#ffffff',
+            fontSize: 11,
+            minWidth: 18,
+            height: 18,
+            borderRadius: 9,
+          },
+        })}
+      />
     </Tab.Navigator>
   )
 }

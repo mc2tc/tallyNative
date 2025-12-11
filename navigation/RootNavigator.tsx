@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth/AuthContext'
 import { ActivityIndicator, View, StyleSheet } from 'react-native'
 import { AuthNavigator } from './AuthNavigator'
 import { AppNavigator } from './AppNavigator'
+import { OversightAlertsInitializer } from '../components/OversightAlertsInitializer'
 
 const Stack = createStackNavigator()
 
@@ -23,6 +24,8 @@ export function RootNavigator() {
 
   return (
     <NavigationContainer>
+      {/* Initialize oversight alerts count when user is authenticated */}
+      {user && businessUser && <OversightAlertsInitializer />}
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!user || !businessUser ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />

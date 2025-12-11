@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Modal, Animated, PanResponder, Dimensions } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs'
+import { useNavigation } from '@react-navigation/native'
 
 interface Message {
   id: string
@@ -13,7 +13,12 @@ interface Message {
   timestamp?: Date
 }
 
-export function ChatbotCard() {
+interface ChatbotCardProps {
+  title?: string
+  initialMessages?: Message[]
+}
+
+export function ChatbotCard({ title = 'Performance Insights', initialMessages }: ChatbotCardProps) {
   const SCREEN_HEIGHT = Dimensions.get('window').height
   // TranslateY offsets relative to a full-height container (top: 0, bottom: 0)
   const FULL_SHEET_OFFSET = 0 // full-screen, bottom fixed to device bottom
@@ -21,9 +26,14 @@ export function ChatbotCard() {
   const DISMISS_OFFSET = SCREEN_HEIGHT // pushed completely off-screen
 
   const insets = useSafeAreaInsets()
-  const tabBarHeight = useBottomTabBarHeight()
+  // Tab bar height - set to 0 since this component may be used outside tab navigator
+  // When used in HelpScreen (tab navigator), the spacing is handled by the ScrollView
+  // When used in drawer screens, no tab bar spacing is needed
+  const tabBarHeight = 0
   const scrollViewRef = useRef<ScrollView>(null)
-  const [messages, setMessages] = useState<Message[]>([
+  
+  // Default messages for insight chatbot
+  const defaultMessages: Message[] = [
     {
       id: '1',
       text: "Hi John. It looks like we're running low on flour and suet! We have two suppliers and Trethewy's Baking Supplies is the least expensive and they're in the Tally network which guarantees 30 days credit and a 5% discount. Would you like me to make an order?",
@@ -39,7 +49,9 @@ export function ChatbotCard() {
       learnMoreOnly: true,
       timestamp: new Date(),
     },
-  ])
+  ]
+  
+  const [messages, setMessages] = useState<Message[]>(initialMessages || defaultMessages)
   const [inputText, setInputText] = useState('')
   const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved' | 'denied'>('pending')
   const [modalVisible, setModalVisible] = useState(false)
@@ -164,8 +176,10 @@ export function ChatbotCard() {
     styles.card,
     {
       marginTop: PADDING,
-      marginBottom: PADDING + tabBarHeight - 70,
+      marginBottom: PADDING,
       paddingBottom: PADDING + insets.bottom,
+      flex: 1, // Take available space in container
+      minHeight: 0, // Important for ScrollView to work properly
     },
   ]
 
@@ -175,7 +189,7 @@ export function ChatbotCard() {
 
   return (
     <View style={cardStyle}>
-      <Text style={styles.title}>Your Business Assistant</Text>
+      <Text style={styles.title}>{title}</Text>
       
       <ScrollView
         ref={scrollViewRef}

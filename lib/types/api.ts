@@ -156,3 +156,74 @@ export type VatStatusResponse = {
   message?: string
 }
 
+// Oversight System Types
+
+export type OversightCheckRequest = {
+  businessId: string
+  transactionId?: string
+  forceRefresh?: boolean
+}
+
+export type OversightCheckResponse = {
+  businessId: string
+  checkDate: string
+  rulesChecked: number
+  alertsGenerated: number
+  alerts: string[] // Array of alert IDs
+  processingTime: number // milliseconds
+  message: string // User-friendly status message
+}
+
+export type OversightAlert = {
+  id: string
+  businessId: string
+  ruleId: string
+  ruleName: string
+  severity: 'critical' | 'warning' | 'info'
+  message: string
+  evidence?: Record<string, unknown>
+  confidence?: number
+  requiresReview: boolean
+  read: boolean
+  status?: 'active' | 'dismissed'
+  resolvedAt?: string
+  resolvedBy?: string
+  detectedAt?: string // ISO date string when alert was detected
+  createdAt?: string | number | { seconds?: number; nanoseconds?: number; toDate?: () => Date } // Legacy field, use detectedAt
+  updatedAt?: string | number | { seconds?: number; nanoseconds?: number; toDate?: () => Date }
+  // Additional fields from backend
+  category?: string
+  title?: string
+  readBy?: string[]
+  readAt?: string[]
+  actionRequired?: boolean
+  relatedTransactionIds?: string[]
+  relatedAlertIds?: string[]
+  recommendations?: string[]
+}
+
+export type OversightAlertsResponse = {
+  alerts: OversightAlert[]
+  total: number
+  unreadCount: number
+  message?: string // User-friendly status message (e.g., "No alerts found. Your transactions appear normal.")
+}
+
+export type OversightAlertDetailsResponse = {
+  alert: OversightAlert
+  relatedTransactions?: Array<{
+    id: string
+    date: string
+    amount: number
+    description?: string
+  }>
+  evidence?: Record<string, unknown>
+  recommendations?: string[]
+}
+
+export type OversightAlertDismissResponse = {
+  success: boolean
+  alertId: string
+  message?: string
+}
+

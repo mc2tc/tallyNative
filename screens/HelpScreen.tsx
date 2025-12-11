@@ -1,16 +1,110 @@
-// Help tab placeholder screen
+// Help tab - shows overview cards for Oversight and Insight
 
-import React from 'react'
-import { StyleSheet, Text, View, ScrollView } from 'react-native'
+import React, { useState } from 'react'
+import { StyleSheet, ScrollView, RefreshControl, View, Text } from 'react-native'
+import { MaterialIcons } from '@expo/vector-icons'
+import { useNavigation } from '@react-navigation/native'
+import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { ChatbotCard } from '../components/ChatbotCard'
+import { AssistantInfoCard } from '../components/AssistantInfoCard'
+import { useAssistant } from '../lib/context/OversightAlertsContext'
+import { useAuth } from '../lib/auth/AuthContext'
+import { oversightApi } from '../lib/api/oversight'
+import type { AppDrawerParamList } from '../navigation/AppNavigator'
+
+type HelpScreenNavigationProp = DrawerNavigationProp<AppDrawerParamList>
+
+// Match the style from "Understanding your Purchases pipeline" info card
+const SURFACE_BACKGROUND = '#f6f6f6'
+const GRAYSCALE_PRIMARY = '#4a4a4a'
+const GRAYSCALE_SECONDARY = '#6d6d6d'
 
 export default function HelpScreen() {
+  const navigation = useNavigation<HelpScreenNavigationProp>()
+  const { oversightUnreadCount, insightUnreadCount, setOversightUnreadCount } = useAssistant()
+  const { businessUser, memberships } = useAuth()
+  const [refreshing, setRefreshing] = useState(false)
+
+  // Get businessId (same logic as other screens)
+  const membershipIds = Object.keys(memberships ?? {})
+  const nonPersonalMembershipId = membershipIds.find(
+    (id) => !id.toLowerCase().includes('personal'),
+  )
+  const businessId =
+    (businessUser?.businessId && !businessUser.businessId.toLowerCase().includes('personal')
+      ? businessUser.businessId
+      : nonPersonalMembershipId) ?? membershipIds[0]
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      if (businessId) {
+        // Trigger a new oversight check to look for new issues
+        await oversightApi.check(businessId, { forceRefresh: false })
+        
+        // Then fetch the updated alerts count
+        const response = await oversightApi.getAlerts(businessId, {
+          unread: true,
+          limit: 1,
+        })
+        setOversightUnreadCount(response.unreadCount)
+        
+        // TODO: Add insight API call when available
+        // For now, insight count remains unchanged
+      }
+    } catch (err) {
+      console.error('Failed to refresh alerts:', err)
+      // Don't update count on error, keep existing value
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   return (
     <AppBarLayout title="Assistant">
-      <View style={styles.container}>
-        <ChatbotCard />
-      </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#333333"
+            colors={['#333333']}
+          />
+        }
+      >
+        <View style={styles.introCard}>
+          <View style={styles.introContent}>
+            <View style={styles.introIconContainer}>
+              <MaterialIcons name="face-retouching-natural" size={32} color={GRAYSCALE_PRIMARY} />
+            </View>
+            <View style={styles.introTextContainer}>
+              <Text style={styles.introTitle}>Your Business Assistant</Text>
+              <Text style={styles.introBody}>
+                Your assistant is your "right hand", providing both help with security protection and operations to help you run your business with confidence.
+              </Text>
+            </View>
+          </View>
+        </View>
+        <AssistantInfoCard
+          title="Security"
+          description="Monitors your business data to detect fraud, theft, and security risks. Alerts you to suspicious activity and potential threats."
+          icon="shield"
+          unreadCount={oversightUnreadCount}
+          actionText="View alerts"
+          onPress={() => navigation.navigate('OversightChat')}
+        />
+        <AssistantInfoCard
+          title="Operations & Performance"
+          description="Analyzes your operations to provide actionable recommendations that help optimize your business performance."
+          icon="trending-up"
+          unreadCount={insightUnreadCount}
+          actionText="Get insights"
+          onPress={() => navigation.navigate('InsightChat')}
+        />
+      </ScrollView>
     </AppBarLayout>
   )
 }
@@ -20,16 +114,44 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  title: {
-    fontSize: 24,
+  scrollContent: {
+    flexGrow: 1,
+    paddingTop: 16, // Default spacing from title above
+  },
+  introCard: {
+    backgroundColor: SURFACE_BACKGROUND,
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e6e6e6',
+  },
+  introContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  introIconContainer: {
+    marginRight: 12,
+  },
+  introTextContainer: {
+    flex: 1,
+  },
+  introTitle: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#333333',
+    color: GRAYSCALE_PRIMARY,
     marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
+  introBody: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  introBold: {
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
   },
 })
 

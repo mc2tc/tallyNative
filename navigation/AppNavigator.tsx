@@ -11,6 +11,8 @@ import POSManagementScreen from '../screens/POSManagementScreen'
 import AddOneOffItemScreen from '../screens/AddOneOffItemScreen'
 import FinancialServicesScreen from '../screens/FinancialServicesScreen'
 import InvoiceFinancingScreen from '../screens/InvoiceFinancingScreen'
+import OversightChatScreen from '../screens/OversightChatScreen'
+import InsightChatScreen from '../screens/InsightChatScreen'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
@@ -23,6 +25,8 @@ export type AppDrawerParamList = {
   AddOneOffItem: undefined
   FinancialServices: undefined
   InvoiceFinancing: undefined
+  OversightChat: undefined
+  InsightChat: undefined
 }
 
 const Drawer = createDrawerNavigator<AppDrawerParamList>()
@@ -53,6 +57,8 @@ export function AppNavigator() {
       <Drawer.Screen name="AddOneOffItem" component={AddOneOffItemScreen} />
       <Drawer.Screen name="FinancialServices" component={FinancialServicesScreen} />
       <Drawer.Screen name="InvoiceFinancing" component={InvoiceFinancingScreen} />
+      <Drawer.Screen name="OversightChat" component={OversightChatScreen} />
+      <Drawer.Screen name="InsightChat" component={InsightChatScreen} />
     </Drawer.Navigator>
   )
 }

@@ -68,7 +68,7 @@ export function MotivationalCard({ businessId, timeframe = 'week', onPress }: Mo
     <View style={styles.card}>
       <View style={styles.content}>
         <View style={styles.textContainer}>
-          <Text style={styles.title}>Ready to improve your business health score?</Text>
+          <Text style={styles.title}>Strategic insights for your business</Text>
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#6d6d6d" />
@@ -93,7 +93,7 @@ export function MotivationalCard({ businessId, timeframe = 'week', onPress }: Mo
           onPress={handleLearnMore}
           activeOpacity={0.7}
         >
-          <Text style={styles.learnMoreText}>Learn more</Text>
+          <Text style={styles.learnMoreText}>View details</Text>
         </TouchableOpacity>
       )}
     </View>
