@@ -9,6 +9,7 @@ import {
   chartAccountsApi,
   type ChartAccount,
   type ChartAccountsResponse,
+  type CashflowStatementResponse,
 } from '../lib/api/chartAccounts'
 import { transactions2Api } from '../lib/api/transactions2'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -53,8 +54,24 @@ export default function ReportsScreen() {
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
   const [data, setData] = useState<ChartAccountsResponse | null>(null)
+  const [cashflowData, setCashflowData] = useState<CashflowStatementResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+
+  const fetchCashflowData = useCallback(async () => {
+    if (!businessId) {
+      setCashflowData(null)
+      return
+    }
+
+    try {
+      const cashflow = await chartAccountsApi.getCashflowStatement(businessId)
+      setCashflowData(cashflow)
+    } catch (err) {
+      console.error('[ReportsScreen] Failed to load cashflow data:', err)
+      setCashflowData(null)
+    }
+  }, [businessId])
 
   const fetchData = useCallback(async () => {
     if (!businessId) {
@@ -150,28 +167,33 @@ export default function ReportsScreen() {
   useEffect(() => {
     if (!businessId) {
       setData(null)
+      setCashflowData(null)
       return
     }
 
     void fetchData()
-  }, [businessId, fetchData])
+    void fetchCashflowData()
+  }, [businessId, fetchData, fetchCashflowData])
 
   const onRefresh = useCallback(async () => {
     if (!businessId) return
     
     setRefreshing(true)
     try {
-      await fetchData()
+      await Promise.all([fetchData(), fetchCashflowData()])
     } catch (error) {
       console.error('Failed to refresh report data:', error)
     } finally {
       setRefreshing(false)
     }
-  }, [businessId, fetchData])
+  }, [businessId, fetchData, fetchCashflowData])
 
   const {
     netProfit,
     netCashFlow,
+    operatingCashFlow,
+    investingCashFlow,
+    financingCashFlow,
     totalAssets,
     totalIncome,
     totalExpenses,
@@ -204,21 +226,11 @@ export default function ReportsScreen() {
       expenseAccountCount: expenseAccounts.length,
     })
 
-    // Calculate net cash flow (sum of all cashflow activities)
-    const classifyCashflow = (account: ChartAccount) => {
-      const candidateRaw =
-        (typeof account.cashflowCategory === 'string' && account.cashflowCategory) ||
-        (typeof account.activity === 'string' && account.activity) ||
-        (typeof account.category === 'string' && account.category) ||
-        account.type ||
-        ''
-      return candidateRaw.toLowerCase()
-    }
-    const allCashflowAccounts = accounts.filter((acc) => {
-      const candidate = classifyCashflow(acc)
-      return candidate.includes('operat') || candidate.includes('invest') || candidate.includes('financ')
-    })
-    const netCashFlow = allCashflowAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
+    // Get cash flow from dedicated endpoint (if available)
+    const operatingCashFlow = cashflowData?.operating.net ?? null
+    const investingCashFlow = cashflowData?.investing.net ?? null
+    const financingCashFlow = cashflowData?.financing.net ?? null
+    const netCashFlow = cashflowData?.netCashFlow ?? null
 
     // Calculate total assets / liabilities / equity
     const assetAccounts = accounts.filter((acc) => acc.type === 'asset')
@@ -244,13 +256,16 @@ export default function ReportsScreen() {
     return {
       netProfit,
       netCashFlow,
+      operatingCashFlow,
+      investingCashFlow,
+      financingCashFlow,
       totalAssets,
       totalIncome,
       totalExpenses,
       totalLiabilities,
       totalEquity,
     }
-  }, [data])
+  }, [data, cashflowData])
 
   const formatMetric = (value: number | null | undefined): string => {
     if (value === null || value === undefined) return '—'
@@ -322,7 +337,26 @@ export default function ReportsScreen() {
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>{card.title}</Text>
               </View>
-              {card.key === 'profitLoss' && !loading && totalIncome != null && totalExpenses != null ? (
+              {card.key === 'cashflow' && !loading && operatingCashFlow != null && investingCashFlow != null && financingCashFlow != null ? (
+                <View style={styles.profitLines}>
+                  <View style={styles.profitLineRow}>
+                    <Text style={styles.profitLabel}>Operating</Text>
+                    <Text style={styles.profitValue}>{formatMetric(operatingCashFlow)}</Text>
+                  </View>
+                  <View style={styles.profitLineRow}>
+                    <Text style={styles.profitLabel}>Investing</Text>
+                    <Text style={styles.profitValue}>{formatMetric(investingCashFlow)}</Text>
+                  </View>
+                  <View style={styles.profitLineRow}>
+                    <Text style={styles.profitLabel}>Financing</Text>
+                    <Text style={styles.profitValue}>{formatMetric(financingCashFlow)}</Text>
+                  </View>
+                  <View style={[styles.profitLineRow, styles.profitEmphasisRow]}>
+                    <Text style={styles.profitLabel}>Net cash flow</Text>
+                    <Text style={styles.profitValue}>{formatMetric(netCashFlow)}</Text>
+                  </View>
+                </View>
+              ) : card.key === 'profitLoss' && !loading && totalIncome != null && totalExpenses != null ? (
                 <View style={styles.profitLines}>
                   <View style={styles.profitLineRow}>
                     <Text style={styles.profitLabel}>Income</Text>

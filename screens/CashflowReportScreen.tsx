@@ -1,22 +1,16 @@
-// TODO: Cashflow statement needs additional work - will revisit
-// Current implementation shows basic cashflow categories with values
-// Additional work needed on categorization and cashflow-specific logic
-
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import {
   chartAccountsApi,
-  type ChartAccount,
-  type ChartAccountsResponse,
+  type CashflowStatementResponse,
 } from '../lib/api/chartAccounts'
 import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
@@ -25,7 +19,7 @@ export default function CashflowReportScreen() {
   const navigation = useNavigation()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
-  const [data, setData] = useState<ChartAccountsResponse | null>(null)
+  const [data, setData] = useState<CashflowStatementResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -42,32 +36,13 @@ export default function CashflowReportScreen() {
       return
     }
 
-    const fetchAccounts = async () => {
+    const fetchCashflowStatement = async () => {
       setLoading(true)
       setError(null)
       try {
-        const response = await chartAccountsApi.getRawAccounts(businessId, {
-          withValues: true,
-        })
-        const normalized =
-          (response.accounts ?? [])
-            .map((account) => {
-              if (!account) return null
-              if (typeof account === 'string') {
-                return { name: account }
-              }
-              if (typeof account === 'object' && typeof account.name === 'string') {
-                return account as ChartAccount
-              }
-              return null
-            })
-            .filter((account): account is ChartAccount => account !== null) ?? []
-
+        const response = await chartAccountsApi.getCashflowStatement(businessId)
         if (!isActive) return
-        setData({
-          ...response,
-          accounts: normalized,
-        })
+        setData(response)
       } catch (err) {
         if (!isActive) return
         const message = err instanceof Error ? err.message : 'Failed to load cashflow data.'
@@ -80,85 +55,12 @@ export default function CashflowReportScreen() {
       }
     }
 
-    void fetchAccounts()
+    void fetchCashflowStatement()
 
     return () => {
       isActive = false
     }
   }, [businessId])
-
-  const {
-    operatingAccounts,
-    investingAccounts,
-    financingAccounts,
-    otherAccounts,
-    totalOperating,
-    totalInvesting,
-    totalFinancing,
-    totalOther,
-    netCashFlow,
-  } = useMemo(() => {
-    const groups = {
-      operatingAccounts: [] as ChartAccount[],
-      investingAccounts: [] as ChartAccount[],
-      financingAccounts: [] as ChartAccount[],
-      otherAccounts: [] as ChartAccount[],
-    }
-
-    const classify = (account: ChartAccount) => {
-      const candidateRaw =
-        (typeof account.cashflowCategory === 'string' && account.cashflowCategory) ||
-        (typeof account.activity === 'string' && account.activity) ||
-        (typeof account.category === 'string' && account.category) ||
-        account.type ||
-        ''
-      const candidate = candidateRaw.toLowerCase()
-      if (candidate.includes('operat')) return 'operatingAccounts'
-      if (candidate.includes('invest')) return 'investingAccounts'
-      if (candidate.includes('financ')) return 'financingAccounts'
-      return 'otherAccounts'
-    }
-
-    const accounts = data?.accounts ?? []
-    for (const account of accounts) {
-      if (!account || typeof account !== 'object') continue
-      groups[classify(account)].push(account)
-    }
-
-    const totalOperating = groups.operatingAccounts.reduce(
-      (sum, acc) => sum + (acc.value ?? 0),
-      0,
-    )
-    const totalInvesting = groups.investingAccounts.reduce(
-      (sum, acc) => sum + (acc.value ?? 0),
-      0,
-    )
-    const totalFinancing = groups.financingAccounts.reduce(
-      (sum, acc) => sum + (acc.value ?? 0),
-      0,
-    )
-    const totalOther = groups.otherAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
-    const netCashFlow = totalOperating + totalInvesting + totalFinancing + totalOther
-
-    return {
-      operatingAccounts: groups.operatingAccounts,
-      investingAccounts: groups.investingAccounts,
-      financingAccounts: groups.financingAccounts,
-      otherAccounts: groups.otherAccounts,
-      totalOperating,
-      totalInvesting,
-      totalFinancing,
-      totalOther,
-      netCashFlow,
-    }
-  }, [data])
-
-  const hasAccounts =
-    operatingAccounts.length > 0 ||
-    investingAccounts.length > 0 ||
-    financingAccounts.length > 0 ||
-    otherAccounts.length > 0
-  const hasValues = data?.period !== undefined
 
   return (
     <AppBarLayout title="Reports" onBackPress={handleGoBack}>
@@ -174,156 +76,137 @@ export default function CashflowReportScreen() {
         )}
         {businessId && !loading && error && <Text style={styles.errorText}>{error}</Text>}
 
-        {businessId && !loading && !error && (
-          <>
-            {!hasAccounts && (
-              <Text style={styles.statusText}>No cashflow-related accounts available yet.</Text>
-            )}
+        {businessId && !loading && !error && data && (
+          <View style={styles.statementCard}>
+            <Text style={styles.cardTitle}>Cash Flow Statement - All Time</Text>
 
-            {hasAccounts && (
-              <View style={styles.statementCard}>
-                <Text style={styles.cardTitle}>Cashflow Statement</Text>
-                {hasValues && data.period && (
-                  <Text style={styles.periodText}>
-                    {new Date(data.period.startDate).toLocaleDateString('en-GB', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })}{' '}
-                    -{' '}
-                    {new Date(data.period.endDate).toLocaleDateString('en-GB', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+            {/* Column Headers */}
+            <View style={styles.columnHeaders}>
+              <Text style={styles.columnHeader}>Activity</Text>
+              <Text style={styles.columnHeader}>Amount</Text>
+            </View>
+
+            {/* Operating Activities */}
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Operating Activities</Text>
+              
+              {data.operating.inflows > 0 && (
+                <View style={styles.indentedRow}>
+                  <Text style={styles.activityText}>Cash Inflows</Text>
+                  <Text style={styles.amountText}>
+                    £{formatAmount(data.operating.inflows, 'GBP', true)}
                   </Text>
-                )}
-
-                <View style={styles.section}>
-                  <Text style={styles.sectionLabel}>Operating Activities</Text>
-                  {operatingAccounts.map((account) => (
-                    <View key={`${account.id ?? account.name}-operating`} style={styles.accountRow}>
-                      <Text style={styles.accountName}>{account.name}</Text>
-                      <Text style={styles.accountValue}>
-                        {hasValues && account.value !== undefined
-                          ? formatAmount(account.value, 'GBP', true)
-                          : '—'}
-                      </Text>
-                    </View>
-                  ))}
-                  {operatingAccounts.length === 0 && (
-                    <Text style={styles.emptyHint}>No operating activity accounts yet</Text>
-                  )}
-                  {hasValues && operatingAccounts.length > 0 && (
-                    <View style={styles.totalRow}>
-                      <Text style={styles.totalLabel}>Net Operating Cash Flow</Text>
-                      <Text style={styles.totalValue}>
-                        £{formatAmount(totalOperating, 'GBP', true)}
-                      </Text>
-                    </View>
-                  )}
                 </View>
-
-                <View style={styles.sectionDivider} />
-
-                <View style={styles.section}>
-                  <Text style={styles.sectionLabel}>Investing Activities</Text>
-                  {investingAccounts.map((account) => (
-                    <View key={`${account.id ?? account.name}-investing`} style={styles.accountRow}>
-                      <Text style={styles.accountName}>{account.name}</Text>
-                      <Text style={styles.accountValue}>
-                        {hasValues && account.value !== undefined
-                          ? formatAmount(account.value, 'GBP', true)
-                          : '—'}
-                      </Text>
-                    </View>
-                  ))}
-                  {investingAccounts.length === 0 && (
-                    <Text style={styles.emptyHint}>No investing activity accounts yet</Text>
-                  )}
-                  {hasValues && investingAccounts.length > 0 && (
-                    <View style={styles.totalRow}>
-                      <Text style={styles.totalLabel}>Net Investing Cash Flow</Text>
-                      <Text style={styles.totalValue}>
-                        £{formatAmount(totalInvesting, 'GBP', true)}
-                      </Text>
-                    </View>
-                  )}
+              )}
+              
+              {data.operating.outflows > 0 && (
+                <View style={styles.indentedRow}>
+                  <Text style={styles.activityText}>Cash Outflows</Text>
+                  <Text style={styles.amountTextNegative}>
+                    (£{formatAmount(data.operating.outflows, 'GBP', true)})
+                  </Text>
                 </View>
-
-                <View style={styles.sectionDivider} />
-
-                <View style={styles.section}>
-                  <Text style={styles.sectionLabel}>Financing Activities</Text>
-                  {financingAccounts.map((account) => (
-                    <View key={`${account.id ?? account.name}-financing`} style={styles.accountRow}>
-                      <Text style={styles.accountName}>{account.name}</Text>
-                      <Text style={styles.accountValue}>
-                        {hasValues && account.value !== undefined
-                          ? formatAmount(account.value, 'GBP', true)
-                          : '—'}
-                      </Text>
-                    </View>
-                  ))}
-                  {financingAccounts.length === 0 && (
-                    <Text style={styles.emptyHint}>No financing activity accounts yet</Text>
-                  )}
-                  {hasValues && financingAccounts.length > 0 && (
-                    <View style={styles.totalRow}>
-                      <Text style={styles.totalLabel}>Net Financing Cash Flow</Text>
-                      <Text style={styles.totalValue}>
-                        £{formatAmount(totalFinancing, 'GBP', true)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {otherAccounts.length > 0 && (
-                  <>
-                    <View style={styles.sectionDivider} />
-                    <View style={styles.section}>
-                      <Text style={styles.sectionLabel}>Other Movements</Text>
-                      {otherAccounts.map((account) => (
-                        <View key={`${account.id ?? account.name}-other`} style={styles.accountRow}>
-                          <Text style={styles.accountName}>{account.name}</Text>
-                          <Text style={styles.accountValue}>
-                            {hasValues && account.value !== undefined
-                              ? formatAmount(account.value, 'GBP', true)
-                              : '—'}
-                          </Text>
-                        </View>
-                      ))}
-                      {hasValues && otherAccounts.length > 0 && (
-                        <View style={styles.totalRow}>
-                          <Text style={styles.totalLabel}>Net Other Cash Flow</Text>
-                          <Text style={styles.totalValue}>
-                            £{formatAmount(totalOther, 'GBP', true)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </>
-                )}
-
-                {hasValues && (
-                  <>
-                    <View style={styles.sectionDivider} />
-                    <View style={styles.netCashFlowRow}>
-                      <Text style={styles.netCashFlowLabel}>Net Cash Flow</Text>
-                      <Text
-                        style={[
-                          styles.netCashFlowValue,
-                          netCashFlow < 0 && styles.netCashFlowValueNegative,
-                        ]}
-                      >
-                        £{formatAmount(Math.abs(netCashFlow), 'GBP', true)}
-                      </Text>
-                    </View>
-                  </>
-                )}
+              )}
+              
+              <View style={styles.netRow}>
+                <Text style={styles.netLabel}>Net Operating Cash Flow</Text>
+                <Text
+                  style={[
+                    styles.netAmount,
+                    data.operating.net < 0 && styles.netAmountNegative,
+                  ]}
+                >
+                  {data.operating.net < 0 ? '-' : ''}
+                  £{formatAmount(Math.abs(data.operating.net), 'GBP', true)}
+                </Text>
               </View>
-            )}
-          </>
+            </View>
+
+            <View style={styles.sectionDivider} />
+
+            {/* Investing Activities */}
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Investing Activities</Text>
+              
+              <View style={styles.netRow}>
+                <Text style={styles.netLabel}>Net Investing Cash Flow</Text>
+                <Text
+                  style={[
+                    styles.netAmount,
+                    data.investing.net < 0 && styles.netAmountNegative,
+                  ]}
+                >
+                  {data.investing.net < 0 ? '-' : ''}
+                  £{formatAmount(Math.abs(data.investing.net), 'GBP', true)}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.sectionDivider} />
+
+            {/* Financing Activities */}
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Financing Activities</Text>
+              
+              {data.financing.inflows > 0 && (
+                <View style={styles.indentedRow}>
+                  <Text style={styles.activityText}>Cash Inflows</Text>
+                  <Text style={styles.amountText}>
+                    £{formatAmount(data.financing.inflows, 'GBP', true)}
+                  </Text>
+                </View>
+              )}
+              
+              <View style={styles.netRow}>
+                <Text style={styles.netLabel}>Net Financing Cash Flow</Text>
+                <Text
+                  style={[
+                    styles.netAmount,
+                    data.financing.net < 0 && styles.netAmountNegative,
+                  ]}
+                >
+                  {data.financing.net < 0 ? '-' : ''}
+                  £{formatAmount(Math.abs(data.financing.net), 'GBP', true)}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.sectionDivider} />
+
+            {/* Net Cash Flow */}
+            <View style={styles.netCashFlowRow}>
+              <Text style={styles.netCashFlowLabel}>Net Cash Flow</Text>
+              <Text
+                style={[
+                  styles.netCashFlowValue,
+                  data.netCashFlow < 0 && styles.netCashFlowValueNegative,
+                ]}
+              >
+                {data.netCashFlow < 0 ? '-' : ''}
+                £{formatAmount(Math.abs(data.netCashFlow), 'GBP', true)}
+              </Text>
+            </View>
+
+            <View style={styles.sectionDivider} />
+
+            {/* Cash Flow Ratio and Revenue */}
+            <View style={styles.ratioSection}>
+              <View style={styles.ratioRow}>
+                <Text style={styles.ratioLabel}>Cash Flow Ratio</Text>
+                <Text style={styles.ratioValue}>
+                  {data.cashFlowRatio !== undefined
+                    ? `${data.cashFlowRatio >= 0 ? '' : '-'}${Math.abs(data.cashFlowRatio).toFixed(1)}%`
+                    : '—'}
+                </Text>
+              </View>
+              <View style={styles.revenueRow}>
+                <Text style={styles.revenueLabel}>(Operating Cash Flow / Revenue)</Text>
+                <Text style={styles.revenueValue}>
+                  Revenue: £{formatAmount(data.revenue, 'GBP', true)}
+                </Text>
+              </View>
+            </View>
+          </View>
         )}
       </ScrollView>
     </AppBarLayout>
@@ -369,90 +252,128 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#111111',
-    marginBottom: 4,
-  },
-  periodText: {
-    fontSize: 13,
-    color: '#666666',
     marginBottom: 12,
   },
+  columnHeaders: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    marginBottom: 12,
+  },
+  columnHeader: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+  },
   section: {
-    gap: 8,
+    gap: 4,
   },
   sectionLabel: {
     fontSize: 15,
     fontWeight: '600',
     color: '#333333',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    marginBottom: 4,
   },
-  accountRow: {
+  indentedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingVertical: 4,
+  },
+  activityText: {
+    fontSize: 14,
+    color: '#1f1f1f',
+  },
+  amountText: {
+    fontSize: 14,
+    color: '#1f1f1f',
+    fontWeight: '500',
+  },
+  amountTextNegative: {
+    fontSize: 14,
+    color: '#1f1f1f',
+    fontWeight: '500',
+  },
+  netRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f1f1',
+    marginTop: 4,
   },
-  accountName: {
-    fontSize: 15,
-    color: '#1f1f1f',
-  },
-  accountValue: {
-    fontSize: 15,
-    color: '#1f1f1f',
-    fontWeight: '500',
-  },
-  emptyHint: {
+  netLabel: {
     fontSize: 14,
-    color: '#888888',
-    fontStyle: 'italic',
+    fontWeight: '600',
+    color: '#333333',
+  },
+  netAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f1f1f',
+  },
+  netAmountNegative: {
+    color: '#1f1f1f',
   },
   sectionDivider: {
     height: 1,
     backgroundColor: '#efefef',
-    marginVertical: 4,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  totalLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#333333',
-  },
-  totalValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1f1f1f',
+    marginVertical: 8,
   },
   netCashFlowRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
-    borderTopWidth: 2,
-    borderTopColor: '#333333',
+    paddingVertical: 8,
+    marginTop: 4,
   },
   netCashFlowLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111111',
   },
   netCashFlowValue: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111111',
   },
   netCashFlowValueNegative: {
-    color: '#b00020',
+    color: '#1f1f1f',
+  },
+  ratioSection: {
+    marginTop: 4,
+  },
+  ratioRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  ratioLabel: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  ratioValue: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  revenueRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  revenueLabel: {
+    fontSize: 12,
+    color: '#888888',
+    fontStyle: 'italic',
+  },
+  revenueValue: {
+    fontSize: 12,
+    color: '#888888',
   },
 })
 

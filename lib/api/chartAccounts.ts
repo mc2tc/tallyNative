@@ -62,6 +62,57 @@ const normalizeAccounts = (accounts: RawChartAccount[]): ChartAccount[] => {
     .filter((account): account is ChartAccount => account !== null)
 }
 
+export type CashflowAccountDetail = {
+  accountId: string
+  accountName: string
+  amount: number // Positive for inflows, negative for outflows
+}
+
+export type CashflowActivity = {
+  inflows: number
+  outflows: number
+  net: number
+  accounts?: CashflowAccountDetail[] // Only included if includeDetails=true
+}
+
+export type CashflowStatementResponse = {
+  businessId: string
+  period: {
+    startDate: string // ISO 8601
+    endDate: string // ISO 8601
+  }
+  operating: CashflowActivity
+  investing: CashflowActivity
+  financing: CashflowActivity
+  netCashFlow: number
+  revenue: number
+  cashFlowRatio?: number // Only if revenue > 0
+}
+
+export type CashflowStatementFilters = {
+  startDate?: string // ISO 8601
+  endDate?: string // ISO 8601
+  includeDetails?: boolean
+}
+
+const buildCashflowStatementUrl = (
+  businessId: string,
+  filters?: CashflowStatementFilters,
+): string => {
+  const params: string[] = []
+  if (filters?.startDate) {
+    params.push(`startDate=${encodeURIComponent(filters.startDate)}`)
+  }
+  if (filters?.endDate) {
+    params.push(`endDate=${encodeURIComponent(filters.endDate)}`)
+  }
+  if (filters?.includeDetails === true) {
+    params.push('includeDetails=true')
+  }
+  const query = params.length > 0 ? `?${params.join('&')}` : ''
+  return `/api/businesses/${businessId}/cashflow-statement${query}`
+}
+
 export const chartAccountsApi = {
   getAccounts: async (businessId: string, filters?: ChartAccountFilters): Promise<ChartAccount[]> => {
     const response = await api.get<ChartAccountsResponse>(
@@ -88,6 +139,12 @@ export const chartAccountsApi = {
       return name.includes('sales revenue') || name.includes('revenue') || account.type === 'income'
     })
     return salesRevenueAccounts.map((account) => account.name)
+  },
+  getCashflowStatement: async (
+    businessId: string,
+    filters?: CashflowStatementFilters,
+  ): Promise<CashflowStatementResponse> => {
+    return api.get<CashflowStatementResponse>(buildCashflowStatementUrl(businessId, filters))
   },
 }
 
