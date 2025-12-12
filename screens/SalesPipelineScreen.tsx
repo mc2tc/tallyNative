@@ -28,39 +28,17 @@ type PipelineColumn = {
 
 type SalesPipelineRouteProp = RouteProp<TransactionsStackParamList, 'SalesPipeline'>
 
-// Dummy sales leads data for Traffic Light Pipeline
-// Note: Multiple projects from the same customer can exist at different stages
-const salesLeadsData: SalesLead[] = [
-  // Lead
-  { id: '1', title: 'Acme Corporation', projectTitle: 'Website Redesign', subtitle: 'Website form submission', stage: 'lead' },
-  { id: '2', title: 'Beta Industries', projectTitle: 'Mobile App Development', subtitle: 'Referred by partner', stage: 'lead' },
-  { id: '3', title: 'Gamma Solutions', projectTitle: 'API Integration', subtitle: 'LinkedIn connection', stage: 'lead' },
-  // In Conversation
-  { id: '4', title: 'Acme Corporation', projectTitle: 'E-commerce Platform', subtitle: 'Initial call completed', amount: '£5,000', stage: 'conversation' },
-  { id: '5', title: 'Epsilon Technologies', projectTitle: 'Cloud Migration', subtitle: 'Discovery meeting done', amount: '£12,000', stage: 'conversation' },
-  { id: '6', title: 'Figma Design Co', projectTitle: 'Brand Identity', subtitle: 'Needs assessment in progress', amount: '£8,500', stage: 'conversation' },
-  // Proposal / Quote Sent
-  { id: '7', title: 'Acme Corporation', projectTitle: 'Data Analytics Dashboard', subtitle: 'Proposal sent 2 days ago', amount: '£25,000', stage: 'proposal' },
-  { id: '8', title: 'Horizon Partners', projectTitle: 'CRM Implementation', subtitle: 'Quote sent last week', amount: '£15,000', stage: 'proposal' },
-  { id: '9', title: 'Innovation Labs', projectTitle: 'AI Chatbot', subtitle: 'Proposal sent 5 days ago', amount: '£30,000', stage: 'proposal' },
-  // Closed WON
-  { id: '10', title: 'Jupiter Systems', projectTitle: 'Security Audit', subtitle: 'Signed contract', amount: '£20,000', stage: 'won' },
-  { id: '11', title: 'Acme Corporation', projectTitle: 'Legacy System Upgrade', subtitle: 'Project started', amount: '£18,000', stage: 'won' },
-  // Closed LOST
-  { id: '12', title: 'Lambda Group', projectTitle: 'Digital Transformation', subtitle: 'Went with competitor', stage: 'lost' },
-  { id: '13', title: 'Mega Corp', projectTitle: 'Infrastructure Overhaul', subtitle: 'Budget constraints', stage: 'lost' },
-]
-
 export default function SalesPipelineScreen() {
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const route = useRoute<SalesPipelineRouteProp>()
 
+  // TODO: Fetch real sales leads data from API
   // Filter sales leads by stage
-  const leadLeads = salesLeadsData.filter(lead => lead.stage === 'lead')
-  const conversationLeads = salesLeadsData.filter(lead => lead.stage === 'conversation')
-  const proposalLeads = salesLeadsData.filter(lead => lead.stage === 'proposal')
-  const wonLeads = salesLeadsData.filter(lead => lead.stage === 'won')
-  const lostLeads = salesLeadsData.filter(lead => lead.stage === 'lost')
+  const leadLeads: SalesLead[] = []
+  const conversationLeads: SalesLead[] = []
+  const proposalLeads: SalesLead[] = []
+  const wonLeads: SalesLead[] = []
+  const lostLeads: SalesLead[] = []
 
   // Create 5-column pipeline data
   const salesColumnsWithData: PipelineColumn[] = [
@@ -109,17 +87,23 @@ export default function SalesPipelineScreen() {
     }
   }
 
+  const handleAddClick = () => {
+    navigation.navigate('AddCustomer')
+  }
+
   return (
-    <AppBarLayout title="Sales Pipeline" onBackPress={() => navigation.goBack()}>
+    <AppBarLayout 
+      title="Sales Pipeline" 
+      onBackPress={() => navigation.goBack()}
+      rightIconName="add-circle-sharp"
+      onRightIconPress={handleAddClick}
+    >
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <View style={styles.pipelineColumnStack}>
           {salesColumnsWithData.map((column) => (
             <View key={column.title} style={styles.pipelineCard}>
               <View style={styles.pipelineTitleRow}>
                 <Text style={styles.pipelineTitle}>{column.title}</Text>
-                <TouchableOpacity activeOpacity={0.6} style={styles.infoButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <MaterialIcons name="info-outline" size={16} color={GRAYSCALE_SECONDARY} />
-                </TouchableOpacity>
               </View>
               {column.salesLeads && (
                 <SalesCardList items={column.salesLeads} navigation={navigation} />
@@ -236,18 +220,12 @@ const styles = StyleSheet.create({
   pipelineTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     marginBottom: 12,
   },
   pipelineTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
-    flex: 1,
-  },
-  infoButton: {
-    padding: 4,
-    marginLeft: 8,
   },
   pipelineActions: {
     marginTop: 12,

@@ -14,6 +14,7 @@ import ManualPurchaseEntryScreen from '../screens/ManualPurchaseEntryScreen'
 import CreateInvoiceScreen from '../screens/CreateInvoiceScreen'
 import LeadDetailScreen from '../screens/LeadDetailScreen'
 import SalesPipelineScreen from '../screens/SalesPipelineScreen'
+import AddCustomerScreen from '../screens/AddCustomerScreen'
 import UploadProcessingScreen from '../screens/UploadProcessingScreen'
 import type { Transaction } from '../lib/api/transactions2'
 import type { BankStatementRule } from '../lib/api/bankStatementRules'
@@ -47,6 +48,7 @@ export type TransactionsStackParamList = {
   CreateInvoice: { customerName?: string; projectTitle?: string }
   LeadDetail: { lead: { id: string; title: string; projectTitle?: string; subtitle?: string; amount?: string; stage: 'lead' | 'conversation' | 'proposal' | 'won' | 'lost' } }
   SalesPipeline: undefined
+  AddCustomer: undefined
   TransactionList: undefined
   TransactionDetail: { transaction: Transaction }
   ScaffoldViewAll: {
@@ -74,6 +76,7 @@ export function TransactionsNavigator() {
       <Stack.Screen name="CreateInvoice" component={CreateInvoiceScreen} />
       <Stack.Screen name="LeadDetail" component={LeadDetailScreen} />
       <Stack.Screen name="SalesPipeline" component={SalesPipelineScreen} />
+      <Stack.Screen name="AddCustomer" component={AddCustomerScreen} />
       <Stack.Screen name="TransactionList" component={TransactionListScreen} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
       <Stack.Screen name="ScaffoldViewAll" component={ScaffoldViewAllScreen} />

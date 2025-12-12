@@ -28,8 +28,15 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
           <Drawer.Item
             label="CRM"
             icon="account-group"
-            active={activeRouteName === 'CRM'}
-            onPress={() => props.navigation.navigate('CRM')}
+            active={activeRouteName === 'MainTabs'}
+            onPress={() => {
+              props.navigation.navigate('MainTabs', {
+                screen: 'Transactions',
+                params: {
+                  screen: 'SalesPipeline',
+                },
+              })
+            }}
           />
           <Drawer.Item
             label="Employees"
