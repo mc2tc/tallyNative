@@ -1,5 +1,105 @@
 # Daily Development Summaries
 
+## 2025-12-12
+
+### Summary
+Implemented Sales Pipeline feature with Add Customer screen, autocomplete functionality, and comprehensive form validation. Created SalesPipelineScreen displaying 5-stage pipeline (Lead, In Conversation, Proposal/Quote Sent, Closed WON, Closed LOST), built AddCustomerScreen with customer name autocomplete, stage selector, project name, estimated project value, and source fields. Integrated react-native-autocomplete-input package for customer name suggestions, implemented conditional validation where project name and estimated project value are required for proposal/won/lost stages but optional for lead/conversation. Created customers API client with createCustomer and getCustomers endpoints, updated backend documentation for customer creation endpoint with all new fields, removed dummy customer data, and cleaned up UI by removing info icons from pipeline cards.
+
+### Commits
+
+#### 1. feat: Add Sales Pipeline with Add Customer screen and autocomplete
+**Commit:** `23b47ba`  
+**Files Changed:** 9 files, 1242 insertions(+), 40 deletions(-)
+
+**Changes:**
+- Created SalesPipelineScreen with 5-stage pipeline visualization:
+  - Displays pipeline columns: Lead, In Conversation, Proposal / Quote Sent, Closed WON, Closed LOST
+  - Each column shows up to 3 most recent sales leads with company name, project title, subtitle, and amount
+  - Wireframe grayscale design consistent with app design system
+  - Removed dummy customer data - now shows empty columns ready for API integration
+  - Removed info icon from pipeline cards for cleaner UI
+- Created AddCustomerScreen with comprehensive form:
+  - Customer name input with autocomplete functionality using react-native-autocomplete-input package
+  - Autocomplete shows suggestions from existing customers (fetches all customers once, filters locally)
+  - Simple text input for customer name when stage is 'Lead' (no autocomplete)
+  - Stage selector with bottom sheet modal (Lead, In Conversation, Proposal / Quote Sent, Closed WON, Closed LOST)
+  - Project name field with conditional validation (optional for Lead/In Conversation, required otherwise)
+  - Estimated Project Value field with numeric keyboard (optional for Lead/In Conversation, required otherwise)
+  - Source field (optional, always)
+  - Save button with loading state and validation
+  - All fields properly styled with consistent input design
+- Implemented conditional validation logic:
+  - Customer name: Always required (red asterisk indicator)
+  - Project name: Required for proposal/won/lost stages, optional for lead/conversation (shows "(optional)" or "*")
+  - Estimated Project Value: Required for proposal/won/lost stages, optional for lead/conversation (shows "(optional)" or "*")
+  - Source: Always optional
+  - Save button disabled when required fields are missing
+- Created customers API client (`lib/api/customers.ts`):
+  - `getCustomers()` method to fetch customers with optional search and limit parameters
+  - `createCustomer()` method to create new customers with name, stage, projectName, estimatedProjectValue, and source
+  - Proper TypeScript types for Customer, CreateCustomerPayload, CustomersListResponse
+- Integrated autocomplete package:
+  - Installed react-native-autocomplete-input package
+  - Implemented local filtering after fetching all customers (up to 100)
+  - Proper touch handling with keyboardShouldPersistTaps for suggestion selection
+  - Loading indicator while fetching customers
+  - Styled suggestions list with proper shadows and borders
+- Updated navigation:
+  - Added SalesPipeline and AddCustomer routes to TransactionsNavigator
+  - Linked CRM drawer item to Sales Pipeline screen
+  - Added "+" icon to Sales Pipeline app bar that navigates to Add Customer screen
+- Updated backend documentation:
+  - Enhanced customer-creation-endpoint.md with all new fields (projectName, estimatedProjectValue, source)
+  - Added validation rules for conditional requirements based on stage
+  - Added example requests showing both minimal and full payloads
+  - Added backend confirmation section requesting confirmation that all fields will be saved to Firestore
+  - Created customers-list-endpoint.md documenting GET endpoint for autocomplete functionality
+
+**Files Modified:**
+- `screens/SalesPipelineScreen.tsx` - Created Sales Pipeline screen with 5-stage pipeline (new, 285 lines)
+- `screens/AddCustomerScreen.tsx` - Created Add Customer screen with form and autocomplete (new, 670 lines)
+- `lib/api/customers.ts` - Created customers API client (new, 61 lines)
+- `navigation/TransactionsNavigator.tsx` - Added SalesPipeline and AddCustomer routes
+- `navigation/DrawerContent.tsx` - Linked CRM drawer item to Sales Pipeline
+- `package.json` - Added react-native-autocomplete-input dependency
+- `docs/backend-requests/customer-creation-endpoint.md` - Updated with all new fields and validation rules (updated, 269 lines)
+- `docs/backend-requests/customers-list-endpoint.md` - Created endpoint documentation for autocomplete (new, 208 lines)
+
+---
+
+### Statistics
+- **Total Commits:** 1
+- **Total Files Changed:** 9 files
+- **Total Lines Added:** 1242 insertions
+- **Total Lines Removed:** 40 deletions
+- **Net Change:** +1202 lines
+
+### Key Features Added
+1. Sales Pipeline screen with 5-stage pipeline visualization (Lead, In Conversation, Proposal, Closed WON, Closed LOST)
+2. Add Customer screen with comprehensive form fields
+3. Customer name autocomplete using react-native-autocomplete-input package
+4. Conditional validation for project name and estimated project value based on stage
+5. Stage selector with bottom sheet modal matching MetricsCard design pattern
+6. Customers API client with createCustomer and getCustomers methods
+7. Local filtering for autocomplete suggestions (fetches all customers once, filters client-side)
+8. Proper form validation with required field indicators
+9. Backend documentation updated with all new fields and validation requirements
+10. Navigation integration from CRM drawer to Sales Pipeline
+11. Removed dummy customer data from Sales Pipeline screen
+12. Cleaned up UI by removing info icons from pipeline cards
+
+### Notes
+- Autocomplete uses react-native-autocomplete-input package for reliable touch handling and suggestion display
+- Customer name autocomplete is disabled when stage is 'Lead' (shows simple text input instead)
+- Project name and estimated project value are conditionally required based on stage selection
+- All form fields are properly validated before allowing save
+- Backend needs to confirm that all fields (name, stage, projectName, estimatedProjectValue, source) will be saved to Firestore
+- Sales Pipeline screen currently shows empty columns - ready for API integration to fetch real customer data
+- Autocomplete fetches up to 100 customers and filters locally for better performance
+- All TypeScript types properly defined and codebase passes type-checking
+
+---
+
 ## 2025-12-11
 
 ### Summary
