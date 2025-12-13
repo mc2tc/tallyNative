@@ -13,6 +13,11 @@ import FinancialServicesScreen from '../screens/FinancialServicesScreen'
 import InvoiceFinancingScreen from '../screens/InvoiceFinancingScreen'
 import OversightChatScreen from '../screens/OversightChatScreen'
 import InsightChatScreen from '../screens/InsightChatScreen'
+import ProductionManagementScreen from '../screens/ProductionManagementScreen'
+import EmployeeManagementScreen from '../screens/EmployeeManagementScreen'
+import OnlineSalesScreen from '../screens/OnlineSalesScreen'
+import OnlineBookingScreen from '../screens/OnlineBookingScreen'
+import TallyNetworkScreen from '../screens/TallyNetworkScreen'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
@@ -27,11 +32,17 @@ export type AppDrawerParamList = {
   InvoiceFinancing: undefined
   OversightChat: undefined
   InsightChat: undefined
+  ProductionManagement: undefined
+  EmployeeManagement: undefined
+  OnlineSales: undefined
+  OnlineBooking: undefined
+  TallyNetwork: undefined
 }
 
 const Drawer = createDrawerNavigator<AppDrawerParamList>()
 
 export function AppNavigator() {
+  console.log('AppNavigator: Setting drawer screenOptions')
   return (
     <Drawer.Navigator
       initialRouteName="MainTabs"
@@ -46,6 +57,7 @@ export function AppNavigator() {
         overlayColor: 'rgba(0, 0, 0, 0.5)',
         drawerActiveTintColor: '#333333',
         drawerInactiveTintColor: '#666666',
+        drawerActiveBackgroundColor: 'transparent',
       }}
     >
       <Drawer.Screen name="MainTabs" component={MainTabNavigator} />
@@ -59,6 +71,11 @@ export function AppNavigator() {
       <Drawer.Screen name="InvoiceFinancing" component={InvoiceFinancingScreen} />
       <Drawer.Screen name="OversightChat" component={OversightChatScreen} />
       <Drawer.Screen name="InsightChat" component={InsightChatScreen} />
+      <Drawer.Screen name="ProductionManagement" component={ProductionManagementScreen} />
+      <Drawer.Screen name="EmployeeManagement" component={EmployeeManagementScreen} />
+      <Drawer.Screen name="OnlineSales" component={OnlineSalesScreen} />
+      <Drawer.Screen name="OnlineBooking" component={OnlineBookingScreen} />
+      <Drawer.Screen name="TallyNetwork" component={TallyNetworkScreen} />
     </Drawer.Navigator>
   )
 }
