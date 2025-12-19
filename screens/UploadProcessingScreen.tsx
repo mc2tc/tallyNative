@@ -66,13 +66,13 @@ export default function UploadProcessingScreen() {
         
         // Upload file
         console.log('UploadProcessing: Uploading file to storage...')
-        const downloadUrl = await uploadReceiptAndGetUrl({
+        const { downloadUrl, fileSize } = await uploadReceiptAndGetUrl({
           businessId,
           localUri,
           fileNameHint,
           contentType,
         })
-        console.log('UploadProcessing: File uploaded, downloadUrl:', downloadUrl)
+        console.log('UploadProcessing: File uploaded, downloadUrl:', downloadUrl, 'fileSize:', fileSize)
         
         // Create transaction
         const finalTransactionType = transactionType || 'purchase'
@@ -99,6 +99,7 @@ export default function UploadProcessingScreen() {
           console.log('UploadProcessing: Using transactions3 bank statement upload endpoint')
           response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
             // TODO: Get bankName and accountNumber if available from context
+            fileSize,
           })
           
           console.log('UploadProcessing: Bank statement upload response:', {
@@ -126,6 +127,7 @@ export default function UploadProcessingScreen() {
           console.log('UploadProcessing: Using transactions3 credit card statement upload endpoint')
           response = await transactions2Api.uploadCreditCardStatement(businessId, downloadUrl, {
             // TODO: Get cardName and cardNumber if available from context
+            fileSize,
           })
           
           console.log('UploadProcessing: Credit card statement upload response:', {
@@ -149,7 +151,7 @@ export default function UploadProcessingScreen() {
             throw new Error('Failed to process credit card statement')
           }
         } else if (useTransactions3) {
-          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
+          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl, fileSize)
           
           console.log('UploadProcessing: Transaction creation response:', {
             success: response.success,

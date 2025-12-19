@@ -18,6 +18,7 @@ import { transactions2Api } from '../lib/api/transactions2'
 import { chartAccountsApi } from '../lib/api/chartAccounts'
 import { businessContextApi } from '../lib/api/businessContext'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
+import { useModuleTracking } from '../lib/hooks/useModuleTracking'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -54,6 +55,7 @@ type PaymentMethod = {
 }
 
 export default function ManualPurchaseEntryScreen() {
+  useModuleTracking('purchasing')
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
 

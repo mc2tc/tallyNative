@@ -15,6 +15,7 @@ import { transactions2Api } from '../lib/api/transactions2'
 import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
 import { AppBarLayout } from '../components/AppBarLayout'
+import { useModuleTracking } from '../lib/hooks/useModuleTracking'
 
 type SimpleReportRoute = Exclude<
   keyof ReportsStackParamList,
@@ -50,6 +51,7 @@ const reportCards: ReportCardConfig[] = [
 ]
 
 export default function ReportsScreen() {
+  useModuleTracking('taxPreparation')
   const navigation = useNavigation<StackNavigationProp<ReportsStackParamList>>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId

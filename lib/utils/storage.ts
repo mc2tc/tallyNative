@@ -10,13 +10,14 @@ import {
 /**
  * Upload a local file (expo-image-picker URI) to Firebase Storage and return a signed download URL.
  * Path: receipts/{businessId}/{timestamp}_{fileNameOrExt}
+ * Returns both the download URL and file size in bytes for storage tracking.
  */
 export async function uploadReceiptAndGetUrl(params: {
 	businessId: string
 	localUri: string
 	fileNameHint?: string
 	contentType?: string
-}): Promise<string> {
+}): Promise<{ downloadUrl: string; fileSize: number }> {
 	const { businessId, localUri, fileNameHint, contentType } = params
 
 	// Resolve filename/extension
@@ -31,6 +32,7 @@ export async function uploadReceiptAndGetUrl(params: {
 	// Fetch the file data
 	const response = await fetch(localUri)
 	const blob = await response.blob()
+	const fileSize = blob.size // Get file size in bytes
 
 	// Upload
 	const app = getApp()
@@ -40,8 +42,9 @@ export async function uploadReceiptAndGetUrl(params: {
 		contentType: contentType || blob.type || `image/${safeExt}`,
 	})
 
-	// Return a signed download URL suitable for backend OCR
-	return await getDownloadURL(objectRef)
+	// Return a signed download URL suitable for backend OCR and file size for tracking
+	const downloadUrl = await getDownloadURL(objectRef)
+	return { downloadUrl, fileSize }
 }
 
 

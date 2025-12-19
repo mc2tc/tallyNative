@@ -12,6 +12,7 @@ import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { getOneOffItems, type OneOffItem } from '../lib/utils/posStorage'
 import { posSaleTransactionApi } from '../lib/api/transactions2'
 import { useAuth } from '../lib/auth/AuthContext'
+import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 
 type PointOfSaleScreenNavigationProp = DrawerNavigationProp<AppDrawerParamList, 'PointOfSale'>
 
@@ -31,6 +32,7 @@ interface CartItem {
 type PaymentType = 'cash' | 'card'
 
 export default function PointOfSaleScreen() {
+  useModuleGroupTracking('operations')
   const navigation = useNavigation<PointOfSaleScreenNavigationProp>()
   const insets = useSafeAreaInsets()
   const { businessUser, memberships } = useAuth()

@@ -18,6 +18,13 @@ import EmployeeManagementScreen from '../screens/EmployeeManagementScreen'
 import OnlineSalesScreen from '../screens/OnlineSalesScreen'
 import OnlineBookingScreen from '../screens/OnlineBookingScreen'
 import TallyNetworkScreen from '../screens/TallyNetworkScreen'
+import YearEndReportingScreen from '../screens/YearEndReportingScreen'
+import InvoicingScreen from '../screens/InvoicingScreen'
+import PayrollScreen from '../screens/PayrollScreen'
+import ExpensesScreen from '../screens/ExpensesScreen'
+import TimeManagementScreen from '../screens/TimeManagementScreen'
+import SuppliersScreen from '../screens/SuppliersScreen'
+import VATScreen from '../screens/VATScreen'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
@@ -37,6 +44,13 @@ export type AppDrawerParamList = {
   OnlineSales: undefined
   OnlineBooking: undefined
   TallyNetwork: undefined
+  YearEndReporting: undefined
+  Invoicing: undefined
+  Payroll: undefined
+  Expenses: undefined
+  TimeManagement: undefined
+  Suppliers: undefined
+  VAT: undefined
 }
 
 const Drawer = createDrawerNavigator<AppDrawerParamList>()
@@ -76,6 +90,13 @@ export function AppNavigator() {
       <Drawer.Screen name="OnlineSales" component={OnlineSalesScreen} />
       <Drawer.Screen name="OnlineBooking" component={OnlineBookingScreen} />
       <Drawer.Screen name="TallyNetwork" component={TallyNetworkScreen} />
+      <Drawer.Screen name="YearEndReporting" component={YearEndReportingScreen} />
+      <Drawer.Screen name="Invoicing" component={InvoicingScreen} />
+      <Drawer.Screen name="Payroll" component={PayrollScreen} />
+      <Drawer.Screen name="Expenses" component={ExpensesScreen} />
+      <Drawer.Screen name="TimeManagement" component={TimeManagementScreen} />
+      <Drawer.Screen name="Suppliers" component={SuppliersScreen} />
+      <Drawer.Screen name="VAT" component={VATScreen} />
     </Drawer.Navigator>
   )
 }

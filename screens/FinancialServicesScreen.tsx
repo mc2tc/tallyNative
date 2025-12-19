@@ -6,6 +6,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
+import { useModuleTracking } from '../lib/hooks/useModuleTracking'
+import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 
 type Props = NativeStackScreenProps<AppDrawerParamList, 'FinancialServices'>
 
@@ -22,6 +24,8 @@ const financialServices = [
 ]
 
 export default function FinancialServicesScreen({ navigation }: Props) {
+  useModuleTracking('financialServices')
+  useModuleGroupTracking('tally_network')
   const handleServicePress = (serviceTitle: string) => {
     if (serviceTitle === 'Invoice Financing') {
       navigation.navigate('InvoiceFinancing')

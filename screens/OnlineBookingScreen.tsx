@@ -6,10 +6,12 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
+import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 
 type Props = NativeStackScreenProps<AppDrawerParamList, 'OnlineBooking'>
 
 export default function OnlineBookingScreen({}: Props) {
+  useModuleGroupTracking('sales_marketing')
   return (
     <View style={styles.wrapper}>
       <AppBarLayout title="Online Booking">

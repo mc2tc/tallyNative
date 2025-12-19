@@ -8,10 +8,12 @@ import { BottomNavBar } from '../components/BottomNavBar'
 import { OrderCard } from '../components/OrderCard'
 import { OrderDetailsCard } from '../components/OrderDetailsCard'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
+import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 
 type Props = NativeStackScreenProps<AppDrawerParamList, 'InventoryManagement'>
 
 export default function InventoryManagementScreen({}: Props) {
+  useModuleGroupTracking('operations')
   return (
     <View style={styles.wrapper}>
       <AppBarLayout title="Inventory">

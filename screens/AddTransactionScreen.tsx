@@ -108,7 +108,7 @@ export default function AddTransactionScreen() {
         setPdfFileName(null)
       }
       
-      const downloadUrl = await uploadReceiptAndGetUrl({
+      const { downloadUrl, fileSize } = await uploadReceiptAndGetUrl({
         businessId,
         localUri: asset.uri,
         fileNameHint: asset.fileName ?? undefined,
@@ -138,7 +138,8 @@ export default function AddTransactionScreen() {
           response = await transactions2Api.createSalesInvoiceOcr(
             businessId,
             isPdf ? undefined : downloadUrl,
-            isPdf ? downloadUrl : undefined
+            isPdf ? downloadUrl : undefined,
+            fileSize
           )
           
           if (response.success) {
@@ -157,6 +158,7 @@ export default function AddTransactionScreen() {
           // Note: bankName and accountNumber are optional, can be added later if needed
           response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
             // TODO: Get bankName and accountNumber from bankAccounts API if context.bankAccountId is available
+            fileSize,
           })
           
           // The response is grouped - show summary
@@ -174,6 +176,7 @@ export default function AddTransactionScreen() {
           // Note: cardName and cardNumber are optional, can be added later if needed
           response = await transactions2Api.uploadCreditCardStatement(businessId, downloadUrl, {
             // TODO: Get cardName and cardNumber from creditCards API if context.cardId is available
+            fileSize,
           })
           
           // The response is grouped - show summary
@@ -187,7 +190,7 @@ export default function AddTransactionScreen() {
             throw new Error('Failed to process credit card statement')
           }
         } else if (useTransactions3Purchase) {
-          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
+          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl, fileSize)
           
           if (response.success) {
             setResultSummary(`Transaction created successfully`)
@@ -338,7 +341,7 @@ export default function AddTransactionScreen() {
           setPdfFileName(file.name || 'document.pdf')
           setLastImageUri(null)
           
-          const downloadUrl = await uploadReceiptAndGetUrl({
+          const { downloadUrl, fileSize } = await uploadReceiptAndGetUrl({
             businessId,
             localUri: file.uri,
             fileNameHint: file.name ?? undefined,
@@ -349,7 +352,8 @@ export default function AddTransactionScreen() {
             const response = await transactions2Api.createSalesInvoiceOcr(
               businessId,
               undefined, // fileUrl not used for PDFs
-              downloadUrl // pdfUrl
+              downloadUrl, // pdfUrl
+              fileSize
             )
             
             if (response.success) {
@@ -395,7 +399,7 @@ export default function AddTransactionScreen() {
       setPdfFileName(null)
       setLastImageUri(file.uri)
       
-      const downloadUrl = await uploadReceiptAndGetUrl({
+      const { downloadUrl, fileSize } = await uploadReceiptAndGetUrl({
         businessId,
         localUri: file.uri,
         fileNameHint: file.name ?? undefined,
@@ -417,7 +421,7 @@ export default function AddTransactionScreen() {
         let response
         if (useSalesInvoiceOcr) {
           // Use transactions3 sales invoice OCR endpoint for images
-          response = await transactions2Api.createSalesInvoiceOcr(businessId, downloadUrl, undefined)
+          response = await transactions2Api.createSalesInvoiceOcr(businessId, downloadUrl, undefined, fileSize)
           
           if (response.success) {
             setResultSummary(`Invoice processed successfully`)
@@ -430,7 +434,7 @@ export default function AddTransactionScreen() {
             throw new Error(response.message || 'Failed to process invoice')
           }
         } else if (useTransactions3) {
-          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl)
+          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl, fileSize)
           
           if (response.success) {
             setResultSummary(`Transaction created successfully`)

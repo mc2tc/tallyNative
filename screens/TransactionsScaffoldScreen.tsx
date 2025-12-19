@@ -1279,7 +1279,30 @@ export default function TransactionsScaffoldScreen() {
   const getFullTransactions = (columnTitle: string): Array<TransactionStub & { originalTransaction?: Transaction }> => {
     switch (columnTitle) {
       case 'Needs verification':
-        if (activeSection === 'bank') {
+        if (activeSection === 'purchases3') {
+          // Use transactions3 data - filter for unverified purchase transactions
+          return transactions3Pending
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                classification?: { kind?: string }
+                verification?: { status?: string }
+              }
+              const isPurchase = metadata.classification?.kind === 'purchase'
+              const isUnverified = metadata.verification?.status === 'unverified'
+              return isPurchase && isUnverified
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        } else if (activeSection === 'bank') {
           // Use transactions3 data - filter for bank transactions with accounting entries
           return transactions3BankPending
             .filter((tx) => {
@@ -1470,7 +1493,34 @@ export default function TransactionsScaffoldScreen() {
         }
       
       case 'All done':
-        if (activeSection === 'bank') {
+        if (activeSection === 'purchases3') {
+          // Use transactions3 data - filter for verified and reconciled purchase transactions
+          return transactions3SourceOfTruth
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+                classification?: { kind?: string }
+              }
+              const isPurchase = metadata.classification?.kind === 'purchase'
+              const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
+              const isReconciled = metadata.reconciliation?.status === 'reconciled' ||
+                metadata.reconciliation?.status === 'not_required'
+              return isPurchase && isVerified && isReconciled
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              isReportingReady: true,
+              originalTransaction: tx,
+            }))
+        } else if (activeSection === 'bank') {
           // Use transactions3 data - filter for verified bank transactions that are reporting ready
           return transactions3BankSourceOfTruth
             .filter((tx) => {
@@ -1577,45 +1627,73 @@ export default function TransactionsScaffoldScreen() {
           }))
       
       case 'Awaiting bank match':
-        return allTransactions
-          .filter((tx) => {
-            if (!isSaleTransaction(tx)) return false
-            const metadata = tx.metadata as {
-              verification?: { status?: string }
-              reconciliation?: { status?: string }
-            }
-            const accounting = tx.accounting as
-              | {
-                  credits?: Array<{ chartName?: string }>
-                }
-              | undefined
-            const verificationStatus = metadata.verification?.status
-            const reconciliationStatus = metadata.reconciliation?.status
-            const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-            const isReconciled =
-              reconciliationStatus === 'matched' ||
-              reconciliationStatus === 'reconciled' ||
-              reconciliationStatus === 'exception'
-            const isCashOnly = isCashOnlyTransaction(tx)
-            
-            // Check if there's a credit to Accounts Receivable
-            const hasAccountsReceivable = accounting?.credits?.some(
-              (credit) => credit.chartName === 'Accounts Receivable'
-            ) ?? false
-            
-            return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
-          })
-          .sort((a, b) => {
-            const aDate = a.summary.transactionDate || 0
-            const bDate = b.summary.transactionDate || 0
-            return bDate - aDate
-          })
-          .map((tx) => ({
-            id: tx.id,
-            title: tx.summary.thirdPartyName,
-            amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
-            originalTransaction: tx,
-          }))
+        if (activeSection === 'purchases3') {
+          // Use transactions3 data - filter for verified purchase transactions needing bank reconciliation
+          return transactions3SourceOfTruth
+            .filter((tx) => {
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string; type?: string }
+                classification?: { kind?: string }
+              }
+              const isPurchase = metadata.classification?.kind === 'purchase'
+              const isVerified = metadata.verification?.status === 'verified' || metadata.verification?.status === 'exception'
+              const needsReconciliation = metadata.reconciliation?.status === 'pending_bank_match'
+              const isBankTransferReconciliation = metadata.reconciliation?.type === 'bank_transfer'
+              return isPurchase && isVerified && needsReconciliation && isBankTransferReconciliation
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        } else {
+          return allTransactions
+            .filter((tx) => {
+              if (!isSaleTransaction(tx)) return false
+              const metadata = tx.metadata as {
+                verification?: { status?: string }
+                reconciliation?: { status?: string }
+              }
+              const accounting = tx.accounting as
+                | {
+                    credits?: Array<{ chartName?: string }>
+                  }
+                | undefined
+              const verificationStatus = metadata.verification?.status
+              const reconciliationStatus = metadata.reconciliation?.status
+              const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
+              const isReconciled =
+                reconciliationStatus === 'matched' ||
+                reconciliationStatus === 'reconciled' ||
+                reconciliationStatus === 'exception'
+              const isCashOnly = isCashOnlyTransaction(tx)
+              
+              // Check if there's a credit to Accounts Receivable
+              const hasAccountsReceivable = accounting?.credits?.some(
+                (credit) => credit.chartName === 'Accounts Receivable'
+              ) ?? false
+              
+              return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
+            })
+            .sort((a, b) => {
+              const aDate = a.summary.transactionDate || 0
+              const bDate = b.summary.transactionDate || 0
+              return bDate - aDate
+            })
+            .map((tx) => ({
+              id: tx.id,
+              title: tx.summary.thirdPartyName,
+              amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
+              originalTransaction: tx,
+            }))
+        }
       
       case 'POS Sales':
         return transactions3POSSales

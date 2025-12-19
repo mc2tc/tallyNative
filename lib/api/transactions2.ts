@@ -248,12 +248,14 @@ export const transactions2Api = {
 	createPurchaseOcr: async (
 		businessId: string,
 		fileUrl: string,
+		fileSize?: number,
 	): Promise<UnifiedTransactionResponse> => {
 		return api.post<UnifiedTransactionResponse>(
 			'/authenticated/transactions3/api/purchases/ocr',
 			{
 				businessId,
 				fileUrl,
+				...(fileSize !== undefined && { fileSize }),
 			},
 		)
 	},
@@ -265,6 +267,7 @@ export const transactions2Api = {
 		businessId: string,
 		fileUrl?: string,
 		pdfUrl?: string,
+		fileSize?: number,
 	): Promise<UnifiedTransactionResponse> => {
 		return api.post<UnifiedTransactionResponse>(
 			'/authenticated/transactions3/api/sales/ocr',
@@ -272,6 +275,7 @@ export const transactions2Api = {
 				businessId,
 				...(fileUrl && { fileUrl }),
 				...(pdfUrl && { pdfUrl }),
+				...(fileSize !== undefined && { fileSize }),
 			},
 		)
 	},
@@ -312,6 +316,7 @@ export const transactions2Api = {
 			accountNumber?: string
 			statementStartDate?: string
 			statementEndDate?: string
+			fileSize?: number
 		},
 	): Promise<{
 		success: boolean
@@ -349,6 +354,7 @@ export const transactions2Api = {
 				...(options?.accountNumber && { accountNumber: options.accountNumber }),
 				...(options?.statementStartDate && { statementStartDate: options.statementStartDate }),
 				...(options?.statementEndDate && { statementEndDate: options.statementEndDate }),
+				...(options?.fileSize !== undefined && { fileSize: options.fileSize }),
 			},
 		)
 	},
@@ -362,6 +368,7 @@ export const transactions2Api = {
 			cardNumber?: string
 			statementStartDate?: string
 			statementEndDate?: string
+			fileSize?: number
 		},
 	): Promise<{
 		success: boolean
@@ -399,6 +406,7 @@ export const transactions2Api = {
 				...(options?.cardNumber && { cardNumber: options.cardNumber }),
 				...(options?.statementStartDate && { statementStartDate: options.statementStartDate }),
 				...(options?.statementEndDate && { statementEndDate: options.statementEndDate }),
+				...(options?.fileSize !== undefined && { fileSize: options.fileSize }),
 			},
 		)
 	},

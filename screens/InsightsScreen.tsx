@@ -7,8 +7,10 @@ import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import { insightsApi } from '../lib/api/transactions2'
 import type { InsightsResponse } from '../lib/api/transactions2'
 import { useAuth } from '../lib/auth/AuthContext'
+import { useModuleTracking } from '../lib/hooks/useModuleTracking'
 
 export default function InsightsScreen() {
+  useModuleTracking('performance')
   const navigation = useNavigation<StackNavigationProp<HomeStackParamList>>()
   const route = useRoute<RouteProp<HomeStackParamList, 'Insights'>>()
   const { businessUser } = useAuth()

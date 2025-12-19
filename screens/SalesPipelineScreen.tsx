@@ -1,10 +1,14 @@
-import React from 'react'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
+import React, { useCallback, useMemo, useState } from 'react'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
+import { useModuleTracking } from '../lib/hooks/useModuleTracking'
+import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
+import { useAuth } from '../lib/auth/AuthContext'
+import { customersApi, type Customer } from '../lib/api/customers'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -29,16 +33,69 @@ type PipelineColumn = {
 type SalesPipelineRouteProp = RouteProp<TransactionsStackParamList, 'SalesPipeline'>
 
 export default function SalesPipelineScreen() {
+  useModuleTracking('customers')
+  useModuleGroupTracking('sales_marketing')
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const route = useRoute<SalesPipelineRouteProp>()
+  const { businessUser, memberships } = useAuth()
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // TODO: Fetch real sales leads data from API
-  // Filter sales leads by stage
-  const leadLeads: SalesLead[] = []
-  const conversationLeads: SalesLead[] = []
-  const proposalLeads: SalesLead[] = []
-  const wonLeads: SalesLead[] = []
-  const lostLeads: SalesLead[] = []
+  // Choose businessId (same logic as other screens)
+  const membershipIds = Object.keys(memberships ?? {})
+  const nonPersonalMembershipId = membershipIds.find(
+    (id) => !id.toLowerCase().includes('personal'),
+  )
+  const businessId =
+    (businessUser?.businessId &&
+      !businessUser.businessId.toLowerCase().includes('personal')
+      ? businessUser.businessId
+      : nonPersonalMembershipId) ?? membershipIds[0]
+
+  // Fetch customers when screen comes into focus (refreshes when returning from AddCustomer)
+  useFocusEffect(
+    useCallback(() => {
+      if (!businessId) {
+        setCustomers([])
+        setLoading(false)
+        return
+      }
+
+      const fetchCustomers = async () => {
+        try {
+          setLoading(true)
+          const response = await customersApi.getCustomers(businessId, {
+            limit: 100, // Get up to 100 customers
+          })
+          setCustomers(response.customers || [])
+        } catch (error) {
+          console.error('Failed to fetch customers:', error)
+          setCustomers([])
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      fetchCustomers()
+    }, [businessId]),
+  )
+
+  // Map customers to sales leads and filter by stage
+  const { leadLeads, conversationLeads, proposalLeads, wonLeads, lostLeads } = useMemo(() => {
+    const leads: SalesLead[] = customers.map((customer) => ({
+      id: customer.id,
+      title: customer.name,
+      stage: customer.stage,
+    }))
+
+    return {
+      leadLeads: leads.filter((lead) => lead.stage === 'lead'),
+      conversationLeads: leads.filter((lead) => lead.stage === 'conversation'),
+      proposalLeads: leads.filter((lead) => lead.stage === 'proposal'),
+      wonLeads: leads.filter((lead) => lead.stage === 'won'),
+      lostLeads: leads.filter((lead) => lead.stage === 'lost'),
+    }
+  }, [customers])
 
   // Create 5-column pipeline data
   const salesColumnsWithData: PipelineColumn[] = [
@@ -70,21 +127,39 @@ export default function SalesPipelineScreen() {
   ]
 
   const handleViewAll = (column: PipelineColumn) => {
-    if (column.salesLeads) {
-      const items = column.salesLeads.map(lead => ({
-        id: lead.id,
-        title: lead.title,
-        amount: lead.amount || '',
-        subtitle: lead.subtitle,
-      }))
-      navigation.navigate('ScaffoldViewAll', {
-        section: column.title,
-        title: column.title,
-        items,
-        showReconcileButton: false,
-        pipelineSection: 'sales',
-      })
+    // Get all leads for this stage (not just the first 3)
+    let allLeadsForStage: SalesLead[] = []
+    switch (column.title) {
+      case 'Lead':
+        allLeadsForStage = leadLeads
+        break
+      case 'In Conversation':
+        allLeadsForStage = conversationLeads
+        break
+      case 'Proposal / Quote Sent':
+        allLeadsForStage = proposalLeads
+        break
+      case 'Closed WON':
+        allLeadsForStage = wonLeads
+        break
+      case 'Closed LOST':
+        allLeadsForStage = lostLeads
+        break
     }
+
+    const items = allLeadsForStage.map(lead => ({
+      id: lead.id,
+      title: lead.title,
+      amount: lead.amount || '',
+      subtitle: lead.subtitle,
+    }))
+    navigation.navigate('ScaffoldViewAll', {
+      section: column.title,
+      title: column.title,
+      items,
+      showReconcileButton: false,
+      pipelineSection: 'sales',
+    })
   }
 
   const handleAddClick = () => {
@@ -99,36 +174,47 @@ export default function SalesPipelineScreen() {
       onRightIconPress={handleAddClick}
     >
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.pipelineColumnStack}>
-          {salesColumnsWithData.map((column) => (
-            <View key={column.title} style={styles.pipelineCard}>
-              <View style={styles.pipelineTitleRow}>
-                <Text style={styles.pipelineTitle}>{column.title}</Text>
-              </View>
-              {column.salesLeads && (
-                <SalesCardList items={column.salesLeads} navigation={navigation} />
-              )}
-              {column.actions.length > 0 && (
-                <View style={styles.pipelineActions}>
-                  {column.actions.map((action) => (
-                    <TouchableOpacity
-                      key={action}
-                      activeOpacity={0.7}
-                      style={styles.linkButton}
-                      onPress={() => {
-                        if (action === 'View all') {
-                          handleViewAll(column)
-                        }
-                      }}
-                    >
-                      <Text style={styles.linkButtonText}>{action}</Text>
-                    </TouchableOpacity>
-                  ))}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+            <Text style={styles.loadingText}>Loading customers...</Text>
+          </View>
+        ) : (
+          <View style={styles.pipelineColumnStack}>
+            {salesColumnsWithData.map((column) => (
+              <View key={column.title} style={styles.pipelineCard}>
+                <View style={styles.pipelineTitleRow}>
+                  <Text style={styles.pipelineTitle}>{column.title}</Text>
                 </View>
-              )}
-            </View>
-          ))}
-        </View>
+                {column.salesLeads && column.salesLeads.length > 0 ? (
+                  <SalesCardList items={column.salesLeads} navigation={navigation} />
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No leads in this stage</Text>
+                  </View>
+                )}
+                {column.actions.length > 0 && (
+                  <View style={styles.pipelineActions}>
+                    {column.actions.map((action) => (
+                      <TouchableOpacity
+                        key={action}
+                        activeOpacity={0.7}
+                        style={styles.linkButton}
+                        onPress={() => {
+                          if (action === 'View all') {
+                            handleViewAll(column)
+                          }
+                        }}
+                      >
+                        <Text style={styles.linkButtonText}>{action}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </AppBarLayout>
   )
@@ -279,6 +365,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 48,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: GRAYSCALE_SECONDARY,
+  },
+  emptyState: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    fontStyle: 'italic',
   },
 })
 

@@ -21,7 +21,10 @@ import { useAuth } from '../lib/auth/AuthContext'
 import { bankAccountsApi, type BankAccount } from '../lib/api/bankAccounts'
 import { creditCardsApi, type CreditCard } from '../lib/api/creditCards'
 import { businessContextApi } from '../lib/api/businessContext'
+import { plansApi, type Plan } from '../lib/api/plans'
 import type { VatStatus } from '../lib/types/api'
+import type { StackScreenProps } from '@react-navigation/stack'
+import type { SettingsStackParamList } from '../navigation/SettingsNavigator'
 import {
   SUPPLY_TYPE_OPTIONS,
   VAT_SCHEME_OPTIONS,
@@ -31,7 +34,15 @@ import { MaterialIcons } from '@expo/vector-icons'
 
 const GRAYSCALE_PRIMARY = '#333333'
 
-export default function SettingsScreen() {
+type Props = StackScreenProps<SettingsStackParamList, 'SettingsMain'>
+
+const formatPrice = (pence: number): string => {
+  if (pence === 0) return 'Free'
+  const pounds = pence / 100
+  return `£${pounds.toFixed(2)}/month`
+}
+
+export default function SettingsScreen({ navigation }: Props) {
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
 
@@ -53,6 +64,9 @@ export default function SettingsScreen() {
   const [loadingVatStatus, setLoadingVatStatus] = useState(true)
   const [showEditVatModal, setShowEditVatModal] = useState(false)
   const [isSubmittingVat, setIsSubmittingVat] = useState(false)
+
+  const [currentPlan, setCurrentPlan] = useState<Plan | null>(null)
+  const [loadingPlan, setLoadingPlan] = useState(true)
 
   // VAT form state
   const [isVatRegistered, setIsVatRegistered] = useState(false)
@@ -126,12 +140,30 @@ export default function SettingsScreen() {
     }
   }, [businessId])
 
+  const fetchCurrentPlan = useCallback(async () => {
+    if (!businessId) {
+      setLoadingPlan(false)
+      return
+    }
+    try {
+      setLoadingPlan(true)
+      const plan = await plansApi.getCurrentPlan(businessId)
+      setCurrentPlan(plan)
+    } catch (error) {
+      console.error('Failed to fetch current plan:', error)
+      setCurrentPlan(null)
+    } finally {
+      setLoadingPlan(false)
+    }
+  }, [businessId])
+
   useFocusEffect(
     useCallback(() => {
       fetchBankAccounts()
       fetchCreditCards()
       fetchVatStatus()
-    }, [fetchBankAccounts, fetchCreditCards, fetchVatStatus]),
+      fetchCurrentPlan()
+    }, [fetchBankAccounts, fetchCreditCards, fetchVatStatus, fetchCurrentPlan]),
   )
 
   const handleAddBankAccount = () => {
@@ -345,9 +377,56 @@ export default function SettingsScreen() {
     }
   }
 
+  const handleUpdatePlan = () => {
+    navigation.navigate('PlansSelection')
+  }
+
   return (
     <AppBarLayout title="Settings" showProfileIcon>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+        {/* Current Plan Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Current Plan</Text>
+          </View>
+
+          {loadingPlan ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#666666" />
+            </View>
+          ) : currentPlan ? (
+            <View style={styles.planContent}>
+              <View style={styles.planRow}>
+                <Text style={styles.planLabel}>Plan:</Text>
+                <Text style={styles.planValue}>{currentPlan.planName}</Text>
+              </View>
+              <View style={styles.planRow}>
+                <Text style={styles.planLabel}>Price:</Text>
+                <Text style={styles.planValue}>{formatPrice(currentPlan.price)}</Text>
+              </View>
+              {currentPlan.inTrial && currentPlan.subscription?.trialEndsAt && (
+                <View style={styles.planRow}>
+                  <Text style={styles.planLabel}>Trial ends:</Text>
+                  <Text style={styles.planValue}>
+                    {new Date(currentPlan.subscription.trialEndsAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              )}
+              <TouchableOpacity
+                style={styles.updatePlanButton}
+                onPress={handleUpdatePlan}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.updatePlanButtonText}>Update plan</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>Plan information not available</Text>
+            </View>
+          )}
+        </View>
+
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Bank Accounts</Text>
@@ -1230,5 +1309,39 @@ const styles = StyleSheet.create({
   },
   chipTextSelected: {
     color: '#fff',
+  },
+  planContent: {
+    gap: 12,
+  },
+  planRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  planLabel: {
+    fontSize: 14,
+    color: '#666666',
+    fontWeight: '500',
+    flex: 1,
+  },
+  planValue: {
+    fontSize: 14,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+  },
+  updatePlanButton: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  updatePlanButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
   },
 })

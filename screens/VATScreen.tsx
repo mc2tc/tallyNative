@@ -1,4 +1,4 @@
-// Employee Management screen - Work In Progress
+// VAT screen - Work In Progress
 
 import React from 'react'
 import { View, StyleSheet, ScrollView, Text } from 'react-native'
@@ -7,22 +7,24 @@ import { AppBarLayout } from '../components/AppBarLayout'
 import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { useModuleTracking } from '../lib/hooks/useModuleTracking'
+import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 
-type Props = NativeStackScreenProps<AppDrawerParamList, 'EmployeeManagement'>
+type Props = NativeStackScreenProps<AppDrawerParamList, 'VAT'>
 
-export default function EmployeeManagementScreen({}: Props) {
-  useModuleTracking('employees')
+export default function VATScreen({}: Props) {
+  useModuleTracking('vat')
+  useModuleGroupTracking('tax_compliance')
   return (
     <View style={styles.wrapper}>
-      <AppBarLayout title="Employees">
+      <AppBarLayout title="VAT">
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           <View style={styles.wipContainer}>
             <Text style={styles.wipTitle}>Work In Progress</Text>
             <Text style={styles.wipText}>
-              Employee Management module is currently under development.
+              VAT module is currently under development.
             </Text>
             <Text style={styles.wipSubtext}>
-              This module will help you manage employee records, track attendance, handle payroll, and monitor workforce metrics.
+              This module will help you manage VAT returns, track VAT payments, and ensure compliance with VAT regulations.
             </Text>
           </View>
         </ScrollView>
@@ -76,4 +78,3 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 })
-

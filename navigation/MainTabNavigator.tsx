@@ -3,11 +3,11 @@
 import React from 'react'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { MaterialIcons } from '@expo/vector-icons'
-import { CommonActions } from '@react-navigation/native'
+import { CommonActions, getFocusedRouteNameFromRoute } from '@react-navigation/native'
 import { HomeNavigator } from './HomeNavigator'
 import { TransactionsNavigator } from './TransactionsNavigator'
 import { ReportsNavigator } from './ReportsNavigator'
-import SettingsScreen from '../screens/SettingsScreen'
+import { SettingsNavigator } from './SettingsNavigator'
 import ProfileScreen from '../screens/ProfileScreen'
 import HelpScreen from '../screens/HelpScreen'
 import { useAssistant } from '../lib/context/OversightAlertsContext'
@@ -183,7 +183,17 @@ export function MainTabNavigator() {
           },
         })}
       />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsNavigator}
+        options={({ route }) => {
+          const routeName = getFocusedRouteNameFromRoute(route) ?? 'SettingsMain'
+          return {
+            title: 'Settings',
+            tabBarStyle: routeName === 'SettingsMain' ? undefined : { display: 'none' },
+          }
+        }}
+      />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
