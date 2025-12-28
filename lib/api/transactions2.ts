@@ -200,6 +200,25 @@ export const transactions2Api = {
 		)
 	},
 
+	// Update a transactions3 transaction item's debitAccount (verified transactions3 only)
+	updateTransactions3ItemDebitAccount: async (
+		transactionId: string,
+		businessId: string,
+		itemIndex: number,
+		debitAccount: string,
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<Transaction>(
+			`/authenticated/transactions3/api/transactions/${transactionId}?${params.toString()}`,
+			{
+				itemIndex,
+				debitAccount,
+			},
+		)
+	},
+
 	// Update a transaction's payment method
 	updatePaymentMethod: async (
 		transactionId: string,
@@ -478,6 +497,44 @@ export const transactions2Api = {
 		return response.transaction as Transaction
 	},
 
+	// Transactions3 update verified purchase endpoint - post-verification edit in source_of_truth
+	updateTransactions3VerifiedPurchase: async (
+		transactionId: string,
+		businessId: string,
+		options: {
+			itemList?: {
+				name: string
+				amount: number
+				amountExcluding?: number
+				vatAmount?: number
+				debitAccount?: string
+				debitAccountConfirmed?: boolean
+				isBusinessExpense?: boolean
+				category?: string
+				quantity?: number
+				unitCost?: number
+			}[]
+			paymentBreakdown?: { type: string; amount: number }[]
+			paymentMethod?: string
+		},
+	): Promise<{
+		success: boolean
+		transactionId: string
+		transaction: Transaction
+	}> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<{
+			success: boolean
+			transactionId: string
+			transaction: Transaction
+		}>(
+			`/authenticated/transactions3/api/transactions/${transactionId}?${params.toString()}`,
+			options,
+		)
+	},
+
 	// Transactions3 query endpoints - get transactions from transactions3 collections
 	getTransactions3: async (
 		businessId: string,
@@ -532,6 +589,59 @@ export const transactions2Api = {
 		}
 		return api.patch<{ success: boolean; transactionId: string; transaction: Transaction }>(
 			`/authenticated/transactions3/api/transactions/${transactionId}/mark-paid?${params.toString()}`,
+		)
+	},
+
+	// Save inventory items to Firestore (Raw Materials and Finished Goods only)
+	// See INVENTORY_ITEMS_SAVE_ENDPOINT.md for details
+	saveInventoryItems: async (
+		businessId: string,
+		transactionId: string,
+		items: Array<{
+			name: string
+			quantity?: number
+			unit?: string
+			unitCost?: number
+			amount: number
+			amountExcluding?: number
+			vatAmount?: number
+			debitAccount?: string
+			debitAccountConfirmed?: boolean
+			isBusinessExpense?: boolean
+			category?: string
+			packaging?: {
+				primaryPackaging?: {
+					description: string
+					quantity: number
+					unit: string
+					material?: string
+				}
+				secondaryPackaging?: {
+					description: string
+					quantity: number
+					primaryPackagesPerSecondary: number
+					material?: string
+				}
+				totalPrimaryPackages: number
+				orderQuantity: number
+				orderPackagingLevel: 'primary' | 'secondary'
+				confidence?: number
+				notes?: string
+			}
+			costPerPrimaryPackage?: number
+			costPerPrimaryPackagingUnit?: number
+			thirdPartyName?: string
+			transactionDate?: number
+			reference?: string
+		}>,
+	): Promise<{ success: boolean; savedCount: number; itemIds: string[]; message?: string }> => {
+		return api.post<{ success: boolean; savedCount: number; itemIds: string[]; message?: string }>(
+			'/authenticated/transactions3/api/inventory-items',
+			{
+				businessId,
+				transactionId,
+				items,
+			},
 		)
 	},
 }

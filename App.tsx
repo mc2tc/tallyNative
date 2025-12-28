@@ -2,6 +2,7 @@ import 'react-native-gesture-handler'
 import React from 'react'
 import { PaperProvider } from 'react-native-paper'
 import { MD3LightTheme } from 'react-native-paper'
+import { DropProvider } from 'react-native-reanimated-dnd'
 import { AuthProvider } from './lib/auth/AuthContext'
 import { OversightAlertsProvider } from './lib/context/OversightAlertsContext'
 import { RootNavigator } from './navigation/RootNavigator'
@@ -22,11 +23,13 @@ export default function App() {
   console.log('App: Initializing with custom Paper theme')
   return (
     <PaperProvider theme={customTheme}>
-      <AuthProvider>
-        <OversightAlertsProvider>
-          <RootNavigator />
-        </OversightAlertsProvider>
-      </AuthProvider>
+      <DropProvider>
+        <AuthProvider>
+          <OversightAlertsProvider>
+            <RootNavigator />
+          </OversightAlertsProvider>
+        </AuthProvider>
+      </DropProvider>
     </PaperProvider>
   )
 }

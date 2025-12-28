@@ -61,14 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('AuthContext: Calling authApi.refreshClaims()...')
-      // Add timeout to prevent hanging if API is unreachable (shorter timeout for better UX)
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('API server is not reachable. Please ensure the Next.js server is running.')), 5000)
-      })
-      const response = await Promise.race([
-        authApi.refreshClaims(),
-        timeoutPromise,
-      ]) as Awaited<ReturnType<typeof authApi.refreshClaims>>
+      const response = await authApi.refreshClaims()
       console.log('AuthContext: refreshClaims response received:', Object.keys(response.memberships || {}).length, 'memberships')
       setMemberships(response.memberships)
 
@@ -116,7 +109,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBusinessContextComplete(true)
       }
     } catch (error) {
-      console.warn('AuthContext: Failed to refresh auth state (API may be unreachable):', error)
       // If API is unavailable, we still have Firebase auth
       // Set businessUser to null but don't clear the user
       // This allows the app to function (user can see they're signed in)
@@ -124,16 +116,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setBusinessUser(null)
       setMemberships(null)
       setBusinessContextComplete(true)
+      
+      // Log appropriate error message based on error type
+      if (error instanceof ApiError) {
+        if (error.status === 0) {
+          // Network error (API client sets status to 0 for network failures)
+          console.warn('AuthContext: API server is not reachable:', error.message)
+          console.warn('AuthContext: API server appears to be offline. App will continue but business features may be limited.')
+        } else {
+          // Other API errors (4xx, 5xx)
+          console.warn('AuthContext: Failed to refresh auth state:', error.message, `(status: ${error.status})`)
+        }
+      } else if (error instanceof Error) {
+        console.warn('AuthContext: Failed to refresh auth state:', error.message)
+      } else {
+        console.warn('AuthContext: Failed to refresh auth state (unknown error):', error)
+      }
+      
       // Don't re-throw - allow the app to continue functioning
       // The user can still sign in with Firebase, but won't have business context
       // until the API is available
-      if (error instanceof Error) {
-        console.warn('AuthContext: API connectivity issue -', error.message)
-        // Check if it's a network/timeout error
-        if (error.message.includes('timeout') || error.message.includes('not reachable') || error.message.includes('Network request failed')) {
-          console.warn('AuthContext: API server appears to be offline. App will continue but business features may be limited.')
-        }
-      }
     } finally {
       setLoading(false)
       console.log('AuthContext: refreshAuthState completed (loading set to false)')

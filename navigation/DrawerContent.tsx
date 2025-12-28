@@ -5,7 +5,7 @@ import { View, StyleSheet, Text } from 'react-native'
 import { Drawer } from 'react-native-paper'
 import { DrawerContentScrollView } from '@react-navigation/drawer'
 import type { DrawerContentComponentProps } from '@react-navigation/drawer'
-import { AntDesign } from '@expo/vector-icons'
+import { AntDesign, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons'
 
 export function CustomDrawerContent(props: DrawerContentComponentProps) {
   const activeRouteName = props.state.routeNames[props.state.index]
@@ -32,6 +32,7 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
     TimeManagement: activeRouteName === 'TimeManagement',
     Suppliers: activeRouteName === 'Suppliers',
     FinancialServices: activeRouteName === 'FinancialServices',
+    Talent: activeRouteName === 'Talent',
     VAT: activeRouteName === 'VAT',
     YearEndReporting: activeRouteName === 'YearEndReporting',
   }
@@ -95,16 +96,16 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             }}
           />
           <Drawer.Item
-            label="Online Sales"
-            icon="cart"
+            label="Web"
+            icon={({ size, color }) => <MaterialCommunityIcons name="web" size={size} color={color} />}
             active={activeRouteName === 'OnlineSales'}
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'OnlineSales' ? { backgroundColor: 'transparent' } : undefined]}
             onPress={() => props.navigation.navigate('OnlineSales')}
           />
           <Drawer.Item
-            label="Online Booking"
-            icon="calendar-clock"
+            label="Social"
+            icon={({ size, color }) => <Ionicons name="share-social" size={size} color={color} />}
             active={activeRouteName === 'OnlineBooking'}
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'OnlineBooking' ? { backgroundColor: 'transparent' } : undefined]}
@@ -163,6 +164,14 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
               console.log('Active state before navigation:', activeRouteName === 'FinancialServices')
               props.navigation.navigate('FinancialServices')
             }}
+          />
+          <Drawer.Item
+            label="Talent"
+            icon={({ size, color }) => <Ionicons name="people" size={size} color={color} />}
+            active={activeRouteName === 'Talent'}
+            rippleColor="#e0e0e0"
+            style={[styles.drawerItem, activeRouteName === 'Talent' ? { backgroundColor: 'transparent' } : undefined]}
+            onPress={() => props.navigation.navigate('Talent')}
           />
         </Drawer.Section>
 

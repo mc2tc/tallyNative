@@ -16,9 +16,12 @@ import LeadDetailScreen from '../screens/LeadDetailScreen'
 import SalesPipelineScreen from '../screens/SalesPipelineScreen'
 import AddCustomerScreen from '../screens/AddCustomerScreen'
 import UploadProcessingScreen from '../screens/UploadProcessingScreen'
+import ManageStockScreen from '../screens/ManageStockScreen'
+import EditPackagingScreen from '../screens/EditPackagingScreen'
 import type { Transaction } from '../lib/api/transactions2'
 import type { BankStatementRule } from '../lib/api/bankStatementRules'
 import type { CreditCardRule } from '../lib/api/creditCardRules'
+import type { PrimaryPackaging, SecondaryPackaging } from '../lib/api/packaging'
 
 type TransactionStub = {
   id: string
@@ -63,6 +66,21 @@ export type TransactionsStackParamList = {
   BankStatementRules: undefined
   CreditCardRuleDetail: { rule: CreditCardRule }
   CreditCardRuleCreate: undefined
+  ManageStock: { 
+    itemName: string
+    itemText: string
+    businessId: string
+    inventoryItemId?: string
+    transactionId?: string
+    itemIndex?: number
+    transactionItem?: any
+  }
+  EditPackaging: {
+    packaging: PrimaryPackaging | SecondaryPackaging
+    packagingType: 'primary' | 'secondary'
+    onSave: (updatedPackaging: PrimaryPackaging | SecondaryPackaging) => void
+    manageStockParams?: { itemName: string; itemText: string; businessId: string; inventoryItemId?: string }
+  }
 }
 
 const Stack = createStackNavigator<TransactionsStackParamList>()
@@ -86,6 +104,8 @@ export function TransactionsNavigator() {
       <Stack.Screen name="CreditCardRuleDetail" component={CreditCardRuleDetailScreen} />
       <Stack.Screen name="CreditCardRuleCreate" component={CreditCardRuleCreateScreen} />
       <Stack.Screen name="UploadProcessing" component={UploadProcessingScreen} />
+      <Stack.Screen name="ManageStock" component={ManageStockScreen} />
+      <Stack.Screen name="EditPackaging" component={EditPackagingScreen} />
     </Stack.Navigator>
   )
 }

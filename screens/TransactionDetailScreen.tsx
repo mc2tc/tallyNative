@@ -1,8 +1,9 @@
 // Transaction detail screen - displays full transaction summary information
 import React, { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Animated, Linking, Platform } from 'react-native'
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Animated, Linking, Platform, Image } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
+import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons'
 import * as FileSystem from 'expo-file-system/legacy'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
@@ -25,6 +26,7 @@ type TransactionDetailRouteProp =
 type TransactionItem = {
   name: string
   quantity?: number
+  unit?: string
   unitCost?: number
   amount: number
   debitAccount?: string
@@ -56,7 +58,7 @@ type TransactionAccounting = {
 
 
 export default function TransactionDetailScreen() {
-  const navigation = useNavigation()
+  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList | ScaffoldStackParamList>>()
   const route = useRoute<TransactionDetailRouteProp>()
   const { transaction: initialTransaction } = route.params
 
@@ -65,7 +67,6 @@ export default function TransactionDetailScreen() {
   const [showAccountPicker, setShowAccountPicker] = useState(false)
   const [availableAccounts, setAvailableAccounts] = useState<string[]>([])
   const [loadingAccounts, setLoadingAccounts] = useState(false)
-  const [updatingAccount, setUpdatingAccount] = useState(false)
   const [showPaymentMethodPicker, setShowPaymentMethodPicker] = useState(false)
   const [availablePaymentMethods, setAvailablePaymentMethods] = useState<PaymentMethodOption[]>([])
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false)
@@ -77,6 +78,8 @@ export default function TransactionDetailScreen() {
   const [allPaymentMethods, setAllPaymentMethods] = useState<PaymentMethodOption[]>([])
   // For bank transactions: store edited debit accounts locally until verification
   const [editedItemDebitAccounts, setEditedItemDebitAccounts] = useState<Map<number, string>>(new Map())
+  // For item actions: track which action is selected (edit_account or add_to_inventory)
+  const [itemActionSelection, setItemActionSelection] = useState<Map<number, string>>(new Map())
   // For "No matching record" workflow
   const [noMatchingRecord, setNoMatchingRecord] = useState(false)
   const [unreconcilableDescription, setUnreconcilableDescription] = useState<string>('')
@@ -90,9 +93,12 @@ export default function TransactionDetailScreen() {
   // For invoice PDF: generation and download
   const [generatingPDF, setGeneratingPDF] = useState(false)
   const [invoicePdfUrl, setInvoicePdfUrl] = useState<string | null>(null)
+  // For receipt image display
+  const [showReceiptImage, setShowReceiptImage] = useState(false)
   const salesPaymentSlideAnim = React.useRef(new Animated.Value(0)).current
   const paymentMethodSlideAnim = React.useRef(new Animated.Value(0)).current
   const slideAnim = React.useRef(new Animated.Value(0)).current
+  const headerWiggleAnim = React.useRef(new Animated.Value(0)).current
   const insets = useSafeAreaInsets()
 
   // Safely extract businessId - use initial transaction's businessId as fallback
@@ -226,9 +232,8 @@ export default function TransactionDetailScreen() {
     try {
       let updatedTransaction: Transaction
       
-      if (isTransactions3) {
-        // For transactions3: use verifyTransaction endpoint
-        const verifyOptions: {
+      // Use transactions3 approach: stage changes locally, persist on Confirm and save
+        const updateOptions: {
           paymentBreakdown?: Array<{ type: string; amount: number }>
           itemList?: Array<{
             name: string
@@ -240,71 +245,90 @@ export default function TransactionDetailScreen() {
             isBusinessExpense?: boolean
             category?: string
           }>
+          paymentMethod?: string
         } = {}
-        
-        if (isBankTransaction) {
-          // For bank transactions: send itemList with confirmed debit accounts
-          const currentItemList = details?.itemList || []
-          if (currentItemList.length > 0) {
-            verifyOptions.itemList = currentItemList.map((item, index) => {
-              // Use edited debit account if available, otherwise use existing
-              const debitAccount = editedItemDebitAccounts.has(index)
-                ? editedItemDebitAccounts.get(index)!
-                : item.debitAccount || ''
-              
-              return {
-                name: item.name,
-                amount: item.amount,
-                amountExcluding: item.amountExcluding,
-                vatAmount: item.vatAmount,
-                debitAccount: debitAccount,
-                debitAccountConfirmed: true, // User confirmed by clicking "Confirm and save"
-                isBusinessExpense: item.isBusinessExpense,
-                category: item.category,
-              }
-            })
-          }
+
+      // Build updated itemList with staged debitAccount changes
+        const currentItemList = details?.itemList || []
+        if (currentItemList.length > 0) {
+          updateOptions.itemList = currentItemList.map((item, index) => {
+            const debitAccount = editedItemDebitAccounts.has(index)
+              ? editedItemDebitAccounts.get(index)!
+              : item.debitAccount || ''
+
+            return {
+              name: item.name,
+              amount: item.amount,
+              amountExcluding: item.amountExcluding,
+              vatAmount: item.vatAmount,
+              debitAccount,
+              debitAccountConfirmed: true,
+              isBusinessExpense: item.isBusinessExpense,
+              category: item.category,
+            }
+          })
+        }
+
+        // Build paymentBreakdown / paymentMethod
+        if (selectedPaymentMethod) {
+          // Use new payment method as full-amount breakdown
+          updateOptions.paymentBreakdown = [
+            {
+              type: selectedPaymentMethod,
+              amount: transactionAmount,
+            },
+          ]
+        } else if (currentPaymentBreakdown.length > 0) {
+          // Reuse existing breakdown
+          updateOptions.paymentBreakdown = currentPaymentBreakdown
+            .filter((pb) => pb.type && typeof pb.amount === 'number')
+            .map((pb) => ({
+              type: pb.type as string,
+              amount: pb.amount as number,
+            }))
+        }
+
+        if (!transaction?.id) {
+          throw new Error('Transaction ID is missing')
+        }
+
+        if (isUnverified) {
+        // Pending transactions: use verify endpoint (moves to source_of_truth)
+          const verifyResponse = await transactions2Api.verifyTransaction(
+            transaction.id,
+            businessId!,
+            Object.keys(updateOptions).length > 0 ? updateOptions : undefined,
+          )
+
+          console.log('TransactionDetailScreen: verifyTransaction response', {
+            hasResponse: !!verifyResponse,
+            hasMetadata: !!verifyResponse?.metadata,
+            hasBusinessId: !!verifyResponse?.metadata?.businessId,
+            transactionId: verifyResponse?.id,
+            metadataKeys: verifyResponse?.metadata ? Object.keys(verifyResponse.metadata) : [],
+          })
+
+          updatedTransaction = verifyResponse
         } else {
-          // For purchase receipts: include paymentBreakdown if payment method was edited
-          if (selectedPaymentMethod) {
-            verifyOptions.paymentBreakdown = [
-              {
-                type: selectedPaymentMethod,
-                amount: transactionAmount,
-              },
-            ]
+        // Verified transactions: use updateVerifiedPurchase endpoint (source_of_truth)
+          if (!updateOptions.itemList && !updateOptions.paymentBreakdown && !updateOptions.paymentMethod) {
+            Alert.alert('Nothing to save', 'No changes to accounts or payment method.')
+            setConfirmingVerification(false)
+            return
           }
-        }
-        
-        if (!transaction?.id) {
-          throw new Error('Transaction ID is missing')
-        }
-        
-        const verifyResponse = await transactions2Api.verifyTransaction(
-          transaction.id,
-          businessId!,
-          Object.keys(verifyOptions).length > 0 ? verifyOptions : undefined,
-        )
-        
-        console.log('TransactionDetailScreen: verifyTransaction response', {
-          hasResponse: !!verifyResponse,
-          hasMetadata: !!verifyResponse?.metadata,
-          hasBusinessId: !!verifyResponse?.metadata?.businessId,
-          transactionId: verifyResponse?.id,
-          metadataKeys: verifyResponse?.metadata ? Object.keys(verifyResponse.metadata) : [],
-        })
-        
-        updatedTransaction = verifyResponse
-      } else {
-        // For transactions2: use confirmVerification endpoint
-        if (!transaction?.id) {
-          throw new Error('Transaction ID is missing')
-        }
-        
-        updatedTransaction = await transactions2Api.confirmVerification(
-          transaction.id,
-          businessId!,
-        )
+
+          const updateResponse = await transactions2Api.updateTransactions3VerifiedPurchase(
+            transaction.id,
+            businessId!,
+            updateOptions,
+          )
+
+          console.log('TransactionDetailScreen: updateTransactions3VerifiedPurchase response', {
+            success: updateResponse.success,
+            transactionId: updateResponse.transactionId,
+          })
+
+          updatedTransaction = updateResponse.transaction
       }
       
       // Verify the updated transaction has required fields
@@ -369,6 +393,50 @@ export default function TransactionDetailScreen() {
         }
       }
       
+      // Save inventory items (Inventory) to Firestore
+      // This is done after successful verification, but errors are non-blocking
+      const updatedItemList = (updatedTransaction?.details as TransactionDetails | undefined)?.itemList || []
+      const inventoryItems = updatedItemList.filter(
+        (item) => item.debitAccount === 'Inventory'
+      )
+      
+      if (inventoryItems.length > 0 && businessId && updatedTransaction?.id) {
+        try {
+          // Get reference from transaction metadata
+          const reference = (updatedTransaction.metadata as { reference?: string } | undefined)?.reference
+          
+          // Use the final debitAccount values from the updated transaction
+          const itemsToSave = inventoryItems.map((item) => ({
+            name: item.name,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitCost: item.unitCost,
+            amount: item.amount,
+            amountExcluding: item.amountExcluding,
+            vatAmount: item.vatAmount,
+            debitAccount: item.debitAccount || '',
+            debitAccountConfirmed: item.debitAccountConfirmed,
+            isBusinessExpense: item.isBusinessExpense,
+            category: item.category,
+            reference,
+          }))
+          
+          await transactions2Api.saveInventoryItems(
+            businessId,
+            updatedTransaction.id,
+            itemsToSave,
+          )
+          console.log('TransactionDetailScreen: Successfully saved inventory items', {
+            count: itemsToSave.length,
+            transactionId: updatedTransaction.id,
+          })
+        } catch (error) {
+          // Non-blocking: log error but don't fail the verification
+          console.error('TransactionDetailScreen: Failed to save inventory items:', error)
+          // Don't show alert to user - verification succeeded, inventory save is secondary
+        }
+      }
+      
       // Transaction has been verified and moved to source_of_truth collection
       // It may have a new ID, so we should navigate back to let the parent screen refresh
       // The transaction will now appear in the appropriate card (e.g., "Reconcile to bank")
@@ -395,7 +463,7 @@ export default function TransactionDetailScreen() {
       Alert.alert('Error', errorMessage)
       setConfirmingVerification(false)
     }
-  }, [transaction.id, transaction?.summary?.totalAmount, businessId, isTransactions3, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, transaction?.details, navigation])
+  }, [transaction.id, transaction?.summary?.totalAmount, businessId, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, transaction?.details, navigation])
 
   // Handler for confirming unreconcilable transaction
   const handleConfirmUnreconcilable = useCallback(async () => {
@@ -635,62 +703,79 @@ export default function TransactionDetailScreen() {
 
   const handleSelectPaymentMethod = useCallback(
     async (method: PaymentMethodOption) => {
-      if (isTransactions3) {
-        if (isUnverified) {
-          // For unverified transactions3: store locally (will be sent during verification)
-          setSelectedPaymentMethod(method.value)
-          handleClosePaymentMethodPicker()
-        } else {
-          // For verified transactions3: update immediately via transactions3 API
-          setUpdatingPaymentMethod(true)
-          try {
-            const updatedTransaction = await transactions2Api.updateTransactions3PaymentMethod(
-              transaction.id,
-              businessId,
-              method.value,
-            )
-            setTransaction(updatedTransaction)
-            handleClosePaymentMethodPicker()
-          } catch (error) {
-            console.error('Failed to update payment method:', error)
-            let errorMessage = 'Failed to update payment method. Please try again.'
-
-            if (error instanceof ApiError) {
-              errorMessage = error.message
-            }
-
-            Alert.alert('Error', errorMessage)
-          } finally {
-            setUpdatingPaymentMethod(false)
-          }
-        }
-      } else {
-        // For transactions2: update immediately via API
-        setUpdatingPaymentMethod(true)
-        try {
-          const updatedTransaction = await transactions2Api.updatePaymentMethod(
-            transaction.id,
-            businessId,
-            method.value,
-          )
-          setTransaction(updatedTransaction)
-          handleClosePaymentMethodPicker()
-        } catch (error) {
-          console.error('Failed to update payment method:', error)
-          let errorMessage = 'Failed to update payment method. Please try again.'
-
-          if (error instanceof ApiError) {
-            errorMessage = error.message
-          }
-
-          Alert.alert('Error', errorMessage)
-        } finally {
-          setUpdatingPaymentMethod(false)
-        }
-      }
+      // For all transactions (transactions3 and transactions2): store locally, persist on Confirm and save
+      setSelectedPaymentMethod(method.value)
+      handleClosePaymentMethodPicker()
     },
-    [transaction.id, businessId, handleClosePaymentMethodPicker, isTransactions3, isUnverified],
+    [handleClosePaymentMethodPicker],
   )
+
+  // Detect unsaved changes (staged accounts, payment methods, or unreconcilable form edits)
+  const hasUnsavedChanges =
+    editedItemDebitAccounts.size > 0 ||
+    !!selectedPaymentMethod ||
+    !!selectedSalesPaymentMethod ||
+    noMatchingRecord ||
+    !!unreconcilableDescription ||
+    !!unreconcilableAccount ||
+    !!unreconcilableReason
+
+  // Warn user when navigating away with unsaved changes
+  React.useEffect(() => {
+    const beforeRemove = navigation.addListener('beforeRemove', (e) => {
+      if (!hasUnsavedChanges || confirmingVerification) {
+        // No staged edits or we're already saving - allow navigation
+        return
+      }
+
+      // Prevent the default behaviour of leaving the screen
+      e.preventDefault()
+
+      // Build warning message based on what's missing
+      let warningMessage = 'You have unsaved changes on this transaction. If you leave now, they will be lost.'
+      if (isPaymentMethodInvalid) {
+        warningMessage = 'Please select a payment method (not "Unknown") before saving. If you leave now, your changes will be lost.'
+      }
+
+      Alert.alert(
+        'Discard changes?',
+        warningMessage,
+        [
+          { text: 'Stay', style: 'cancel', onPress: () => {} },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              // Clear staged state and proceed with the original navigation action
+              setEditedItemDebitAccounts(new Map())
+              setSelectedPaymentMethod(null)
+              setSelectedSalesPaymentMethod(null)
+              setItemActionSelection(new Map())
+              setNoMatchingRecord(false)
+              setUnreconcilableDescription('')
+              setUnreconcilableAccount('')
+              setUnreconcilableReason('')
+              navigation.dispatch(e.data.action)
+            },
+          },
+        ],
+      )
+    })
+
+    return beforeRemove
+  }, [
+    navigation,
+    hasUnsavedChanges,
+    confirmingVerification,
+    setEditedItemDebitAccounts,
+    setSelectedPaymentMethod,
+    setSelectedSalesPaymentMethod,
+    setItemActionSelection,
+    setNoMatchingRecord,
+    setUnreconcilableDescription,
+    setUnreconcilableAccount,
+    setUnreconcilableReason,
+  ])
 
   // Handler for sales payment method selection
   const handleSelectSalesPaymentMethod = useCallback((method: PaymentMethodOption) => {
@@ -791,6 +876,16 @@ export default function TransactionDetailScreen() {
     }
   }, [invoicePdfUrl, handleGenerateInvoicePDF])
 
+  // Handler for viewing receipt image
+  const handleViewReceipt = useCallback(() => {
+    const receiptImageUrl = transaction?.metadata?.imageUrl
+    if (!receiptImageUrl) {
+      Alert.alert('No Receipt', 'Receipt image is not available for this transaction.')
+      return
+    }
+    setShowReceiptImage(true)
+  }, [transaction?.metadata?.imageUrl])
+
   // Handler for marking invoice as paid
   // Calls transactions3 mark-paid endpoint which handles both AP and AR invoices
   const handleMarkAsPaid = useCallback(async () => {
@@ -879,42 +974,21 @@ export default function TransactionDetailScreen() {
   }, [slideAnim, businessId])
 
   const handleSelectAccount = useCallback(
-    async (account: string) => {
-      if (editingItemIndex === null) return
+    (account: string, indexOverride?: number) => {
+      const targetIndex = indexOverride ?? editingItemIndex
+      if (targetIndex === null || targetIndex === undefined) return
 
-      setUpdatingAccount(true)
-      try {
-        const updatedTransaction = await transactions2Api.updateItemDebitAccount(
-          transaction.id,
-          businessId,
-          editingItemIndex,
-          account,
-        )
-        setTransaction(updatedTransaction)
+      // Store locally, persist on Confirm and save
+        const newEditedAccounts = new Map(editedItemDebitAccounts)
+        newEditedAccounts.set(targetIndex, account)
+        setEditedItemDebitAccounts(newEditedAccounts)
         handleClosePicker()
-      } catch (error) {
-        console.error('Failed to update debit account:', error)
-        let errorMessage = 'Failed to update account. Please try again.'
-        let validAccounts: string[] | undefined
-
-        if (error instanceof ApiError) {
-          errorMessage = error.message
-          // Check if error data contains validAccounts (from 400 response)
-          if (error.data && typeof error.data === 'object' && 'validAccounts' in error.data) {
-            validAccounts = (error.data as { validAccounts?: string[] }).validAccounts
-          }
-        }
-
-        Alert.alert('Error', errorMessage)
-        // If we have valid accounts, we could update the list, but for now just show error
-        if (validAccounts) {
-          setAvailableAccounts(validAccounts)
-        }
-      } finally {
-        setUpdatingAccount(false)
-      }
     },
-    [editingItemIndex, transaction.id, businessId, handleClosePicker],
+    [
+      editingItemIndex,
+      handleClosePicker,
+      editedItemDebitAccounts,
+    ],
   )
 
   // Additional transaction properties for display
@@ -925,18 +999,14 @@ export default function TransactionDetailScreen() {
   const isDefaultCurrency = (currency: string) => currency.toUpperCase() === DEFAULT_CURRENCY
   const isDefault = isDefaultCurrency(transactionCurrency)
 
-  // Format transaction date and time (like Monzo: "Thursday 13 November, 21:17")
+  // Format transaction date with year (e.g., "Thursday 13 November 2024")
   const transactionDate = new Date(transactionDateValue)
-  const formattedDate = transactionDate.toLocaleDateString('en-GB', {
+  const dateTimeString = transactionDate.toLocaleDateString('en-GB', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    year: 'numeric',
   })
-  const formattedTime = transactionDate.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-  const dateTimeString = `${formattedDate}, ${formattedTime}`
 
   // Get currency symbol
   const getCurrencySymbol = (currency: string): string => {
@@ -1004,17 +1074,87 @@ export default function TransactionDetailScreen() {
     return labels[methodType] || methodType.charAt(0).toUpperCase() + methodType.slice(1)
   }
 
+  // Check if payment method needs attention (Unknown or not set)
+  const paymentMethodLabel = displayPaymentMethod 
+    ? (getPaymentMethodLabel(displayPaymentMethod) || displayPaymentMethod) 
+    : null
+  // Check if payment method is invalid (for validation)
+  const isPaymentMethodInvalid = isTransactions3 && !isBankTransaction && (!displayPaymentMethod || paymentMethodLabel?.toLowerCase() === 'unknown')
+  const paymentMethodNeedsAttention = 
+    isPaymentMethodInvalid ||
+    (chartName && !isTransactions3 && chartName.toLowerCase() === 'unknown')
+
+  // Trigger wiggle animation when payment method needs attention
+  React.useEffect(() => {
+    if (paymentMethodNeedsAttention) {
+      // Small delay to ensure component is mounted
+      const timer = setTimeout(() => {
+        Animated.sequence([
+          Animated.timing(headerWiggleAnim, {
+            toValue: -10,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headerWiggleAnim, {
+            toValue: 10,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headerWiggleAnim, {
+            toValue: -8,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headerWiggleAnim, {
+            toValue: 8,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headerWiggleAnim, {
+            toValue: -5,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headerWiggleAnim, {
+            toValue: 5,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headerWiggleAnim, {
+            toValue: 0,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+        ]).start()
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [paymentMethodNeedsAttention, headerWiggleAnim])
+
   return (
     <AppBarLayout title={thirdPartyName} onBackPress={handleGoBack}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
-          <View style={styles.iconContainer}>
+        <Animated.View 
+          style={[
+            styles.header,
+            paymentMethodNeedsAttention && styles.headerNeedsAttention,
+            {
+              transform: [{ translateX: headerWiggleAnim }],
+            },
+          ]}
+        >
+          <TouchableOpacity 
+            style={styles.iconContainer}
+            onPress={handleViewReceipt}
+            activeOpacity={0.7}
+            disabled={!transaction?.metadata?.imageUrl}
+          >
             {isBankTransaction ? (
               <MaterialIcons name="account-balance" size={32} color={GRAYSCALE_PRIMARY} />
             ) : (
               <MaterialCommunityIcons name="receipt-text" size={32} color={GRAYSCALE_PRIMARY} />
             )}
-          </View>
+          </TouchableOpacity>
           {/* For bank transactions from "Needs reconciliation", show description and credit/debit status */}
           {isNeedsReconciliation ? (
             <>
@@ -1032,29 +1172,29 @@ export default function TransactionDetailScreen() {
           )}
           {chartName && !isTransactions3 && (
             <View style={styles.chartNameRow}>
+              <Text style={styles.paidByLabel}>Paid by:</Text>
               <Text style={styles.chartName}>{chartName}</Text>
               <TouchableOpacity
                 style={styles.chartNameEditButton}
                 onPress={handleEditPaymentMethod}
-                activeOpacity={0.6}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
               >
-                <MaterialIcons name="mode-edit-outline" size={14} color="#888888" />
+                <Text style={styles.chartNameEditButtonText}>Edit</Text>
               </TouchableOpacity>
             </View>
           )}
           {isTransactions3 && !isBankTransaction && (
             <View style={styles.chartNameRow}>
+              <Text style={styles.paidByLabel}>Paid by:</Text>
               <Text style={styles.chartName}>
                 {displayPaymentMethod ? (getPaymentMethodLabel(displayPaymentMethod) || displayPaymentMethod) : 'Select payment method'}
               </Text>
               <TouchableOpacity
                 style={styles.chartNameEditButton}
                 onPress={handleEditPaymentMethod}
-                activeOpacity={0.6}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
               >
-                <MaterialIcons name="mode-edit-outline" size={14} color="#888888" />
+                <Text style={styles.chartNameEditButtonText}>Edit</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1063,38 +1203,95 @@ export default function TransactionDetailScreen() {
               {formatAmount(transactionAmount, transactionCurrency, false)}
             </Text>
           )}
-        </View>
+        </Animated.View>
 
         {itemList.length > 0 && (
-          <View style={styles.itemsCard}>
+          <View style={styles.itemsContainer}>
             {itemList.map((item, index) => (
-              <View
-                key={index}
-                style={[styles.itemRow, index < itemList.length - 1 && styles.itemRowBorder]}
-              >
-                <View style={styles.itemLeft}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <View style={styles.itemDetailsRow}>
-                    <Text style={styles.itemDetails}>
-                      {item.quantity !== undefined && item.unitCost !== undefined
-                        ? `${item.quantity} × ${formatItemAmount(item.unitCost)}`
-                        : formatItemAmount(item.amount)}
-                      {(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) && 
-                        ` • ${editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount}`}
-                    </Text>
-                    {(isUnverified || item.debitAccount) && (
-                      <TouchableOpacity
-                        style={styles.editIconButton}
-                        activeOpacity={0.6}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        onPress={() => handleEditAccount(index)}
-                      >
-                        <MaterialIcons name="mode-edit-outline" size={14} color="#888888" />
-                      </TouchableOpacity>
+              <View key={index} style={styles.itemCard}>
+                <View style={styles.itemRow}>
+                  <View style={styles.itemLeft}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    {(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) && (
+                      <>
+                        <View style={styles.accountRow}>
+                          <Text style={styles.accountLabel}>
+                            {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount}
+                          </Text>
+                        </View>
+                      </>
                     )}
                   </View>
+                  <Text style={styles.itemAmount}>{formatItemAmount(item.amount)}</Text>
                 </View>
-                <Text style={styles.itemAmount}>{formatItemAmount(item.amount)}</Text>
+
+                {(isUnverified || item.debitAccount) && (
+                  <View style={styles.segmentedButtonsContainer}>
+                    <Text style={styles.segmentedButtonsLabel}>Update Account</Text>
+                    <View style={styles.segmentedButtonsWrapper}>
+                      <TouchableOpacity
+                        style={[
+                          styles.segmentedButton,
+                          itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonActive,
+                          { borderTopLeftRadius: 8, borderBottomLeftRadius: 8, borderRightWidth: 0.5 },
+                        ]}
+                        onPress={async () => {
+                          const newSelection = new Map(itemActionSelection)
+                          newSelection.set(index, 'inventory')
+                          setItemActionSelection(newSelection)
+
+                          await handleSelectAccount('Inventory', index)
+
+                          setTimeout(() => {
+                            const resetSelection = new Map(itemActionSelection)
+                            resetSelection.delete(index)
+                            setItemActionSelection(resetSelection)
+                          }, 100)
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.segmentedButtonText,
+                            itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonTextActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          Inventory
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.segmentedButton,
+                          itemActionSelection.get(index) === 'other' && styles.segmentedButtonActive,
+                          { borderTopRightRadius: 8, borderBottomRightRadius: 8, borderLeftWidth: 0.5 },
+                        ]}
+                        onPress={() => {
+                          const newSelection = new Map(itemActionSelection)
+                          newSelection.set(index, 'other')
+                          setItemActionSelection(newSelection)
+                          handleEditAccount(index)
+                          setTimeout(() => {
+                            const resetSelection = new Map(itemActionSelection)
+                            resetSelection.delete(index)
+                            setItemActionSelection(resetSelection)
+                          }, 100)
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.segmentedButtonText,
+                            itemActionSelection.get(index) === 'other' && styles.segmentedButtonTextActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          Other
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
               </View>
             ))}
           </View>
@@ -1195,13 +1392,13 @@ export default function TransactionDetailScreen() {
               </View>
             )}
           </View>
-        ) : isUnverified && !isNeedsReconciliation ? (
+        ) : (isTransactions3 && !isBankTransaction && !isNeedsReconciliation) ? (
           <View style={styles.confirmButtonContainer}>
             <TouchableOpacity
-              style={[styles.confirmButton, confirmingVerification && styles.confirmButtonDisabled]}
+              style={[styles.confirmButton, (confirmingVerification || !!paymentMethodNeedsAttention) && styles.confirmButtonDisabled]}
               onPress={handleConfirmVerification}
               activeOpacity={0.8}
-              disabled={confirmingVerification}
+              disabled={confirmingVerification || !!paymentMethodNeedsAttention}
             >
               {confirmingVerification ? (
                 <ActivityIndicator size="small" color="#ffffff" />
@@ -1395,20 +1592,15 @@ export default function TransactionDetailScreen() {
                           style={[
                             styles.accountOption,
                             isSelected && styles.accountOptionSelected,
-                            updatingAccount && styles.accountOptionDisabled,
                           ]}
-                          onPress={() => !updatingAccount && handleSelectAccount(account)}
-                          activeOpacity={updatingAccount ? 1 : 0.7}
-                          disabled={updatingAccount}
+                          onPress={() => handleSelectAccount(account)}
+                          activeOpacity={0.7}
                         >
                           <Text style={[styles.accountOptionText, isSelected && styles.accountOptionTextSelected]}>
                             {account}
                           </Text>
-                          {isSelected && !updatingAccount && (
+                          {isSelected && (
                             <MaterialIcons name="check" size={20} color={GRAYSCALE_PRIMARY} style={styles.checkIcon} />
-                          )}
-                          {updatingAccount && isSelected && (
-                            <ActivityIndicator size="small" color={GRAYSCALE_PRIMARY} style={styles.optionLoader} />
                           )}
                         </TouchableOpacity>
                       )
@@ -1742,6 +1934,37 @@ export default function TransactionDetailScreen() {
           </Animated.View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Receipt Image Modal */}
+      <Modal
+        visible={showReceiptImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReceiptImage(false)}
+      >
+        <TouchableOpacity
+          style={styles.receiptImageModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowReceiptImage(false)}
+        >
+          <View style={styles.receiptImageContainer}>
+            <TouchableOpacity
+              style={[styles.receiptImageCloseButton, { top: insets.top + 16 }]}
+              onPress={() => setShowReceiptImage(false)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="close" size={28} color="#ffffff" />
+            </TouchableOpacity>
+            {transaction?.metadata?.imageUrl && (
+              <Image
+                source={{ uri: transaction.metadata.imageUrl }}
+                style={styles.receiptImage}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </AppBarLayout>
   )
 }
@@ -1774,57 +1997,85 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
-    padding: 24,
+    padding: 16,
     alignItems: 'center',
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  headerNeedsAttention: {
+    borderColor: '#333333',
+    borderWidth: 2,
   },
   iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#f6f6f6',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   thirdPartyName: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     color: GRAYSCALE_PRIMARY,
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: 'center',
   },
   amount: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   transactionType: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#888888',
-    marginTop: 4,
+    marginTop: 2,
   },
   chartNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
-    marginBottom: 4,
+    marginTop: 8,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  paidByLabel: {
+    fontSize: 13,
+    color: '#888888',
+    marginRight: 4,
   },
   chartName: {
-    fontSize: 14,
-    color: '#888888',
+    fontSize: 13,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '500',
+    marginRight: 4,
   },
   chartNameEditButton: {
-    marginLeft: 6,
-    padding: 2,
+    backgroundColor: '#f6f6f6',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    marginLeft: 4,
+  },
+  chartNameEditButtonText: {
+    fontSize: 12,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '500',
   },
   foreignCurrency: {
-    fontSize: 16,
+    fontSize: 13,
     color: '#888888',
+    marginTop: 4,
   },
-  itemsCard: {
+  itemsContainer: {
+    gap: 12,
+  },
+  itemCard: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
     padding: 20,
@@ -1833,11 +2084,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingVertical: 12,
-  },
-  itemRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   itemLeft: {
     flex: 1,
@@ -1858,9 +2104,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#888888',
   },
-  editIconButton: {
-    marginLeft: 6,
-    padding: 2,
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  accountLabel: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+  },
+  segmentedButtonsContainer: {
+    marginTop: 8,
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  segmentedButtonsLabel: {
+    fontSize: 13,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  segmentedButtonsWrapper: {
+    flexDirection: 'row',
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    overflow: 'hidden',
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  segmentedButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: '#e0e0e0',
+    minWidth: 0,
+  },
+  segmentedButtonActive: {
+    backgroundColor: GRAYSCALE_PRIMARY,
+  },
+  segmentedButtonText: {
+    fontSize: 12,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  segmentedButtonTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  itemActionsRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  itemActionButton: {
+    flex: 1,
+    backgroundColor: GRAYSCALE_PRIMARY,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemActionButtonSecondary: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+  },
+  itemActionButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  itemActionButtonTextSecondary: {
+    color: GRAYSCALE_PRIMARY,
   },
   itemAmount: {
     fontSize: 15,
@@ -2194,6 +2517,35 @@ const styles = StyleSheet.create({
   },
   invoiceActionButtonTextSecondary: {
     color: GRAYSCALE_PRIMARY,
+  },
+  // Receipt Image Modal Styles
+  receiptImageModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  receiptImageContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  receiptImageCloseButton: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 1000,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  receiptImage: {
+    width: '100%',
+    height: '100%',
   },
 })
 
