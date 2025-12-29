@@ -1,7 +1,7 @@
 // View all screen for inventory items
-import React, { useCallback, useState, useMemo, useEffect } from 'react'
+import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native'
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native'
 import { Searchbar } from 'react-native-paper'
 import { Octicons } from '@expo/vector-icons'
 import { Draggable, Droppable, DraggableState } from 'react-native-reanimated-dnd'
@@ -58,6 +58,8 @@ type InventoryViewAllItem = {
   reference?: string
   isGroupedItem?: boolean                 // true for grouped items (aggregated), false for regular items
   groupedItemIds?: string[]              // Array of inventory item IDs (only on grouped items)
+  currentStockOfPrimaryPackages?: number // Current stock count in primary packages
+  currentStockInPrimaryUnits?: number    // Current stock count in primary packaging units
 }
 
 type InventoryViewAllRouteParams = {
@@ -83,71 +85,92 @@ export default function InventoryViewAllScreen() {
   }
   const [searchQuery, setSearchQuery] = useState('')
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
+  const [hoveredDropTargetId, setHoveredDropTargetId] = useState<string | null>(null)
   const [items, setItems] = useState<InventoryViewAllItem[]>(routeItems || [])
-  const [loading, setLoading] = useState(section !== 'Receiving') // Only load for Raw Materials/Finished Goods
-  const [hasFetched, setHasFetched] = useState(false)
+  const [loading, setLoading] = useState(section !== 'Receiving') // Only load for Raw Materials/Finished Goods/Pending Orders
+  const [infoCardDismissed, setInfoCardDismissed] = useState(false)
+  const lastFetchedSectionRef = useRef<string | null>(null)
 
-  // Fetch items for Raw Materials and Finished Goods (View All shows both grouped and individual items)
-  useEffect(() => {
+  // Fetch items function - extracted to be reusable
+  const fetchItems = useCallback(async () => {
     if (!businessId || section === 'Receiving') {
       // For Receiving, use items from route params (transaction items)
       setItems(routeItems || [])
       setLoading(false)
+      lastFetchedSectionRef.current = null
       return
     }
 
-    // Only fetch once, unless businessId or section changes
-    if (hasFetched && items.length > 0) {
+    try {
+      setLoading(true)
+      const debitAccount = section === 'Raw Materials' ? 'Raw Materials' : 'Finished Goods'
+      
+      // Use screen=viewAll to get both grouped items and individual items
+      const response = await inventoryApi.getInventoryItems(businessId, {
+        debitAccount,
+        screen: 'viewAll',
+        page: 1,
+        limit: 100, // Get up to 100 items for View All
+      })
+
+      // Convert inventory items to InventoryViewAllItem format
+      const viewAllItems: InventoryViewAllItem[] = response.items.map((item: InventoryItem) => {
+        const currency = item.currency || 'GBP'
+        return {
+          id: item.id,
+          title: item.name,
+          amount: formatAmount(item.amount, currency, true),
+          inventoryItem: item,
+          costPerPrimaryPackage: item.costPerPrimaryPackage,
+          costPerPrimaryPackagingUnit: item.costPerPrimaryPackagingUnit,
+          totalPrimaryPackages: item.packaging?.totalPrimaryPackages,
+          primaryPackagingUnit: item.packaging?.primaryPackaging?.unit,
+          primaryPackagingDescription: item.packaging?.primaryPackaging?.description,
+          primaryPackagingQuantity: item.packaging?.primaryPackaging?.quantity,
+          thirdPartyName: item.thirdPartyName,
+          transactionDate: item.transactionDate,
+          reference: item.reference,
+          groupedItemIds: item.groupedItemIds,
+          currentStockOfPrimaryPackages: item.currentStockOfPrimaryPackages,
+          currentStockInPrimaryUnits: item.currentStockInPrimaryUnits,
+          currency,
+        }
+      })
+
+      setItems(viewAllItems)
+      lastFetchedSectionRef.current = section
+    } catch (error) {
+      console.error('Failed to fetch inventory items for View All:', error)
+      Alert.alert('Error', 'Failed to load items. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }, [businessId, section, routeItems])
+
+  // Fetch items for Raw Materials and Finished Goods (View All shows both grouped and individual items)
+  useEffect(() => {
+    if (!businessId || section === 'Receiving') {
       return
     }
 
-    const fetchItems = async () => {
-      try {
-        setLoading(true)
-        const debitAccount = section === 'Raw Materials' ? 'Raw Materials' : 'Finished Goods'
-        
-        // Use screen=viewAll to get both grouped items and individual items
-        const response = await inventoryApi.getInventoryItems(businessId, {
-          debitAccount,
-          screen: 'viewAll',
-          page: 1,
-          limit: 100, // Get up to 100 items for View All
-        })
-
-        // Convert inventory items to InventoryViewAllItem format
-        const viewAllItems: InventoryViewAllItem[] = response.items.map((item: InventoryItem) => {
-          const currency = item.currency || 'GBP'
-          return {
-            id: item.id,
-            title: item.name,
-            amount: formatAmount(item.amount, currency, true),
-            inventoryItem: item,
-            costPerPrimaryPackage: item.costPerPrimaryPackage,
-            costPerPrimaryPackagingUnit: item.costPerPrimaryPackagingUnit,
-            totalPrimaryPackages: item.packaging?.totalPrimaryPackages,
-            primaryPackagingUnit: item.packaging?.primaryPackaging?.unit,
-            primaryPackagingDescription: item.packaging?.primaryPackaging?.description,
-            primaryPackagingQuantity: item.packaging?.primaryPackaging?.quantity,
-            thirdPartyName: item.thirdPartyName,
-            transactionDate: item.transactionDate,
-            reference: item.reference,
-            groupedItemIds: item.groupedItemIds,
-            currency,
-          }
-        })
-
-        setItems(viewAllItems)
-        setHasFetched(true)
-      } catch (error) {
-        console.error('Failed to fetch inventory items for View All:', error)
-        Alert.alert('Error', 'Failed to load items. Please try again.')
-      } finally {
-        setLoading(false)
-      }
+    // Clear items when section changes (before fetching new ones)
+    if (lastFetchedSectionRef.current !== null && lastFetchedSectionRef.current !== section) {
+      setItems([])
     }
 
     fetchItems()
-  }, [businessId, section]) // Removed 'loading' and 'items' from dependencies to prevent infinite loops
+  }, [businessId, section, fetchItems]) // Refetch when businessId or section changes
+
+  // Refetch when screen comes into focus (e.g., after returning from stock-take or detail screen)
+  useFocusEffect(
+    useCallback(() => {
+      if (section !== 'Receiving' && businessId) {
+        // Force refetch to get latest data by resetting the cache check
+        lastFetchedSectionRef.current = null
+        fetchItems()
+      }
+    }, [fetchItems, section, businessId])
+  )
 
   const handleGoBack = () => {
     navigation.navigate('InventoryManagement' as never)
@@ -210,6 +233,40 @@ export default function InventoryViewAllScreen() {
     [businessId, navigation, section, title, filteredItems],
   )
 
+  // Check if two items can be grouped together (same name and packaging)
+  const canGroupItems = useCallback((draggedItem: InventoryViewAllItem, targetItem: InventoryViewAllItem): boolean => {
+    if (!draggedItem || !targetItem) {
+      return false
+    }
+
+    // Don't match if it's the same item
+    if (draggedItem.id === targetItem.id) {
+      return false
+    }
+
+    // Check if items have the same name
+    const sameName = draggedItem.title === targetItem.title
+
+    // Check if items have the same primaryPackaging (description, quantity, unit)
+    const draggedPackaging = {
+      description: draggedItem.primaryPackagingDescription,
+      quantity: draggedItem.primaryPackagingQuantity,
+      unit: draggedItem.primaryPackagingUnit,
+    }
+    const targetPackaging = {
+      description: targetItem.primaryPackagingDescription,
+      quantity: targetItem.primaryPackagingQuantity,
+      unit: targetItem.primaryPackagingUnit,
+    }
+
+    const samePackaging =
+      draggedPackaging.description === targetPackaging.description &&
+      draggedPackaging.quantity === targetPackaging.quantity &&
+      draggedPackaging.unit === targetPackaging.unit
+
+    return sameName && samePackaging
+  }, [])
+
   // Handle drop event - check if items match
   // This function is called when an item is dropped on a droppable area
   // draggedItemData is the data from the Draggable that was dropped
@@ -223,42 +280,16 @@ export default function InventoryViewAllScreen() {
       const draggedItem = draggedItemData
       const targetItemData = targetItem
 
+      // Clear hover state
+      setHoveredDropTargetId(null)
+
       if (!draggedItem || !targetItemData) {
         console.log(`[Drag Debug] Missing item data, returning`)
         return
       }
 
-      // Don't match if it's the same item
-      if (draggedItem.id === targetItemData.id) {
-        console.log(`[Drag Debug] Same item dropped on itself, returning`)
-        return
-      }
-
-      // Check if items have the same name
-      const sameName = draggedItem.title === targetItemData.title
-      console.log(`[Drag Debug] Same name check:`, sameName, `"${draggedItem.title}" vs "${targetItemData.title}"`)
-
-      // Check if items have the same primaryPackaging (description, quantity, unit)
-      const draggedPackaging = {
-        description: draggedItem.primaryPackagingDescription,
-        quantity: draggedItem.primaryPackagingQuantity,
-        unit: draggedItem.primaryPackagingUnit,
-      }
-      const targetPackaging = {
-        description: targetItemData.primaryPackagingDescription,
-        quantity: targetItemData.primaryPackagingQuantity,
-        unit: targetItemData.primaryPackagingUnit,
-      }
-      console.log(`[Drag Debug] Dragged packaging:`, draggedPackaging)
-      console.log(`[Drag Debug] Target packaging:`, targetPackaging)
-
-      const samePackaging =
-        draggedPackaging.description === targetPackaging.description &&
-        draggedPackaging.quantity === targetPackaging.quantity &&
-        draggedPackaging.unit === targetPackaging.unit
-      console.log(`[Drag Debug] Same packaging check:`, samePackaging)
-
-      if (sameName && samePackaging) {
+      // Use the extracted canGroupItems function
+      if (canGroupItems(draggedItem, targetItemData)) {
         console.log('[Drag Debug] SUCCESS - Items match!')
         console.log('success')
         
@@ -286,17 +317,21 @@ export default function InventoryViewAllScreen() {
         
         inventoryApi
           .groupInventoryItems(businessId, [draggedItemId, targetItemId])
-          .then((response) => {
+          .then(async (response) => {
             console.log('[Drag Debug] Group API success:', response)
-            Alert.alert('Success', 'Items grouped successfully', [
-              {
-                text: 'OK',
-                onPress: () => {
-                  // TODO: Refresh the items list or navigate back
-                  // For now, we'll just show the success message
-                },
-              },
-            ])
+            // Clear dragging state
+            setDraggingItemId(null)
+            setHoveredDropTargetId(null)
+            // Clear the cached section to force a refresh
+            lastFetchedSectionRef.current = null
+            // Refresh the items list
+            try {
+              await fetchItems()
+              Alert.alert('Success', 'Items grouped successfully')
+            } catch (error) {
+              console.error('[Drag Debug] Error refreshing after group:', error)
+              Alert.alert('Success', 'Items grouped successfully, but failed to refresh the list')
+            }
           })
           .catch((error) => {
             console.error('[Drag Debug] Group API error:', error)
@@ -310,7 +345,7 @@ export default function InventoryViewAllScreen() {
         console.log('[Drag Debug] Items do not match')
       }
     },
-    [],
+    [canGroupItems, businessId, fetchItems],
   )
 
 
@@ -330,6 +365,26 @@ export default function InventoryViewAllScreen() {
         contentContainerStyle={styles.contentContainer}
         nestedScrollEnabled={true}
       >
+        {/* Explainer Card - only show for Raw Materials and Finished Goods (not Receiving) */}
+        {!infoCardDismissed && section !== 'Receiving' && (
+          <View style={styles.infoCard}>
+            <View style={styles.infoCardContent}>
+              <View style={styles.infoCardTextContainer}>
+                <Text style={styles.infoCardTitle}>Group Similar Items</Text>
+                <Text style={styles.infoCardBody}>
+                  Drag and drop items with the same name and packaging to group them together. This helps you manage inventory more efficiently.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.infoCardDismissButton}
+                onPress={() => setInfoCardDismissed(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.infoCardDismissIcon}>×</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
         {loading ? (
           <View style={styles.emptyContainer}>
             <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
@@ -349,9 +404,19 @@ export default function InventoryViewAllScreen() {
               // Check if this is a grouped item (has groupedItemIds array)
               const isGroupedItem = item.groupedItemIds !== undefined && item.groupedItemIds.length > 0
               
+              // Check if this item is a valid drop target for the currently dragged item
+              const draggedItem = draggingItemId ? filteredItems.find(i => i.id === draggingItemId) : null
+              const isValidDropTarget = draggedItem && draggingItemId !== item.id && canGroupItems(draggedItem, item)
+              const isHoveredDropTarget = hoveredDropTargetId === item.id && isValidDropTarget
+              const isDragging = draggingItemId === item.id
+              
               const cardContent = (
                 <TouchableOpacity
-                  style={styles.listItem}
+                  style={[
+                    styles.listItem,
+                    isValidDropTarget && styles.listItemValidDropTarget,
+                    isHoveredDropTarget && styles.listItemHoveredDropTarget,
+                  ]}
                   onPress={() => handleItemPress(item)}
                   activeOpacity={0.7}
                 >
@@ -391,7 +456,12 @@ export default function InventoryViewAllScreen() {
                         </Text>
                         {item.totalPrimaryPackages !== undefined && (
                           <Text style={styles.itemSubtitleValue}>
-                            {item.totalPrimaryPackages.toLocaleString()} of {item.totalPrimaryPackages.toLocaleString()}
+                            {(() => {
+                              // Use currentStockOfPrimaryPackages if available, otherwise default to totalPrimaryPackages
+                              // (for display purposes - initially they should be equal)
+                              const currentStock = item.currentStockOfPrimaryPackages ?? item.totalPrimaryPackages
+                              return `${currentStock.toLocaleString()} of ${item.totalPrimaryPackages.toLocaleString()}`
+                            })()}
                           </Text>
                         )}
                       </View>
@@ -400,18 +470,17 @@ export default function InventoryViewAllScreen() {
                 </TouchableOpacity>
               )
 
-              const isDragging = draggingItemId === item.id
-              if (isDragging) {
-                console.log(`[Drag Debug] Rendering item ${item.id} with dragging styles (zIndex: 9999)`)
-              }
-
               return (
                 <View 
                   key={item.id} 
                   style={[
                     styles.droppableWrapper,
-                    isDragging && styles.droppableWrapperDragging
+                    isDragging && styles.droppableWrapperDragging,
+                    isValidDropTarget && styles.droppableWrapperValidTarget,
                   ]}
+                  onLayout={() => {
+                    // Track when item layout changes during drag
+                  }}
                 >
                   <Droppable
                     onDrop={createDropHandler(item)}
@@ -442,6 +511,8 @@ export default function InventoryViewAllScreen() {
                       }}
                       onDragEnd={(data) => {
                         console.log(`[Drag Debug] Drag ended for item:`, item.id, item.title, 'data:', data)
+                        // Clear hover state when drag ends
+                        setHoveredDropTargetId(null)
                       }}
                     >
                       {cardContent}
@@ -481,6 +552,48 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 8,
   },
+  infoCard: {
+    backgroundColor: SURFACE_BACKGROUND,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e6e6e6',
+  },
+  infoCardContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  infoCardTextContainer: {
+    flex: 1,
+  },
+  infoCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 8,
+  },
+  infoCardBody: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    lineHeight: 18,
+  },
+  infoCardDismissButton: {
+    marginLeft: 8,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+    paddingTop: 0,
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  infoCardDismissIcon: {
+    fontSize: 22,
+    color: GRAYSCALE_SECONDARY,
+    fontWeight: '300',
+    lineHeight: 20,
+  },
   listContainer: {
     // Remove container styling to allow individual card spacing
   },
@@ -492,6 +605,9 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 10,
   },
+  droppableWrapperValidTarget: {
+    // Style for droppable wrappers that are valid drop targets
+  },
   listItem: {
     backgroundColor: CARD_BACKGROUND,
     borderRadius: 12,
@@ -499,6 +615,18 @@ const styles = StyleSheet.create({
     borderColor: '#efefef',
     paddingVertical: 16,
     paddingHorizontal: 16,
+  },
+  listItemValidDropTarget: {
+    // Style for items that are valid drop targets (when something is being dragged)
+    borderWidth: 2,
+    borderColor: '#d0d0d0',
+    backgroundColor: '#fafafa',
+  },
+  listItemHoveredDropTarget: {
+    // Style when hovering over a valid drop target
+    borderWidth: 2,
+    borderColor: GRAYSCALE_PRIMARY,
+    backgroundColor: '#f5f5f5',
   },
   itemTextGroup: {
     flex: 1,

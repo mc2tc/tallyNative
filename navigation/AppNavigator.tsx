@@ -8,11 +8,16 @@ import FirestoreTestScreen from '../screens/FirestoreTestScreen'
 import InventoryManagementScreen from '../screens/InventoryManagementScreen'
 import InventoryViewAllScreen from '../screens/InventoryViewAllScreen'
 import InventoryItemDetailScreen from '../screens/InventoryItemDetailScreen'
+import PendingOrdersScreen from '../screens/PendingOrdersScreen'
+import PrepareOrdersScreen from '../screens/PrepareOrdersScreen'
+import StockTakeScreen from '../screens/StockTakeScreen'
 import ManageStockScreen from '../screens/ManageStockScreen'
 import EditPackagingScreen from '../screens/EditPackagingScreen'
 import PointOfSaleScreen from '../screens/PointOfSaleScreen'
 import type { PrimaryPackaging, SecondaryPackaging } from '../lib/api/packaging'
 import POSManagementScreen from '../screens/POSManagementScreen'
+import POSEditItemsScreen from '../screens/POSEditItemsScreen'
+import POSEditItemScreen from '../screens/POSEditItemScreen'
 import AddOneOffItemScreen from '../screens/AddOneOffItemScreen'
 import FinancialServicesScreen from '../screens/FinancialServicesScreen'
 import InvoiceFinancingScreen from '../screens/InvoiceFinancingScreen'
@@ -66,9 +71,36 @@ export type AppDrawerParamList = {
       thirdPartyName?: string
       transactionDate?: number
       reference?: string
+      groupedItemIds?: string[]
     }
     section: 'Receiving' | 'Raw Materials' | 'Finished Goods'
     businessId: string
+    viewAllTitle?: string
+    viewAllItems?: any[]
+  }
+  PendingOrders: {
+    businessId: string
+  }
+  PrepareOrders: {
+    businessId: string
+  }
+  StockTake: {
+    inventoryItemId: string
+    item: {
+      id: string
+      title: string
+      amount: string
+      currency?: string
+      inventoryItem?: any
+      totalPrimaryPackages?: number
+      primaryPackagingUnit?: string
+      primaryPackagingDescription?: string
+      primaryPackagingQuantity?: number
+    }
+    businessId: string
+    section: 'Raw Materials' | 'Finished Goods'
+    viewAllTitle?: string
+    viewAllItems?: any[]
   }
   ManageStock: { 
     itemName: string
@@ -87,6 +119,19 @@ export type AppDrawerParamList = {
   }
   PointOfSale: undefined
   POSManagement: undefined
+  POSEditItems: undefined
+  POSEditItem: {
+    product: {
+      id: string
+      name: string
+      price: number
+      packSize?: string
+      description?: string
+      isInventoryItem?: boolean
+      packagingQuantity?: number
+      packagingUnit?: string
+    }
+  }
   AddOneOffItem: undefined
   FinancialServices: undefined
   InvoiceFinancing: undefined
@@ -134,10 +179,15 @@ export function AppNavigator() {
       <Drawer.Screen name="InventoryManagement" component={InventoryManagementScreen} />
       <Drawer.Screen name="InventoryViewAll" component={InventoryViewAllScreen} />
       <Drawer.Screen name="InventoryItemDetail" component={InventoryItemDetailScreen} />
+      <Drawer.Screen name="PendingOrders" component={PendingOrdersScreen} />
+      <Drawer.Screen name="PrepareOrders" component={PrepareOrdersScreen} />
+      <Drawer.Screen name="StockTake" component={StockTakeScreen} />
       <Drawer.Screen name="ManageStock" component={ManageStockScreen} />
       <Drawer.Screen name="EditPackaging" component={EditPackagingScreen} />
       <Drawer.Screen name="PointOfSale" component={PointOfSaleScreen} />
       <Drawer.Screen name="POSManagement" component={POSManagementScreen} />
+      <Drawer.Screen name="POSEditItems" component={POSEditItemsScreen} />
+      <Drawer.Screen name="POSEditItem" component={POSEditItemScreen} />
       <Drawer.Screen name="AddOneOffItem" component={AddOneOffItemScreen} />
       <Drawer.Screen name="FinancialServices" component={FinancialServicesScreen} />
       <Drawer.Screen name="InvoiceFinancing" component={InvoiceFinancingScreen} />

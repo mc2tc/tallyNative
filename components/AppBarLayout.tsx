@@ -52,46 +52,81 @@ export function AppBarLayout({
     drawerNavigation.navigate('MainTabs', { screen: 'Profile' })
   }
 
+  const handleFitnessPress = () => {
+    drawerNavigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'HomeMain' } })
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.appbar, { borderColor }]}>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={[styles.circleButton, { borderColor }]}
-          onPress={onBackPress ? onBackPress : () => navigation.dispatch(DrawerActions.openDrawer())}
-        >
-          <MaterialIcons
-            name={onBackPress ? 'arrow-back' : 'more-vert'}
-            size={24}
-            color="#333333"
-          />
-        </TouchableOpacity>
+        <View style={styles.leftSection}>
+          {onBackPress ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.circleButton, { borderColor }]}
+              onPress={onBackPress}
+            >
+              <MaterialIcons
+                name="arrow-back"
+                size={24}
+                color="#333333"
+              />
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[styles.circleButton, { borderColor }]}
+                onPress={handleFitnessPress}
+              >
+                <Ionicons
+                  name="fitness"
+                  size={24}
+                  color="#333333"
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[styles.circleButton, { borderColor, marginLeft: 4 }]}
+                onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+              >
+                <MaterialIcons
+                  name="view-module"
+                  size={24}
+                  color="#333333"
+                />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
         <View style={[styles.titleContainer, { borderColor }]}>
           {title ? <Text style={styles.titleText}>{title}</Text> : null}
         </View>
-        {showProfileIcon ? (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={[styles.avatarContainer, { borderColor }]}
-            onPress={handleAvatarPress}
-          >
-            <View style={styles.avatar}>
-              <MaterialIcons name="account-circle" size={32} color="#333333" />
-            </View>
-          </TouchableOpacity>
-        ) : rightIconName && onRightIconPress ? (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={[styles.avatarContainer, { borderColor }]}
-            onPress={onRightIconPress}
-          >
-            <View style={styles.avatar}>
-              <Ionicons name={rightIconName} size={28} color="#333333" />
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.avatarSpacer} />
-        )}
+        <View style={styles.rightSection}>
+          {showProfileIcon ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.avatarContainer, { borderColor }]}
+              onPress={handleAvatarPress}
+            >
+              <View style={styles.avatar}>
+                <MaterialIcons name="account-circle" size={32} color="#333333" />
+              </View>
+            </TouchableOpacity>
+          ) : rightIconName && onRightIconPress ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.rightIconContainer, { borderColor }]}
+              onPress={onRightIconPress}
+            >
+              <View style={styles.avatar}>
+                <Ionicons name={rightIconName} size={28} color="#333333" />
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.avatarSpacer} />
+          )}
+        </View>
       </View>
       <View style={styles.content}>{children}</View>
     </SafeAreaView>
@@ -113,6 +148,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  leftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  rightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    zIndex: 1,
+    marginLeft: 'auto',
+  },
   circleButton: {
     width: 44,
     height: 44,
@@ -129,13 +176,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   titleContainer: {
-    flex: 1,
-    marginLeft: 12,
+    position: 'absolute',
+    left: 0,
+    right: 0,
     height: 44,
-    borderWidth: 1,
-    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 0,
   },
   titleText: {
     fontSize: 16,
@@ -144,6 +191,9 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginLeft: 12,
+  },
+  rightIconContainer: {
+    // No left margin for right-aligned icons
   },
   avatar: {
     width: 44,

@@ -43,6 +43,17 @@ export type InventoryItem = {
   isGrouped?: boolean                    // true if this is a grouped item, false if it's part of a group
   groupedItemId?: string                 // Reference to the grouped item ID (only on items that are part of a group)
   isGroupedItem?: boolean                // true for grouped items (aggregated), false for regular items (from backend)
+  // Stock tracking fields
+  currentStockOfPrimaryPackages?: number // Current stock count in primary packages
+  currentStockInPrimaryUnits?: number    // Current stock count in primary packaging units
+  // Re-order tracking
+  reOrdered?: Array<{
+    dateCreated: number
+    status: 'pending' | 'ordered' | 'received' | 'cancelled'
+  }>
+  // POS product fields
+  posProductName?: string                // Custom product name for POS display
+  posProductPrice?: number               // Custom product price for POS display (per primary package)
   // ... all other fields
 }
 
@@ -79,6 +90,50 @@ export type GroupInventoryItemsResponse = {
   groupedItemId: string
   updatedItemIds: string[]
   message?: string
+}
+
+export type StockTakeRequest = {
+  businessId: string
+  inventoryItemId: string
+  stockNumber: number
+  isInPrimaryUnits?: boolean
+}
+
+export type StockTakeResponse = {
+  success: boolean
+  inventoryItemId: string
+  updatedStock: {
+    packages: number
+    units: number
+  }
+  transactionId?: string | null
+  message: string
+}
+
+export type AddReOrderResponse = {
+  success: boolean
+  inventoryItemId: string
+  reOrder: {
+    dateCreated: number
+    status: 'pending'
+  }
+  message: string
+}
+
+export type UpdatePOSProductRequest = {
+  businessId: string
+  posProductName?: string | null
+  posProductPrice?: number | null
+}
+
+export type UpdatePOSProductResponse = {
+  success: boolean
+  inventoryItemId: string
+  updatedFields: {
+    posProductName: string | null
+    posProductPrice: number | null
+  }
+  message: string
 }
 
 export const inventoryApi = {
@@ -122,6 +177,43 @@ export const inventoryApi = {
         businessId,
         inventoryItemIds,
       },
+    )
+  },
+  performStockTake: async (
+    businessId: string,
+    inventoryItemId: string,
+    stockNumber: number,
+    isInPrimaryUnits: boolean = false,
+  ): Promise<StockTakeResponse> => {
+    return api.post<StockTakeResponse>(
+      '/authenticated/transactions3/api/inventory-items/stock-take',
+      {
+        businessId,
+        inventoryItemId,
+        stockNumber,
+        isInPrimaryUnits,
+      },
+    )
+  },
+  addReOrder: async (
+    businessId: string,
+    inventoryItemId: string,
+  ): Promise<AddReOrderResponse> => {
+    return api.post<AddReOrderResponse>(
+      '/authenticated/transactions3/api/inventory-items/re-order',
+      {
+        businessId,
+        inventoryItemId,
+      },
+    )
+  },
+  updatePOSProduct: async (
+    inventoryItemId: string,
+    request: UpdatePOSProductRequest,
+  ): Promise<UpdatePOSProductResponse> => {
+    return api.patch<UpdatePOSProductResponse>(
+      `/authenticated/transactions3/api/inventory-items/${inventoryItemId}/pos-product`,
+      request,
     )
   },
 }

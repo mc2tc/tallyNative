@@ -7,12 +7,12 @@ import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { getOneOffItems, type OneOffItem } from '../lib/utils/posStorage'
 import { posSaleTransactionApi } from '../lib/api/transactions2'
 import { useAuth } from '../lib/auth/AuthContext'
 import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
+import { inventoryApi, type InventoryItem } from '../lib/api/inventory'
 
 type PointOfSaleScreenNavigationProp = DrawerNavigationProp<AppDrawerParamList, 'PointOfSale'>
 
@@ -22,6 +22,9 @@ interface Product {
   price: number
   packSize?: string
   description?: string
+  isInventoryItem?: boolean
+  packagingQuantity?: number
+  packagingUnit?: string
 }
 
 interface CartItem {
@@ -41,6 +44,7 @@ export default function PointOfSaleScreen() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentType | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(false)
   const slideAnim = useRef(new Animated.Value(0)).current
 
   // Choose businessId (same logic as other screens)
@@ -53,24 +57,53 @@ export default function PointOfSaleScreen() {
       ? businessUser.businessId
       : nonPersonalMembershipId) ?? membershipIds[0]
 
-  // Load one-off items from local storage
+  // Load products (one-off items and Finished Goods inventory items)
   const loadProducts = useCallback(async () => {
     try {
+      // Load one-off items from local storage
       const oneOffItems = await getOneOffItems()
-      // Convert OneOffItem to Product format
-      const convertedProducts: Product[] = oneOffItems.map(item => ({
+      const convertedOneOffProducts: Product[] = oneOffItems.map(item => ({
         id: item.id,
         name: item.name,
         price: item.price,
         packSize: item.description ? undefined : undefined, // Optional packSize
         description: item.description,
+        isInventoryItem: false,
       }))
-      setProducts(convertedProducts)
+
+      // Load Finished Goods inventory items
+      let inventoryProducts: Product[] = []
+      if (businessId) {
+        try {
+          const inventoryResponse = await inventoryApi.getInventoryItems(businessId, {
+            debitAccount: 'Finished Goods',
+            page: 1,
+            limit: 500,
+            screen: 'inventory', // Only show non-grouped items
+          })
+          
+          inventoryProducts = inventoryResponse.items
+            .filter(item => item.packaging?.primaryPackaging?.quantity && item.packaging?.primaryPackaging?.unit)
+            .map(item => ({
+              id: item.id,
+              name: item.posProductName || item.name, // Use POS product name if available, otherwise use inventory name
+              price: item.posProductPrice || item.costPerPrimaryPackage || (item.packaging?.totalPrimaryPackages ? item.amount / item.packaging.totalPrimaryPackages : item.amount),
+              isInventoryItem: true,
+              packagingQuantity: item.packaging?.primaryPackaging?.quantity,
+              packagingUnit: item.packaging?.primaryPackaging?.unit,
+            }))
+        } catch (error) {
+          console.error('Failed to load inventory items:', error)
+        }
+      }
+
+      // Combine both types of products
+      setProducts([...convertedOneOffProducts, ...inventoryProducts])
     } catch (error) {
-      console.error('Failed to load one-off items:', error)
+      console.error('Failed to load products:', error)
       setProducts([])
     }
-  }, [])
+  }, [businessId])
 
   // Animate modal slide
   useEffect(() => {
@@ -97,12 +130,17 @@ export default function PointOfSaleScreen() {
     }, [loadProducts])
   )
 
-  const handleAddClick = () => {
-    navigation.navigate('POSManagement')
+  const handleEditClick = () => {
+    setIsEditMode(!isEditMode)
   }
 
   const handleProductPress = (product: Product) => {
-    // Add product to cart or increment quantity if already in cart
+    if (isEditMode) {
+      // In edit mode, navigate to edit screen
+      navigation.navigate('POSEditItem', { product })
+      return
+    }
+    // In POS mode, add product to cart or increment quantity if already in cart
     setCartItems(prevCart => {
       const existingItem = prevCart.find(item => item.productId === product.id)
       if (existingItem) {
@@ -175,6 +213,8 @@ export default function PointOfSaleScreen() {
           price: product.price,
           quantity: item.quantity,
           description: product.description,
+          // Include inventoryItemId for inventory items so backend can track stock
+          ...(product.isInventoryItem && { inventoryItemId: product.id }),
         }
       })
 
@@ -236,16 +276,18 @@ export default function PointOfSaleScreen() {
   return (
     <View style={styles.wrapper}>
       <AppBarLayout 
-        title="Point of Sale"
-        rightIconName="add-circle-sharp"
-        onRightIconPress={handleAddClick}
+        title={isEditMode ? "Edit Items" : "Point of Sale"}
+        rightIconName={isEditMode ? "checkmark" : "create-outline"}
+        onRightIconPress={handleEditClick}
       >
         <View style={styles.contentWrapper}>
           <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
             {products.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyStateText}>No products available</Text>
-                <Text style={styles.emptyStateSubtext}>Tap the + button to add items</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  {isEditMode ? 'Tap on a product card to edit it' : 'Tap the + button to add items'}
+                </Text>
               </View>
             ) : (
               <View style={styles.productsGrid}>
@@ -256,11 +298,18 @@ export default function PointOfSaleScreen() {
                     onPress={() => handleProductPress(product)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.productName}>{product.name}</Text>
-                    {product.packSize && (
+                    <Text style={styles.productName} numberOfLines={2} ellipsizeMode="tail">
+                      {product.name}
+                    </Text>
+                    {product.isInventoryItem && product.packagingQuantity && product.packagingUnit && (
+                      <Text style={styles.productPackSize}>
+                        {product.packagingQuantity} {product.packagingUnit}
+                      </Text>
+                    )}
+                    {!product.isInventoryItem && product.packSize && (
                       <Text style={styles.productPackSize}>{product.packSize}</Text>
                     )}
-                    {product.description && !product.packSize && (
+                    {!product.isInventoryItem && product.description && !product.packSize && (
                       <Text style={styles.productPackSize} numberOfLines={2}>{product.description}</Text>
                     )}
                     <Text style={styles.productPrice}>£{product.price.toFixed(2)}</Text>
@@ -325,7 +374,6 @@ export default function PointOfSaleScreen() {
           </View>
         </View>
       </AppBarLayout>
-      <BottomNavBar />
 
       {/* Payment Modal */}
       <Modal

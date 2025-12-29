@@ -5,7 +5,6 @@ import { View, StyleSheet, ScrollView, ActivityIndicator, Text, Alert, Touchable
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -46,6 +45,7 @@ export default function InventoryManagementScreen({}: Props) {
   const [allReceivingItems, setAllReceivingItems] = useState<TransactionItem[]>([])
   const [allRawMaterialsItems, setAllRawMaterialsItems] = useState<Array<TransactionItem | InventoryItem>>([])
   const [allFinishedGoodsItems, setAllFinishedGoodsItems] = useState<Array<TransactionItem | InventoryItem>>([])
+  const [allPendingOrdersItems, setAllPendingOrdersItems] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [infoCardDismissed, setInfoCardDismissed] = useState(false)
@@ -55,6 +55,7 @@ export default function InventoryManagementScreen({}: Props) {
   const receivingItems = allReceivingItems.slice(0, 3)
   const rawMaterialsItems = allRawMaterialsItems.slice(0, 3)
   const finishedGoodsItems = allFinishedGoodsItems.slice(0, 3)
+  const pendingOrdersItems = allPendingOrdersItems.slice(0, 3)
 
   // Choose businessId (same logic as other screens)
   const membershipIds = Object.keys(memberships ?? {})
@@ -157,20 +158,39 @@ export default function InventoryManagementScreen({}: Props) {
         return !(item.groupedItemIds && item.groupedItemIds.length > 0)
       }
 
+      // Filter items with pending re-orders
+      const filterPendingOrders = (item: InventoryItem) => {
+        return item.reOrdered && item.reOrdered.some((reOrder) => reOrder.status === 'pending')
+      }
+
       // Sort by creation date (most recent first)
       const sortByDate = (a: TransactionItem | InventoryItem, b: TransactionItem | InventoryItem) => {
         const aDate = 'transactionDate' in a ? a.transactionDate : a.createdAt
         const bDate = 'transactionDate' in b ? b.transactionDate : b.createdAt
         return (bDate || 0) - (aDate || 0)
       }
+
+      // Sort pending orders by most recent re-order date
+      const sortPendingOrdersByReOrderDate = (a: InventoryItem, b: InventoryItem) => {
+        const aReOrders = a.reOrdered?.filter((r) => r.status === 'pending') || []
+        const bReOrders = b.reOrdered?.filter((r) => r.status === 'pending') || []
+        const aLatestReOrder = aReOrders.length > 0 ? Math.max(...aReOrders.map((r) => r.dateCreated)) : 0
+        const bLatestReOrder = bReOrders.length > 0 ? Math.max(...bReOrders.map((r) => r.dateCreated)) : 0
+        return bLatestReOrder - aLatestReOrder
+      }
       
       // Filter and sort items - exclude grouped items (with groupedItemIds)
       const filteredRawMaterials = rawMaterialsResponse.items.filter(filterOutGroupedItems)
       const filteredFinishedGoods = finishedGoodsResponse.items.filter(filterOutGroupedItems)
       
+      // Get all items with pending re-orders (from both Raw Materials and Finished Goods)
+      const allItems = [...filteredRawMaterials, ...filteredFinishedGoods]
+      const pendingOrders = allItems.filter(filterPendingOrders)
+      
       setAllReceivingItems(receiving.sort((a, b) => b.transactionDate - a.transactionDate))
       setAllRawMaterialsItems(filteredRawMaterials.sort(sortByDate))
       setAllFinishedGoodsItems(filteredFinishedGoods.sort(sortByDate))
+      setAllPendingOrdersItems(pendingOrders.sort(sortPendingOrdersByReOrderDate))
       setLastFetchTime(Date.now())
     } catch (err) {
       console.error('Failed to fetch transaction items:', err)
@@ -231,12 +251,18 @@ export default function InventoryManagementScreen({}: Props) {
     })
   }, [businessId, navigation])
 
-  const handleViewAll = useCallback((section: 'Receiving' | 'Raw Materials' | 'Finished Goods') => {
+  const handleViewAll = useCallback((section: 'Receiving' | 'Raw Materials' | 'Finished Goods' | 'Pending Orders') => {
     let items: Array<TransactionItem | InventoryItem> = []
     let title = section
 
     if (section === 'Receiving') {
       items = allReceivingItems
+    } else if (section === 'Pending Orders') {
+      // Navigate to dedicated Pending Orders screen
+      ;(navigation as any).navigate('PendingOrders', {
+        businessId,
+      })
+      return
     } else if (section === 'Raw Materials') {
       // For Raw Materials and Finished Goods, View All screen will fetch its own data
       // with screen=viewAll to show both grouped and individual items
@@ -292,7 +318,7 @@ export default function InventoryManagementScreen({}: Props) {
       section,
       businessId,
     })
-  }, [allReceivingItems, allRawMaterialsItems, allFinishedGoodsItems, businessId, navigation])
+    }, [allReceivingItems, allRawMaterialsItems, allFinishedGoodsItems, allPendingOrdersItems, businessId, navigation])
 
   if (loading) {
     return (
@@ -303,7 +329,6 @@ export default function InventoryManagementScreen({}: Props) {
             <Text style={styles.loadingText}>Loading inventory items...</Text>
           </View>
         </AppBarLayout>
-        <BottomNavBar />
       </View>
     )
   }
@@ -316,7 +341,6 @@ export default function InventoryManagementScreen({}: Props) {
             <Text style={styles.errorText}>{error}</Text>
           </View>
         </AppBarLayout>
-        <BottomNavBar />
       </View>
     )
   }
@@ -345,6 +369,41 @@ export default function InventoryManagementScreen({}: Props) {
               </View>
             </View>
           )}
+
+          {/* Pending Orders Card */}
+          <View style={styles.pipelineCard}>
+            <Text style={styles.pipelineTitle}>Pending Orders</Text>
+            {pendingOrdersItems.length === 0 ? (
+              <View style={styles.emptyCardContainer}>
+                <Text style={styles.emptyCardText}>No pending orders</Text>
+              </View>
+            ) : (
+              <View style={styles.cardList}>
+                {pendingOrdersItems.map((item, index) => {
+                  const currency = item.currency || 'GBP'
+                  return (
+                    <View key={item.id} style={styles.cardListItem}>
+                      <View style={styles.cardTextGroup}>
+                        <Text style={styles.cardTitle}>{item.name}</Text>
+                      </View>
+                      <Text style={styles.cardAmount}>{formatAmount(item.amount, currency, true)}</Text>
+                    </View>
+                  )
+                })}
+              </View>
+            )}
+            {allPendingOrdersItems.length > 0 && (
+              <View style={styles.pipelineActions}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  style={styles.linkButton}
+                  onPress={() => handleViewAll('Pending Orders')}
+                >
+                  <Text style={styles.linkButtonText}>View all</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
 
           {/* Receiving Card */}
           <View style={styles.pipelineCard}>
@@ -463,7 +522,6 @@ export default function InventoryManagementScreen({}: Props) {
           </View>
         </ScrollView>
       </AppBarLayout>
-      <BottomNavBar />
     </View>
   )
 }

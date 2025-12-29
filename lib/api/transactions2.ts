@@ -763,6 +763,7 @@ export type POSSaleTransactionRequest = {
 		price: number
 		quantity: number
 		description?: string
+		inventoryItemId?: string // Optional inventory item ID for stock tracking
 	}>
 	payment: {
 		type: 'cash' | 'card'
