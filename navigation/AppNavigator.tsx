@@ -13,6 +13,7 @@ import PrepareOrdersScreen from '../screens/PrepareOrdersScreen'
 import StockTakeScreen from '../screens/StockTakeScreen'
 import ManageStockScreen from '../screens/ManageStockScreen'
 import EditPackagingScreen from '../screens/EditPackagingScreen'
+import CreateProductScreen from '../screens/CreateProductScreen'
 import PointOfSaleScreen from '../screens/PointOfSaleScreen'
 import type { PrimaryPackaging, SecondaryPackaging } from '../lib/api/packaging'
 import POSManagementScreen from '../screens/POSManagementScreen'
@@ -24,7 +25,12 @@ import InvoiceFinancingScreen from '../screens/InvoiceFinancingScreen'
 import OversightChatScreen from '../screens/OversightChatScreen'
 import InsightChatScreen from '../screens/InsightChatScreen'
 import ProductionManagementScreen from '../screens/ProductionManagementScreen'
+import ProductDetailScreen from '../screens/ProductDetailScreen'
+import ManufactureScreen from '../screens/ManufactureScreen'
+import SkusScreen from '../screens/SkusScreen'
+import CreateSkuScreen from '../screens/CreateSkuScreen'
 import EmployeeManagementScreen from '../screens/EmployeeManagementScreen'
+import TeamScreen from '../screens/TeamScreen'
 import OnlineSalesScreen from '../screens/OnlineSalesScreen'
 import OnlineBookingScreen from '../screens/OnlineBookingScreen'
 import TallyNetworkScreen from '../screens/TallyNetworkScreen'
@@ -115,7 +121,123 @@ export type AppDrawerParamList = {
     packaging: PrimaryPackaging | SecondaryPackaging
     packagingType: 'primary' | 'secondary'
     onSave: (updatedPackaging: PrimaryPackaging | SecondaryPackaging) => void
+    onDelete?: () => void
     manageStockParams?: { itemName: string; itemText: string; businessId: string; inventoryItemId?: string }
+  }
+  CreateProduct: {
+    businessId: string
+  }
+  ProductDetail: {
+    product: {
+      id: string
+      name: string
+      businessId: string
+      ingredients: Array<{
+        inventoryItemId: string
+        quantity: number
+        unit?: string
+        skus?: {
+          [skuId: string]: {
+            name: string
+            quantity: number
+            unit: string
+            ancillaryItems?: Array<{
+              name: string
+              quantity: number
+              unit: string
+              stock?: number
+            }>
+          }
+        }
+      }>
+      stock?: number
+      createdAt: number
+      updatedAt: number
+    }
+  }
+  Manufacture: {
+    product: {
+      id: string
+      name: string
+      businessId: string
+      ingredients: Array<{
+        inventoryItemId: string
+        quantity: number
+        unit?: string
+        skus?: {
+          [skuId: string]: {
+            name: string
+            quantity: number
+            unit: string
+            ancillaryItems?: Array<{
+              name: string
+              quantity: number
+              unit: string
+              stock?: number
+            }>
+          }
+        }
+      }>
+      stock?: number
+      createdAt: number
+      updatedAt: number
+    }
+  }
+  Skus: {
+    product: {
+      id: string
+      name: string
+      businessId: string
+      ingredients: Array<{
+        inventoryItemId: string
+        quantity: number
+        unit?: string
+        skus?: {
+          [skuId: string]: {
+            name: string
+            quantity: number
+            unit: string
+            ancillaryItems?: Array<{
+              name: string
+              quantity: number
+              unit: string
+              stock?: number
+            }>
+          }
+        }
+      }>
+      stock?: number
+      createdAt: number
+      updatedAt: number
+    }
+  }
+  CreateSku: {
+    product: {
+      id: string
+      name: string
+      businessId: string
+      ingredients: Array<{
+        inventoryItemId: string
+        quantity: number
+        unit?: string
+        skus?: {
+          [skuId: string]: {
+            name: string
+            quantity: number
+            unit: string
+            ancillaryItems?: Array<{
+              name: string
+              quantity: number
+              unit: string
+              stock?: number
+            }>
+          }
+        }
+      }>
+      stock?: number
+      createdAt: number
+      updatedAt: number
+    }
   }
   PointOfSale: undefined
   POSManagement: undefined
@@ -147,6 +269,7 @@ export type AppDrawerParamList = {
   Payroll: undefined
   Expenses: undefined
   TimeManagement: undefined
+  Team: undefined
   Suppliers: undefined
   Talent: undefined
   VAT: undefined
@@ -155,7 +278,6 @@ export type AppDrawerParamList = {
 const Drawer = createDrawerNavigator<AppDrawerParamList>()
 
 export function AppNavigator() {
-  console.log('AppNavigator: Setting drawer screenOptions')
   return (
     <Drawer.Navigator
       initialRouteName="MainTabs"
@@ -184,6 +306,11 @@ export function AppNavigator() {
       <Drawer.Screen name="StockTake" component={StockTakeScreen} />
       <Drawer.Screen name="ManageStock" component={ManageStockScreen} />
       <Drawer.Screen name="EditPackaging" component={EditPackagingScreen} />
+      <Drawer.Screen name="CreateProduct" component={CreateProductScreen} />
+      <Drawer.Screen name="ProductDetail" component={ProductDetailScreen} />
+      <Drawer.Screen name="Manufacture" component={ManufactureScreen} />
+      <Drawer.Screen name="Skus" component={SkusScreen} />
+      <Drawer.Screen name="CreateSku" component={CreateSkuScreen} />
       <Drawer.Screen name="PointOfSale" component={PointOfSaleScreen} />
       <Drawer.Screen name="POSManagement" component={POSManagementScreen} />
       <Drawer.Screen name="POSEditItems" component={POSEditItemsScreen} />
@@ -203,6 +330,7 @@ export function AppNavigator() {
       <Drawer.Screen name="Payroll" component={PayrollScreen} />
       <Drawer.Screen name="Expenses" component={ExpensesScreen} />
       <Drawer.Screen name="TimeManagement" component={TimeManagementScreen} />
+      <Drawer.Screen name="Team" component={TeamScreen} />
       <Drawer.Screen name="Suppliers" component={SuppliersScreen} />
       <Drawer.Screen name="Talent" component={TalentScreen} />
       <Drawer.Screen name="VAT" component={VATScreen} />

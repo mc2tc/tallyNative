@@ -5,6 +5,7 @@ import { View, StyleSheet, ScrollView, ActivityIndicator, Text, Alert, Touchable
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
+import { OperationsBottomNav } from '../components/OperationsBottomNav'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -158,6 +159,11 @@ export default function InventoryManagementScreen({}: Props) {
         return !(item.groupedItemIds && item.groupedItemIds.length > 0)
       }
 
+      // Filter out Water items
+      const filterOutWater = (item: InventoryItem) => {
+        return item.name?.toLowerCase() !== 'water'
+      }
+
       // Filter items with pending re-orders
       const filterPendingOrders = (item: InventoryItem) => {
         return item.reOrdered && item.reOrdered.some((reOrder) => reOrder.status === 'pending')
@@ -179,8 +185,8 @@ export default function InventoryManagementScreen({}: Props) {
         return bLatestReOrder - aLatestReOrder
       }
       
-      // Filter and sort items - exclude grouped items (with groupedItemIds)
-      const filteredRawMaterials = rawMaterialsResponse.items.filter(filterOutGroupedItems)
+      // Filter and sort items - exclude grouped items (with groupedItemIds) and Water
+      const filteredRawMaterials = rawMaterialsResponse.items.filter(filterOutGroupedItems).filter(filterOutWater)
       const filteredFinishedGoods = finishedGoodsResponse.items.filter(filterOutGroupedItems)
       
       // Get all items with pending re-orders (from both Raw Materials and Finished Goods)
@@ -248,6 +254,70 @@ export default function InventoryManagementScreen({}: Props) {
       transactionId: item.transactionId,
       itemIndex: item.itemIndex,
       transactionItem: item, // Pass full item for inventory creation
+    })
+  }, [businessId, navigation])
+
+  // Helper function to format stock display for inventory items
+  const formatStockDisplay = useCallback((item: TransactionItem | InventoryItem): string => {
+    // Only format stock for InventoryItem types (not TransactionItem)
+    if (!('id' in item) || ('transactionId' in item && 'itemIndex' in item)) {
+      return '' // TransactionItem doesn't have stock info
+    }
+
+    const inventoryItem = item as InventoryItem
+
+    // Priority 1: Use currentStockInMetric if available
+    if (inventoryItem.currentStockInMetric) {
+      return `${inventoryItem.currentStockInMetric.stock} ${inventoryItem.currentStockInMetric.unit}`
+    }
+
+    // Priority 2: Use currentStockInPrimaryUnits with primaryPackaging.unit
+    if (inventoryItem.currentStockInPrimaryUnits !== undefined && inventoryItem.packaging?.primaryPackaging?.unit) {
+      return `${inventoryItem.currentStockInPrimaryUnits} ${inventoryItem.packaging.primaryPackaging.unit}`
+    }
+
+    // No stock data available
+    return ''
+  }, [])
+
+  const handleInventoryItemPress = useCallback((item: InventoryItem, section: 'Raw Materials' | 'Finished Goods') => {
+    if (!businessId) {
+      Alert.alert('Error', 'Business ID is missing')
+      return
+    }
+
+    // Convert InventoryItem to InventoryViewAllItem format
+    const currency = item.currency || 'GBP'
+    const viewAllItem = {
+      id: item.id,
+      title: item.name,
+      amount: formatAmount(item.amount, currency, true),
+      inventoryItem: item,
+      costPerPrimaryPackage: item.costPerPrimaryPackage,
+      costPerPrimaryPackagingUnit: item.costPerPrimaryPackagingUnit,
+      totalPrimaryPackages: item.packaging?.totalPrimaryPackages,
+      primaryPackagingUnit: item.packaging?.primaryPackaging?.unit,
+      primaryPackagingDescription: item.packaging?.primaryPackaging?.description,
+      primaryPackagingQuantity: item.packaging?.primaryPackaging?.quantity,
+      thirdPartyName: item.thirdPartyName,
+      transactionDate: item.transactionDate,
+      reference: item.reference,
+      isGroupedItem: item.isGroupedItem,
+      groupedItemIds: item.groupedItemIds,
+      currentStockOfPrimaryPackages: item.currentStockOfPrimaryPackages,
+      currentStockInPrimaryUnits: item.currentStockInPrimaryUnits,
+      currentStockInMetric: item.currentStockInMetric,
+      currency,
+    }
+
+    // Navigate to InventoryItemDetail
+    ;(navigation as any).navigate('InventoryItemDetail', {
+      item: viewAllItem,
+      section,
+      businessId,
+      viewAllTitle: section,
+      viewAllItems: [],
+      previousScreen: 'InventoryManagement',
     })
   }, [businessId, navigation])
 
@@ -399,7 +469,9 @@ export default function InventoryManagementScreen({}: Props) {
                   style={styles.linkButton}
                   onPress={() => handleViewAll('Pending Orders')}
                 >
-                  <Text style={styles.linkButtonText}>View all</Text>
+                  <Text style={styles.linkButtonText}>
+                    {allPendingOrdersItems.length > 3 ? `View all (${allPendingOrdersItems.length})` : 'View all'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -436,7 +508,9 @@ export default function InventoryManagementScreen({}: Props) {
                   style={styles.linkButton}
                   onPress={() => handleViewAll('Receiving')}
               >
-                  <Text style={styles.linkButtonText}>View all</Text>
+                  <Text style={styles.linkButtonText}>
+                    {allReceivingItems.length > 3 ? `View all (${allReceivingItems.length})` : 'View all'}
+                  </Text>
             </TouchableOpacity>
               </View>
             )}
@@ -445,7 +519,7 @@ export default function InventoryManagementScreen({}: Props) {
           {/* Separator */}
           <View style={styles.reportingReadySeparator}>
             <View style={styles.reportingReadyLine} />
-            <Text style={styles.reportingReadyLabel}>Received</Text>
+            <Text style={styles.reportingReadyLabel}>In Stock</Text>
             <View style={styles.reportingReadyLine} />
           </View>
 
@@ -460,14 +534,24 @@ export default function InventoryManagementScreen({}: Props) {
               <View style={styles.cardList}>
                 {rawMaterialsItems.map((item, index) => {
                   const itemId = 'id' in item ? item.id : `${(item as TransactionItem).transactionId}-${index}`
-                  const currency = 'currency' in item ? item.currency : 'GBP'
+                  const stockDisplay = formatStockDisplay(item)
+                  // Only make clickable if it's an InventoryItem (has id and is not a TransactionItem)
+                  const isInventoryItem = 'id' in item && !('transactionId' in item && 'itemIndex' in item)
                   return (
-                    <View key={itemId} style={styles.cardListItem}>
+                    <TouchableOpacity
+                      key={itemId}
+                      style={styles.cardListItem}
+                      onPress={() => isInventoryItem && handleInventoryItemPress(item as InventoryItem, 'Raw Materials')}
+                      activeOpacity={isInventoryItem ? 0.7 : 1}
+                      disabled={!isInventoryItem}
+                    >
                       <View style={styles.cardTextGroup}>
                         <Text style={styles.cardTitle}>{item.name}</Text>
                       </View>
-                      <Text style={styles.cardAmount}>{formatAmount(item.amount, currency, true)}</Text>
-                    </View>
+                      {stockDisplay ? (
+                        <Text style={styles.cardAmount}>{stockDisplay}</Text>
+                      ) : null}
+                    </TouchableOpacity>
                   )
                 })}
               </View>
@@ -479,7 +563,9 @@ export default function InventoryManagementScreen({}: Props) {
                   style={styles.linkButton}
                   onPress={() => handleViewAll('Raw Materials')}
                 >
-                  <Text style={styles.linkButtonText}>View all</Text>
+                  <Text style={styles.linkButtonText}>
+                    {allRawMaterialsItems.length > 3 ? `View all (${allRawMaterialsItems.length})` : 'View all'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -496,14 +582,24 @@ export default function InventoryManagementScreen({}: Props) {
               <View style={styles.cardList}>
                 {finishedGoodsItems.map((item, index) => {
                   const itemId = 'id' in item ? item.id : `${(item as TransactionItem).transactionId}-${index}`
-                  const currency = 'currency' in item ? item.currency : 'GBP'
+                  const stockDisplay = formatStockDisplay(item)
+                  // Only make clickable if it's an InventoryItem (has id and is not a TransactionItem)
+                  const isInventoryItem = 'id' in item && !('transactionId' in item && 'itemIndex' in item)
                   return (
-                    <View key={itemId} style={styles.cardListItem}>
+                    <TouchableOpacity
+                      key={itemId}
+                      style={styles.cardListItem}
+                      onPress={() => isInventoryItem && handleInventoryItemPress(item as InventoryItem, 'Finished Goods')}
+                      activeOpacity={isInventoryItem ? 0.7 : 1}
+                      disabled={!isInventoryItem}
+                    >
                       <View style={styles.cardTextGroup}>
                         <Text style={styles.cardTitle}>{item.name}</Text>
                       </View>
-                      <Text style={styles.cardAmount}>{formatAmount(item.amount, currency, true)}</Text>
-                    </View>
+                      {stockDisplay ? (
+                        <Text style={styles.cardAmount}>{stockDisplay}</Text>
+                      ) : null}
+                    </TouchableOpacity>
                   )
                 })}
               </View>
@@ -515,12 +611,15 @@ export default function InventoryManagementScreen({}: Props) {
                   style={styles.linkButton}
                   onPress={() => handleViewAll('Finished Goods')}
                 >
-                  <Text style={styles.linkButtonText}>View all</Text>
+                  <Text style={styles.linkButtonText}>
+                    {allFinishedGoodsItems.length > 3 ? `View all (${allFinishedGoodsItems.length})` : 'View all'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
         </ScrollView>
+        <OperationsBottomNav />
       </AppBarLayout>
     </View>
   )
@@ -535,7 +634,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingBottom: 80, // Extra padding for bottom nav
     paddingTop: 24,
   },
   infoCard: {

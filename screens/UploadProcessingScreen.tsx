@@ -1,4 +1,4 @@
-// Upload processing screen - shows PDF preview and processing status
+// Upload processing screen - shows PDF/image preview and processing status
 import React, { useEffect, useState } from 'react'
 import {
   View,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -33,7 +34,8 @@ export default function UploadProcessingScreen() {
   const route = useRoute<UploadProcessingRouteProp>()
   const { 
     pdfFileName, 
-    pdfUri, 
+    pdfUri,
+    imageUri,
     isPdf, 
     success: initialSuccess, 
     pipelineSection,
@@ -47,6 +49,7 @@ export default function UploadProcessingScreen() {
   
   const [showSuccess, setShowSuccess] = useState(initialSuccess || false)
   const [processing, setProcessing] = useState(!initialSuccess)
+  const [successMessage, setSuccessMessage] = useState<string>('')
 
   // Handle upload and API call on mount
   useEffect(() => {
@@ -84,17 +87,62 @@ export default function UploadProcessingScreen() {
           fileUrl: downloadUrl,
         })
         
+        // Sales section ALWAYS uses transactions3 sales invoice OCR endpoint
         // Bank section ALWAYS uses transactions3 bank statement upload endpoint (PDF only)
         // Credit Cards section ALWAYS uses transactions3 credit card statement upload endpoint (PDF only)
         // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
         // For other transaction types, use the unified transactions2 endpoint
+        const useSalesInvoiceOcr = pipelineSection === 'sales'
         const useBankStatementUpload = pipelineSection === 'bank' && isPdf
         const useCreditCardStatementUpload = pipelineSection === 'cards' && isPdf
         const useTransactions3 = pipelineSection === 'purchases3' || 
           (finalTransactionType === 'purchase' && (finalInputMethod === 'ocr_image' || finalInputMethod === 'ocr_pdf'))
         
         let response
-        if (useBankStatementUpload) {
+        if (useSalesInvoiceOcr) {
+          // Use transactions3 sales invoice OCR endpoint
+          // For images: use fileUrl, for PDFs: use pdfUrl
+          console.log('UploadProcessing: Using transactions3 sales invoice OCR endpoint')
+          response = await transactions2Api.createSalesInvoiceOcr(
+            businessId,
+            isPdf ? undefined : downloadUrl,
+            isPdf ? downloadUrl : undefined,
+            fileSize
+          )
+          
+          console.log('UploadProcessing: Sales invoice OCR response:', {
+            success: response.success,
+            logged: response.logged,
+            transactionId: response.transactionId,
+            message: response.message,
+          })
+          
+          if (response.success) {
+            console.log('UploadProcessing: Invoice processed successfully, transactionId:', response.transactionId)
+            setSuccessMessage('Invoice processed successfully')
+            // Wait a moment to ensure transaction is fully saved before showing success
+            await new Promise(resolve => setTimeout(resolve, 500))
+            setShowSuccess(true)
+            setProcessing(false)
+          } else if (response.logged) {
+            // Transaction type/input method not yet implemented (501)
+            console.log('UploadProcessing: Sales invoice OCR not yet implemented, logged for future implementation')
+            Alert.alert(
+              'Not Yet Available',
+              response.message || `Sales invoice OCR is not yet implemented. This request has been logged for future implementation.`,
+              [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            )
+            setProcessing(false)
+          } else {
+            console.error('UploadProcessing: Sales invoice OCR failed:', response.message)
+            throw new Error(response.message || 'Failed to process invoice')
+          }
+        } else if (useBankStatementUpload) {
           // Use transactions3 bank statement upload endpoint
           console.log('UploadProcessing: Using transactions3 bank statement upload endpoint')
           response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
@@ -114,6 +162,8 @@ export default function UploadProcessingScreen() {
               ruleMatched: summary.ruleMatched,
               needsReconciliation: summary.needsReconciliation,
             })
+            const message = `Bank statement processed: ${summary.totalTransactions} transactions. ${summary.ruleMatched} rule-matched, ${summary.needsReconciliation} need reconciliation.`
+            setSuccessMessage(message)
             // Wait a moment to ensure transactions are fully saved before showing success
             await new Promise(resolve => setTimeout(resolve, 500))
             setShowSuccess(true)
@@ -142,6 +192,8 @@ export default function UploadProcessingScreen() {
               ruleMatched: summary.ruleMatched,
               needsReconciliation: summary.needsReconciliation,
             })
+            const message = `Credit card statement processed: ${summary.totalTransactions} transactions. ${summary.ruleMatched} rule-matched, ${summary.needsReconciliation} need reconciliation.`
+            setSuccessMessage(message)
             // Wait a moment to ensure transactions are fully saved before showing success
             await new Promise(resolve => setTimeout(resolve, 500))
             setShowSuccess(true)
@@ -162,6 +214,7 @@ export default function UploadProcessingScreen() {
           
           if (response.success) {
             console.log('UploadProcessing: Transaction created successfully, transactionId:', response.transactionId)
+            setSuccessMessage('Transaction created successfully')
             // Wait a moment to ensure transaction is fully saved before showing success
             await new Promise(resolve => setTimeout(resolve, 500))
             setShowSuccess(true)
@@ -313,7 +366,7 @@ export default function UploadProcessingScreen() {
             }
           }
         }
-      }, 2000)
+      }, 3000)
 
       return () => clearTimeout(timer)
     }
@@ -329,11 +382,8 @@ export default function UploadProcessingScreen() {
               {pdfFileName}
             </Text>
           </View>
-        ) : pdfUri ? (
-          <View style={styles.imagePreview}>
-            {/* For images, we could show a thumbnail here if needed */}
-            <MaterialIcons name="image" size={80} color={GRAYSCALE_PRIMARY} />
-          </View>
+        ) : imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
         ) : null}
 
         {processing ? (
@@ -343,8 +393,8 @@ export default function UploadProcessingScreen() {
           </View>
         ) : showSuccess ? (
           <View style={styles.successContainer}>
-            <MaterialIcons name="check-circle" size={48} color="#4a9eff" />
-            <Text style={styles.successText}>Transaction created successfully</Text>
+            <MaterialIcons name="check-circle" size={36} />
+            <Text style={styles.successText}>{successMessage || 'Transaction created successfully'}</Text>
           </View>
         ) : null}
       </View>
@@ -382,8 +432,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     borderWidth: 1,
     borderColor: '#e5e5e5',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 48,
   },
   pdfFileName: {

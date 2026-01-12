@@ -152,6 +152,8 @@ export default function SalesPipelineScreen() {
       title: lead.title,
       amount: lead.amount || '',
       subtitle: lead.subtitle,
+      projectTitle: lead.projectTitle,
+      stage: lead.stage,
     }))
     navigation.navigate('ScaffoldViewAll', {
       section: column.title,
@@ -195,20 +197,48 @@ export default function SalesPipelineScreen() {
                 )}
                 {column.actions.length > 0 && (
                   <View style={styles.pipelineActions}>
-                    {column.actions.map((action) => (
-                      <TouchableOpacity
-                        key={action}
-                        activeOpacity={0.7}
-                        style={styles.linkButton}
-                        onPress={() => {
-                          if (action === 'View all') {
-                            handleViewAll(column)
-                          }
-                        }}
-                      >
-                        <Text style={styles.linkButtonText}>{action}</Text>
-                      </TouchableOpacity>
-                    ))}
+                    {column.actions.map((action) => {
+                      // Get full lead count for "View all" action
+                      let displayText = action
+                      if (action === 'View all') {
+                        let fullCount = 0
+                        switch (column.title) {
+                          case 'Lead':
+                            fullCount = leadLeads.length
+                            break
+                          case 'In Conversation':
+                            fullCount = conversationLeads.length
+                            break
+                          case 'Proposal / Quote Sent':
+                            fullCount = proposalLeads.length
+                            break
+                          case 'Closed WON':
+                            fullCount = wonLeads.length
+                            break
+                          case 'Closed LOST':
+                            fullCount = lostLeads.length
+                            break
+                        }
+                        if (fullCount > 3) {
+                          displayText = `View all (${fullCount})`
+                        }
+                      }
+                      
+                      return (
+                        <TouchableOpacity
+                          key={action}
+                          activeOpacity={0.7}
+                          style={styles.linkButton}
+                          onPress={() => {
+                            if (action === 'View all') {
+                              handleViewAll(column)
+                            }
+                          }}
+                        >
+                          <Text style={styles.linkButtonText}>{displayText}</Text>
+                        </TouchableOpacity>
+                      )
+                    })}
                   </View>
                 )}
               </View>

@@ -1,6 +1,7 @@
 // Pending Orders screen - dedicated screen for viewing all pending re-orders
 import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, SafeAreaView } from 'react-native'
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native'
 import { Searchbar } from 'react-native-paper'
 import { MaterialIcons } from '@expo/vector-icons'

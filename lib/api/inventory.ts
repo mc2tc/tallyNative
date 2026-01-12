@@ -46,6 +46,10 @@ export type InventoryItem = {
   // Stock tracking fields
   currentStockOfPrimaryPackages?: number // Current stock count in primary packages
   currentStockInPrimaryUnits?: number    // Current stock count in primary packaging units
+  currentStockInMetric?: {
+    stock: number
+    unit: string
+  }
   // Re-order tracking
   reOrdered?: Array<{
     dateCreated: number

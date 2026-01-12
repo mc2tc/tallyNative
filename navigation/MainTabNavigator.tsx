@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { MaterialIcons } from '@expo/vector-icons'
+import { MaterialIcons, Ionicons } from '@expo/vector-icons'
 import { CommonActions, getFocusedRouteNameFromRoute } from '@react-navigation/native'
 import { HomeNavigator } from './HomeNavigator'
 import { TransactionsNavigator } from './TransactionsNavigator'
@@ -14,6 +14,7 @@ import { useAssistant } from '../lib/context/OversightAlertsContext'
 
 export type MainTabParamList = {
   Home: undefined
+  Health: undefined
   Transactions: undefined
   Reports: undefined
   Settings: undefined
@@ -23,7 +24,7 @@ export type MainTabParamList = {
 
 const Tab = createBottomTabNavigator<MainTabParamList>()
 
-const iconMap: Record<keyof MainTabParamList, keyof typeof MaterialIcons.glyphMap> = {
+const materialIconMap: Record<string, keyof typeof MaterialIcons.glyphMap> = {
   Home: 'home',
   Transactions: 'view-list',
   Reports: 'assessment',
@@ -41,15 +42,18 @@ export function MainTabNavigator() {
       initialRouteName="Transactions"
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: '#333333',
+        tabBarActiveTintColor: '#000000',
         tabBarInactiveTintColor: '#999999',
         tabBarStyle: {
           backgroundColor: '#f5f5f5',
           borderTopColor: '#e0e0e0',
         },
         tabBarIcon: ({ color, size }) => {
+          if (route.name === 'Health') {
+            return <Ionicons name="fitness" size={size} color={color} />
+          }
           const iconName =
-            iconMap[route.name as keyof MainTabParamList] ?? 'radio-button-unchecked'
+            materialIconMap[route.name] ?? 'radio-button-unchecked'
           return <MaterialIcons name={iconName} size={size} color={color} />
         },
       })}
@@ -62,6 +66,11 @@ export function MainTabNavigator() {
           tabBarButton: () => null,
           tabBarItemStyle: { display: 'none' },
         }}
+      />
+      <Tab.Screen
+        name="Health"
+        component={HomeNavigator}
+        options={{ title: 'Health' }}
       />
       <Tab.Screen
         name="Transactions"

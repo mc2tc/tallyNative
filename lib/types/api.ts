@@ -114,6 +114,10 @@ export type BusinessContextPayload = {
     mainCategory?: string
     subCategory?: string
     businessType?: string
+    unitTypes?: {
+      volume?: 'metric' | 'imperial'
+      weight?: 'metric' | 'imperial'
+    }
   }
 }
 

@@ -96,6 +96,14 @@ export type SalesManualEntryRequest = {
 	reference?: string
 	incomeAccount?: string
 	vatAmount?: number // REQUIRED if invoice includes VAT - see TRANSACTIONS3_SALES_MANUAL_IMPLEMENTATION.md (migrated to transactions3)
+	items?: Array<{
+		name: string
+		price: number
+		quantity: number // Count of SKU packages
+		description?: string
+		productId?: string // Required for SKU stock tracking
+		skuId?: string // Required for SKU stock tracking (must be provided with productId)
+	}>
 }
 
 export type SalesManualEntryResponse = {
@@ -129,6 +137,14 @@ export const transactions2Api = {
 			reference?: string
 			incomeAccount?: string
 			vatAmount?: number
+			items?: Array<{
+				name: string
+				price: number
+				quantity: number
+				description?: string
+				productId?: string
+				skuId?: string
+			}>
 		} = {
 			customerName: payload.customerName,
 			transactionDate: payload.transactionDate,
@@ -141,6 +157,10 @@ export const transactions2Api = {
 		// Include vatAmount if provided (REQUIRED for invoices with VAT)
 		if (payload.vatAmount !== undefined && payload.vatAmount > 0) {
 			transactionData.vatAmount = payload.vatAmount
+		}
+		// Include items array if provided (for SKU stock deduction)
+		if (payload.items !== undefined && payload.items.length > 0) {
+			transactionData.items = payload.items
 		}
 		
 		// New transactions3 format: businessId at top level, transactionData nested
@@ -644,6 +664,49 @@ export const transactions2Api = {
 			},
 		)
 	},
+
+	// Split expense item into business and personal portions
+	// See EXPENSE_SPLIT_RN_IMPLEMENTATION.md for details
+	splitExpenseItem: async (
+		transactionId: string,
+		businessId: string,
+		itemIndex: number,
+		splitDetails: {
+			businessAmount: number
+			personalAmount: number
+		},
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<Transaction>(
+			`/authenticated/transactions3/api/transactions/${transactionId}?${params.toString()}`,
+			{
+				action: 'split_item',
+				itemIndex,
+				splitDetails,
+			},
+		)
+	},
+
+	// Unsplit expense item (revert split back to business)
+	// See EXPENSE_SPLIT_RN_IMPLEMENTATION.md for details
+	unsplitExpenseItem: async (
+		transactionId: string,
+		businessId: string,
+		originalItemId: string,
+	): Promise<Transaction> => {
+		const params = new URLSearchParams({
+			businessId,
+		})
+		return api.patch<Transaction>(
+			`/authenticated/transactions3/api/transactions/${transactionId}?${params.toString()}`,
+			{
+				action: 'unsplit_item',
+				originalItemId,
+			},
+		)
+	},
 }
 
 export type ReconciliationMatch = {
@@ -699,6 +762,38 @@ export type HealthScoreResponse = {
 			}
 			timeframe: 'week' | 'month' | 'quarter'
 			usesRollingAverage: boolean
+			periodData?: {
+				periods: Array<{
+					index: number
+					label: string
+					startDate: number // Unix timestamp (milliseconds)
+					endDate: number // Unix timestamp (milliseconds)
+					revenue: number
+					expenses: number
+					profit: number
+					cashInflows?: number // Actual cash received (for cash flow calculation)
+					cashOutflows?: number // Actual cash paid (for cash flow calculation)
+					cashFlow?: number // Cash Inflows - Cash Outflows (for cash flow calculation)
+					currency: string
+				}>
+				currentPeriod: {
+					revenue: number
+					expenses: number
+					profit: number
+					cashInflows?: number
+					cashOutflows?: number
+					cashFlow?: number
+				}
+				previousPeriod: {
+					revenue: number
+					expenses: number
+					profit: number
+					cashInflows?: number
+					cashOutflows?: number
+					cashFlow?: number
+				}
+				currency: string
+			}
 		}
 	}
 }
@@ -707,11 +802,15 @@ export const healthScoreApi = {
 	getHealthScore: async (
 		businessId: string,
 		timeframe: 'week' | 'month' | 'quarter' = 'week',
+		includePeriodData: boolean = false,
 	): Promise<HealthScoreResponse> => {
 		const params = new URLSearchParams({
 			businessId,
 			timeframe,
 		})
+		if (includePeriodData) {
+			params.append('includePeriodData', 'true')
+		}
 	return api.get<HealthScoreResponse>(
 		`/authenticated/transactions3/api/kpis?${params.toString()}`,
 	)
@@ -764,6 +863,8 @@ export type POSSaleTransactionRequest = {
 		quantity: number
 		description?: string
 		inventoryItemId?: string // Optional inventory item ID for stock tracking
+		productId?: string // Optional product ID for product SKU stock tracking
+		skuId?: string // Optional SKU ID for product SKU stock tracking (must be provided with productId)
 	}>
 	payment: {
 		type: 'cash' | 'card'

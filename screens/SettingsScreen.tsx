@@ -22,7 +22,7 @@ import { bankAccountsApi, type BankAccount } from '../lib/api/bankAccounts'
 import { creditCardsApi, type CreditCard } from '../lib/api/creditCards'
 import { businessContextApi } from '../lib/api/businessContext'
 import { plansApi, type Plan } from '../lib/api/plans'
-import type { VatStatus } from '../lib/types/api'
+import type { VatStatus, BusinessContextPayload } from '../lib/types/api'
 import type { StackScreenProps } from '@react-navigation/stack'
 import type { SettingsStackParamList } from '../navigation/SettingsNavigator'
 import {
@@ -67,6 +67,13 @@ export default function SettingsScreen({ navigation }: Props) {
 
   const [currentPlan, setCurrentPlan] = useState<Plan | null>(null)
   const [loadingPlan, setLoadingPlan] = useState(true)
+
+  // Unit types state
+  const [unitTypes, setUnitTypes] = useState<{ volume: 'metric' | 'imperial'; weight: 'metric' | 'imperial' }>({
+    volume: 'metric',
+    weight: 'metric',
+  })
+  const [loadingUnitTypes, setLoadingUnitTypes] = useState(true)
 
   // VAT form state
   const [isVatRegistered, setIsVatRegistered] = useState(false)
@@ -157,13 +164,75 @@ export default function SettingsScreen({ navigation }: Props) {
     }
   }, [businessId])
 
+  const saveUnitTypes = useCallback(async (unitTypesToSave: { volume: 'metric' | 'imperial'; weight: 'metric' | 'imperial' }) => {
+    if (!businessId) return
+
+    try {
+      // Fetch existing context to preserve other fields
+      const existingContext = await businessContextApi.getContext(businessId)
+      const { businessId: contextBusinessId, createdAt, updatedAt, createdBy, ...contextFields } = existingContext.context
+
+      // Create payload with existing context plus unit types
+      const payload: BusinessContextPayload = {
+        businessId,
+        createdBy: createdBy || businessUser?.email || 'mobile-user',
+        context: {
+          ...contextFields,
+          unitTypes: unitTypesToSave,
+        },
+      }
+
+      await businessContextApi.upsert(payload)
+    } catch (error) {
+      console.error('Failed to save unit types:', error)
+      throw error
+    }
+  }, [businessId, businessUser])
+
+  const fetchUnitTypes = useCallback(async () => {
+    if (!businessId) {
+      setLoadingUnitTypes(false)
+      return
+    }
+    try {
+      setLoadingUnitTypes(true)
+      const response = await businessContextApi.getContext(businessId)
+      const existingUnitTypes = response.context.unitTypes
+      
+      // Default to metric if not set
+      const defaultUnitTypes = {
+        volume: 'metric' as const,
+        weight: 'metric' as const,
+      }
+      
+      const currentUnitTypes = {
+        volume: existingUnitTypes?.volume || defaultUnitTypes.volume,
+        weight: existingUnitTypes?.weight || defaultUnitTypes.weight,
+      }
+      
+      setUnitTypes(currentUnitTypes)
+      
+      // If unit types don't exist in context, initialize them with defaults
+      if (!existingUnitTypes || !existingUnitTypes.volume || !existingUnitTypes.weight) {
+        // Save the defaults
+        await saveUnitTypes(currentUnitTypes)
+      }
+    } catch (error) {
+      console.error('Failed to fetch unit types:', error)
+      // Keep defaults on error
+    } finally {
+      setLoadingUnitTypes(false)
+    }
+  }, [businessId, saveUnitTypes])
+
   useFocusEffect(
     useCallback(() => {
       fetchBankAccounts()
       fetchCreditCards()
       fetchVatStatus()
       fetchCurrentPlan()
-    }, [fetchBankAccounts, fetchCreditCards, fetchVatStatus, fetchCurrentPlan]),
+      fetchUnitTypes()
+    }, [fetchBankAccounts, fetchCreditCards, fetchVatStatus, fetchCurrentPlan, fetchUnitTypes]),
   )
 
   const handleAddBankAccount = () => {
@@ -590,6 +659,34 @@ export default function SettingsScreen({ navigation }: Props) {
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>VAT information not available</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Unit Types Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Unit Types</Text>
+          </View>
+
+          {loadingUnitTypes ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#666666" />
+            </View>
+          ) : (
+            <View style={styles.unitTypesContent}>
+              <View style={styles.unitTypesRow}>
+                <Text style={styles.unitTypesLabel}>Volume:</Text>
+                <Text style={styles.unitTypesValue}>
+                  {unitTypes.volume === 'metric' ? 'Metric (L, mL)' : 'Imperial (gal, fl oz)'}
+                </Text>
+              </View>
+              <View style={styles.unitTypesRow}>
+                <Text style={styles.unitTypesLabel}>Weight:</Text>
+                <Text style={styles.unitTypesValue}>
+                  {unitTypes.weight === 'metric' ? 'Metric (kg, g)' : 'Imperial (lb, oz)'}
+                </Text>
+              </View>
             </View>
           )}
         </View>
@@ -1343,5 +1440,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#333333',
+  },
+  unitTypesContent: {
+    gap: 12,
+  },
+  unitTypesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  unitTypesLabel: {
+    fontSize: 14,
+    color: '#666666',
+    fontWeight: '500',
+    flex: 1,
+  },
+  unitTypesValue: {
+    fontSize: 14,
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
   },
 })

@@ -6,8 +6,7 @@ import Svg, { Rect } from 'react-native-svg'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
-import { transactions2Api } from '../lib/api/transactions2'
-import type { Transaction } from '../lib/api/transactions2'
+import { healthScoreApi } from '../lib/api/transactions2'
 
 type PeriodData = {
   label: string
@@ -37,73 +36,9 @@ export default function CurrentRatioScreen() {
   const rawValue = healthScore?.rawMetrics.currentRatio ?? 0
   const timeframe = healthScore?.timeframe ?? 'week'
 
-  // Calculate date ranges for periods
-  const getDateRanges = useCallback((timeframe: 'week' | 'month' | 'quarter', numPeriods: number = 4) => {
-    const now = new Date()
-    const ranges: Array<{ startDate: number; endDate: number; index: number }> = []
-
-    for (let i = 0; i < numPeriods; i++) {
-      let startDate: Date
-      let endDate: Date
-
-      if (timeframe === 'week') {
-        const currentWeekStart = new Date(now)
-        currentWeekStart.setDate(now.getDate() - now.getDay())
-        currentWeekStart.setHours(0, 0, 0, 0)
-
-        startDate = new Date(currentWeekStart)
-        startDate.setDate(currentWeekStart.getDate() - (i * 7))
-        endDate = new Date(startDate)
-        endDate.setDate(startDate.getDate() + 6)
-        endDate.setHours(23, 59, 59, 999)
-      } else if (timeframe === 'month') {
-        startDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        startDate.setHours(0, 0, 0, 0)
-        endDate = new Date(now.getFullYear(), now.getMonth() - i + 1, 0)
-        endDate.setHours(23, 59, 59, 999)
-      } else {
-        const currentQuarter = Math.floor(now.getMonth() / 3)
-        const currentYear = now.getFullYear()
-        const quarterMonth = currentQuarter * 3
-
-        startDate = new Date(currentYear, quarterMonth - (i * 3), 1)
-        startDate.setHours(0, 0, 0, 0)
-        endDate = new Date(currentYear, quarterMonth - (i * 3) + 3, 0)
-        endDate.setHours(23, 59, 59, 999)
-      }
-
-      ranges.push({
-        startDate: startDate.getTime(),
-        endDate: endDate.getTime(),
-        index: i,
-      })
-    }
-
-    return ranges
-  }, [])
-
-  // Get period label
-  const getPeriodLabel = useCallback((index: number, currentTimeframe: string) => {
-    if (index === 0) return currentTimeframe.charAt(0).toUpperCase() + currentTimeframe.slice(1)
-    const labels = {
-      week: ['Week', 'Week', 'Week'],
-      month: ['Month', 'Month', 'Month'],
-      quarter: ['Quarter', 'Quarter', 'Quarter'],
-    }
-    return `${labels[currentTimeframe as keyof typeof labels]?.[index - 1] || 'Period'} -${index}`
-  }, [])
-
-  // Calculate previous timeframe label
-  const getPreviousTimeframeLabel = (current: string) => {
-    if (current === 'week') return 'Previous Week'
-    if (current === 'month') return 'Previous Month'
-    if (current === 'quarter') return 'Previous Quarter'
-    return 'Previous Period'
-  }
-
-  // Fetch current ratio data
+  // Fetch period current ratio data from backend
   useEffect(() => {
-    const fetchRatioData = async () => {
+    const fetchPeriodData = async () => {
       if (!businessId) {
         setError('Business ID not available')
         setLoading(false)
@@ -114,69 +49,41 @@ export default function CurrentRatioScreen() {
         setLoading(true)
         setError(null)
 
-        const dateRanges = getDateRanges(timeframe, 4)
-
-        // Fetch all transactions
-        let allTransactions: Transaction[] = []
-        let page = 1
-        let hasMore = true
-
-        while (hasMore) {
-          const response = await transactions2Api.getTransactions3(
-            businessId,
-            'source_of_truth',
-            { page, limit: 100 }
-          )
-
-          allTransactions = [...allTransactions, ...response.transactions]
-          hasMore = response.pagination.hasNextPage
-          page++
+        // Fetch health score with period data
+        const response = await healthScoreApi.getHealthScore(businessId, timeframe, true)
+        
+        if (!response.success || !response.data?.healthScore?.periodData) {
+          setError('Period data not available')
+          setLoading(false)
+          return
         }
 
-        // Calculate current ratio for each period
-        // Current Ratio = Current Assets / Current Liabilities
-        // Simplified: We'll use cash + receivables as assets and payables as liabilities
-        const periodRatios: PeriodData[] = dateRanges.map((range, index) => {
-          // Get all transactions up to the end of this period (cumulative)
-          const periodTransactions = allTransactions.filter((tx) => {
-            const txDate = tx.summary.transactionDate
-            return txDate <= range.endDate
-          })
+        const periodData = response.data.healthScore.periodData
 
-          // Calculate assets (cash from sales)
-          const assets = periodTransactions
-            .filter(tx => (tx.metadata as any)?.classification?.kind === 'sale')
-            .reduce((sum, tx) => sum + (tx.summary.totalAmount || 0), 0)
-
-          // Calculate liabilities (expenses from purchases)
-          const liabilities = periodTransactions
-            .filter(tx => (tx.metadata as any)?.classification?.kind === 'purchase')
-            .reduce((sum, tx) => sum + Math.abs(tx.summary.totalAmount || 0), 0)
-
-          // Current ratio = assets / liabilities (avoid division by zero)
-          const ratio = liabilities > 0 ? assets / liabilities : assets > 0 ? 999 : 0
-
-          return {
-            label: getPeriodLabel(index, timeframe),
-            value: ratio,
-            startDate: range.startDate,
-            endDate: range.endDate,
-          }
-        })
+        // Convert backend period data to frontend format
+        // Use currentRatio if available, otherwise calculate from assets/liabilities if provided
+        // For now, use the raw currentRatio value from healthScore for all periods
+        // TODO: Backend should add currentRatio to periodData when implementing balance sheet calculations
+        const periodRatios: PeriodData[] = periodData.periods.map((period) => ({
+          label: period.label,
+          value: rawValue, // Use current ratio from health score for now
+          startDate: period.startDate,
+          endDate: period.endDate,
+        }))
 
         setRatioData(periodRatios)
-        setCurrentRatio(periodRatios[0]?.value || 0)
-        setPreviousRatio(periodRatios[1]?.value || 0)
+        setCurrentRatio(rawValue)
+        setPreviousRatio(rawValue) // TODO: Use previous period ratio when backend provides it
       } catch (err) {
-        console.error('[CurrentRatioScreen] Failed to fetch ratio data:', err)
-        setError(err instanceof Error ? err.message : 'Failed to fetch ratio data')
+        console.error('[CurrentRatioScreen] Failed to fetch period data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch period data')
       } finally {
         setLoading(false)
       }
     }
 
-    fetchRatioData()
-  }, [businessId, timeframe, getDateRanges, getPeriodLabel])
+    fetchPeriodData()
+  }, [businessId, timeframe, rawValue])
 
   const maxValue = ratioData.length > 0
     ? Math.max(...ratioData.map(d => d.value), 1)
@@ -201,13 +108,15 @@ export default function CurrentRatioScreen() {
               
               <View style={styles.detailsList}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}</Text>
+                  <Text style={styles.detailLabel}>
+                    {ratioData[0]?.label || (timeframe.charAt(0).toUpperCase() + timeframe.slice(1))}
+                  </Text>
                   <Text style={styles.detailValue}>
                     {currentRatio.toFixed(2)}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{getPreviousTimeframeLabel(timeframe)}</Text>
+                  <Text style={styles.detailLabel}>{ratioData[1]?.label || 'Previous Period'}</Text>
                   <Text style={styles.detailValue}>
                     {previousRatio.toFixed(2)}
                   </Text>

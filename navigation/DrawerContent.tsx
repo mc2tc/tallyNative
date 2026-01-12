@@ -5,43 +5,16 @@ import { View, StyleSheet, Text } from 'react-native'
 import { Drawer } from 'react-native-paper'
 import { DrawerContentScrollView } from '@react-navigation/drawer'
 import type { DrawerContentComponentProps } from '@react-navigation/drawer'
-import { AntDesign, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons'
+import { AntDesign, MaterialCommunityIcons, Ionicons, MaterialIcons } from '@expo/vector-icons'
 
 export function CustomDrawerContent(props: DrawerContentComponentProps) {
   const activeRouteName = props.state.routeNames[props.state.index]
   const activeRoute = props.state.routes[props.state.index]
-  
-  // Debug logging
-  console.log('=== Drawer Debug ===')
-  console.log('Active route name:', activeRouteName)
-  console.log('State index:', props.state.index)
-  console.log('Active route object:', activeRoute ? { name: activeRoute.name, key: activeRoute.key, state: activeRoute.state } : 'null')
-  console.log('All route names:', props.state.routeNames)
-  console.log('State routes:', props.state.routes.map(r => ({ name: r.name, key: r.key })))
-  
-  // Check each item's active state
-  const itemStates = {
-    Inventory: activeRouteName === 'InventoryManagement',
-    Production: activeRouteName === 'ProductionManagement',
-    PointOfSale: activeRouteName === 'PointOfSale',
-    CRM_Invoicing: activeRouteName === 'MainTabs' || activeRouteName === 'Invoicing',
-    OnlineSales: activeRouteName === 'OnlineSales',
-    OnlineBooking: activeRouteName === 'OnlineBooking',
-    Payroll: activeRouteName === 'Payroll',
-    Expenses: activeRouteName === 'Expenses',
-    TimeManagement: activeRouteName === 'TimeManagement',
-    Suppliers: activeRouteName === 'Suppliers',
-    FinancialServices: activeRouteName === 'FinancialServices',
-    Talent: activeRouteName === 'Talent',
-    VAT: activeRouteName === 'VAT',
-    YearEndReporting: activeRouteName === 'YearEndReporting',
-  }
-  console.log('Item active states:', itemStates)
 
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.drawerTitle}>Additional Modules</Text>
+        <Text style={styles.drawerTitle}>Modules</Text>
         {/* Operations Section */}
         <Text style={styles.sectionTitle}>Operations</Text>
         <Drawer.Section showDivider={false} style={styles.drawerSection}>
@@ -52,7 +25,6 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'InventoryManagement' ? { backgroundColor: 'transparent' } : undefined]}
             onPress={() => {
-              console.log('Inventory pressed, navigating to InventoryManagement')
               props.navigation.navigate('InventoryManagement')
             }}
           />
@@ -63,7 +35,6 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'ProductionManagement' ? { backgroundColor: 'transparent' } : undefined]}
             onPress={() => {
-              console.log('Production pressed, navigating to ProductionManagement')
               props.navigation.navigate('ProductionManagement')
             }}
           />
@@ -77,24 +48,9 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
           />
         </Drawer.Section>
 
-        {/* Sales & Marketing Section */}
-        <Text style={styles.sectionTitle}>Sales & Marketing</Text>
+        {/* Marketing Section */}
+        <Text style={styles.sectionTitle}>Marketing</Text>
         <Drawer.Section showDivider={false} style={styles.drawerSection}>
-          <Drawer.Item
-            label="CRM & Invoicing"
-            icon="account-group"
-            active={activeRouteName === 'MainTabs' || activeRouteName === 'Invoicing'}
-            rippleColor="#e0e0e0"
-            style={[styles.drawerItem, (activeRouteName === 'MainTabs' || activeRouteName === 'Invoicing') ? { backgroundColor: 'transparent' } : undefined]}
-            onPress={() => {
-              props.navigation.navigate('MainTabs', {
-                screen: 'Transactions',
-                params: {
-                  screen: 'SalesPipeline',
-                },
-              })
-            }}
-          />
           <Drawer.Item
             label="Web"
             icon={({ size, color }) => <MaterialCommunityIcons name="web" size={size} color={color} />}
@@ -102,6 +58,16 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'OnlineSales' ? { backgroundColor: 'transparent' } : undefined]}
             onPress={() => props.navigation.navigate('OnlineSales')}
+          />
+          <Drawer.Item
+            label="Email"
+            icon={({ size, color }) => <MaterialIcons name="alternate-email" size={size} color={color} />}
+            active={false}
+            rippleColor="#e0e0e0"
+            style={styles.drawerItem}
+            onPress={() => {
+              // TODO: Navigate to Email screen when implemented
+            }}
           />
           <Drawer.Item
             label="Social"
@@ -125,20 +91,20 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             onPress={() => props.navigation.navigate('Payroll')}
           />
           <Drawer.Item
-            label="Expense Management"
-            icon="wallet-outline"
-            active={activeRouteName === 'Expenses'}
+            label="Team"
+            icon={({ size, color }) => <AntDesign name="team" size={size} color={color} />}
+            active={activeRouteName === 'Team'}
             rippleColor="#e0e0e0"
-            style={[styles.drawerItem, activeRouteName === 'Expenses' ? { backgroundColor: 'transparent' } : undefined]}
-            onPress={() => props.navigation.navigate('Expenses')}
+            style={[styles.drawerItem, activeRouteName === 'Team' ? { backgroundColor: 'transparent' } : undefined]}
+            onPress={() => props.navigation.navigate('Team')}
           />
           <Drawer.Item
-            label="Time Management"
-            icon="clock-outline"
-            active={activeRouteName === 'TimeManagement'}
+            label="Talent"
+            icon={({ size, color }) => <MaterialCommunityIcons name="crowd" size={size} color={color} />}
+            active={activeRouteName === 'Talent'}
             rippleColor="#e0e0e0"
-            style={[styles.drawerItem, activeRouteName === 'TimeManagement' ? { backgroundColor: 'transparent' } : undefined]}
-            onPress={() => props.navigation.navigate('TimeManagement')}
+            style={[styles.drawerItem, activeRouteName === 'Talent' ? { backgroundColor: 'transparent' } : undefined]}
+            onPress={() => props.navigation.navigate('Talent')}
           />
         </Drawer.Section>
 
@@ -160,18 +126,8 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'FinancialServices' ? { backgroundColor: 'transparent' } : undefined]}
             onPress={() => {
-              console.log('Financial Services pressed, navigating to FinancialServices')
-              console.log('Active state before navigation:', activeRouteName === 'FinancialServices')
               props.navigation.navigate('FinancialServices')
             }}
-          />
-          <Drawer.Item
-            label="Talent"
-            icon={({ size, color }) => <Ionicons name="people" size={size} color={color} />}
-            active={activeRouteName === 'Talent'}
-            rippleColor="#e0e0e0"
-            style={[styles.drawerItem, activeRouteName === 'Talent' ? { backgroundColor: 'transparent' } : undefined]}
-            onPress={() => props.navigation.navigate('Talent')}
           />
         </Drawer.Section>
 
@@ -185,7 +141,6 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'VAT' ? { backgroundColor: 'transparent' } : undefined]}
             onPress={() => {
-              console.log('VAT pressed, navigating to VAT')
               props.navigation.navigate('VAT')
             }}
           />
@@ -196,7 +151,6 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             rippleColor="#e0e0e0"
             style={[styles.drawerItem, activeRouteName === 'YearEndReporting' ? { backgroundColor: 'transparent' } : undefined]}
             onPress={() => {
-              console.log('Year End Reporting pressed, navigating to YearEndReporting')
               props.navigation.navigate('YearEndReporting')
             }}
           />

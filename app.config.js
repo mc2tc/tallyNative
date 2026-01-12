@@ -36,7 +36,9 @@ module.exports = () => ({
       },
     },
     owner: 'mc2tc',
-    plugins: [],
+    plugins: [
+      'expo-web-browser',
+    ],
   },
 })
 

@@ -1,7 +1,7 @@
 // Point of Sale screen
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { View, StyleSheet, ScrollView, Text, TouchableOpacity, Modal, Animated, Alert } from 'react-native'
+import { View, StyleSheet, ScrollView, Text, TouchableOpacity, Modal, Animated, Alert, ActivityIndicator } from 'react-native'
 import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -13,8 +13,11 @@ import { posSaleTransactionApi } from '../lib/api/transactions2'
 import { useAuth } from '../lib/auth/AuthContext'
 import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 import { inventoryApi, type InventoryItem } from '../lib/api/inventory'
+import { productsApi, type SKU } from '../lib/api/products'
 
 type PointOfSaleScreenNavigationProp = DrawerNavigationProp<AppDrawerParamList, 'PointOfSale'>
+
+const GRAYSCALE_PRIMARY = '#4a4a4a'
 
 interface Product {
   id: string
@@ -25,6 +28,15 @@ interface Product {
   isInventoryItem?: boolean
   packagingQuantity?: number
   packagingUnit?: string
+  productId?: string // Product ID for product SKU stock tracking
+  skuId?: string // SKU ID for product SKU stock tracking (must be provided with productId)
+  skuIndex?: number // SKU index as backup for identification
+  currentStock?: number // Current stock level (for SKU products)
+  /**
+   * Optional VAT rate percentage for this product/SKU (e.g. 20 for 20%).
+   * For SKUs this comes from SKU.vatRate; for other products this will typically be undefined.
+   */
+  vatRate?: number
 }
 
 interface CartItem {
@@ -45,6 +57,7 @@ export default function PointOfSaleScreen() {
   const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentType | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [loading, setLoading] = useState(true)
   const slideAnim = useRef(new Animated.Value(0)).current
 
   // Choose businessId (same logic as other screens)
@@ -57,11 +70,15 @@ export default function PointOfSaleScreen() {
       ? businessUser.businessId
       : nonPersonalMembershipId) ?? membershipIds[0]
 
-  // Load products (one-off items and Finished Goods inventory items)
+  // Load products (one-off items, Finished Goods inventory items, and product SKUs)
   const loadProducts = useCallback(async () => {
+    console.log('[POS] loadProducts: Starting to load products')
+    setLoading(true)
     try {
       // Load one-off items from local storage
+      console.log('[POS] loadProducts: Loading one-off items')
       const oneOffItems = await getOneOffItems()
+      console.log('[POS] loadProducts: Loaded one-off items:', oneOffItems.length)
       const convertedOneOffProducts: Product[] = oneOffItems.map(item => ({
         id: item.id,
         name: item.name,
@@ -75,12 +92,14 @@ export default function PointOfSaleScreen() {
       let inventoryProducts: Product[] = []
       if (businessId) {
         try {
+          console.log('[POS] loadProducts: Loading inventory items for businessId:', businessId)
           const inventoryResponse = await inventoryApi.getInventoryItems(businessId, {
             debitAccount: 'Finished Goods',
             page: 1,
             limit: 500,
             screen: 'inventory', // Only show non-grouped items
           })
+          console.log('[POS] loadProducts: Loaded inventory items:', inventoryResponse.items.length)
           
           inventoryProducts = inventoryResponse.items
             .filter(item => item.packaging?.primaryPackaging?.quantity && item.packaging?.primaryPackaging?.unit)
@@ -92,16 +111,97 @@ export default function PointOfSaleScreen() {
               packagingQuantity: item.packaging?.primaryPackaging?.quantity,
               packagingUnit: item.packaging?.primaryPackaging?.unit,
             }))
+          console.log('[POS] loadProducts: Filtered inventory products:', inventoryProducts.length)
         } catch (error) {
-          console.error('Failed to load inventory items:', error)
+          console.error('[POS] loadProducts: Failed to load inventory items:', error)
         }
       }
 
-      // Combine both types of products
-      setProducts([...convertedOneOffProducts, ...inventoryProducts])
+      // Load product SKUs
+      let productSkuProducts: Product[] = []
+      if (businessId) {
+        try {
+          console.log('[POS] loadProducts: Loading products with SKUs for businessId:', businessId)
+          const productsResponse = await productsApi.getProducts(businessId, {
+            page: 1,
+            limit: 500,
+          })
+          console.log('[POS] loadProducts: Loaded products:', productsResponse.products.length)
+
+          // For each product, get its SKUs
+          for (const product of productsResponse.products) {
+            try {
+              console.log('[POS] loadProducts: Loading SKUs for product:', product.id, product.name)
+              const skusResponse = await productsApi.getProductSkus(product.id, businessId)
+              console.log('[POS] loadProducts: Loaded SKUs for product', product.id, ':', skusResponse.skus.length)
+
+              // Convert each SKU to a Product item
+              const skuProducts = skusResponse.skus.map((sku: SKU, index: number) => {
+                // Backend accepts SKU id, name, or index as string (prefer id if available, then name, then index)
+                const skuId = (sku as any).id || sku.name || index.toString()
+                // Use currentStockOfPrimaryPackages for package-based stock, fallback to currentStock
+                const stockCount = sku.currentStockOfPrimaryPackages !== undefined 
+                  ? sku.currentStockOfPrimaryPackages 
+                  : sku.currentStock
+                console.log('[POS] loadProducts: Converting SKU to product:', {
+                  productId: product.id,
+                  productName: product.name,
+                  skuId,
+                  skuIdSource: (sku as any).id ? 'id' : (sku.name ? 'name' : 'index'),
+                  skuName: sku.name,
+                  skuIndex: index,
+                  skuPrice: sku.price,
+                  skuStock: stockCount,
+                  currentStock: sku.currentStock,
+                  currentStockOfPrimaryPackages: sku.currentStockOfPrimaryPackages,
+                vatRate: (sku as any).vatRate,
+                })
+
+                return {
+                  id: `${product.id}-${skuId}`, // Unique ID for this SKU
+                  name: `${product.name} - ${sku.name}`, // Product name + SKU name
+                  price: sku.price,
+                  packSize: `${sku.size} ${sku.unit}`, // SKU size and unit
+                  description: undefined,
+                  isInventoryItem: false,
+                  productId: product.id, // Include productId for backend
+                  skuId: skuId, // Include skuId (id > name > index) for backend
+                  skuIndex: index, // Store index as backup for SKU identification
+                  currentStock: stockCount, // Use package count for out-of-stock indication
+                  // Optional VAT rate percentage for this SKU (e.g. 20 for 20%).
+                  // Kept optional for backward compatibility with existing SKUs.
+                  vatRate: (sku as any).vatRate,
+                } as Product & { skuIndex?: number }
+              })
+
+              productSkuProducts = [...productSkuProducts, ...skuProducts]
+              console.log('[POS] loadProducts: Added', skuProducts.length, 'SKU products for product', product.id)
+            } catch (error) {
+              console.error('[POS] loadProducts: Failed to load SKUs for product', product.id, ':', error)
+              // Continue with other products even if one fails
+            }
+          }
+
+          console.log('[POS] loadProducts: Total product SKU products:', productSkuProducts.length)
+        } catch (error) {
+          console.error('[POS] loadProducts: Failed to load products with SKUs:', error)
+        }
+      }
+
+      // Combine all types of products
+      const allProducts = [...convertedOneOffProducts, ...inventoryProducts, ...productSkuProducts]
+      console.log('[POS] loadProducts: Total products loaded:', {
+        oneOff: convertedOneOffProducts.length,
+        inventory: inventoryProducts.length,
+        productSkus: productSkuProducts.length,
+        total: allProducts.length,
+      })
+      setProducts(allProducts)
     } catch (error) {
-      console.error('Failed to load products:', error)
+      console.error('[POS] loadProducts: Failed to load products:', error)
       setProducts([])
+    } finally {
+      setLoading(false)
     }
   }, [businessId])
 
@@ -201,25 +301,63 @@ export default function PointOfSaleScreen() {
     try {
       setIsProcessingPayment(true)
 
+      console.log('[POS] handleConfirmPayment: Starting payment processing')
+      console.log('[POS] handleConfirmPayment: Cart items:', cartItems.length)
+      console.log('[POS] handleConfirmPayment: Business ID:', businessId)
+      console.log('[POS] handleConfirmPayment: Payment type:', selectedPaymentType)
+
       // Prepare items for API
       const items = cartItems.map(item => {
         const product = products.find(p => p.id === item.productId)
         if (!product) {
           throw new Error(`Product not found: ${item.productId}`)
         }
-        return {
+
+        console.log('[POS] handleConfirmPayment: Processing cart item:', {
+          cartProductId: item.productId,
+          productName: product.name,
+          quantity: item.quantity,
+          isInventoryItem: product.isInventoryItem,
+          productId: product.productId,
+          skuId: product.skuId,
+        })
+
+        const itemPayload = {
           itemId: item.productId,
           name: product.name,
           price: product.price,
-          quantity: item.quantity,
+          quantity: item.quantity, // Quantity is count of SKU packages being sold
           description: product.description,
           // Include inventoryItemId for inventory items so backend can track stock
           ...(product.isInventoryItem && { inventoryItemId: product.id }),
+          // Include productId and skuId for product SKU stock tracking (both must be provided together)
+          // Backend accepts skuId as id, name, or index (as string) - we use the best available identifier
+          ...(product.productId && product.skuId && {
+            productId: product.productId,
+            skuId: product.skuId, // This is set as: id (if exists) > name > index (as string)
+          }),
+          // Optional VAT rate percentage for this line (e.g. 20 for 20%).
+          // This is primarily for SKUs; left undefined for legacy/one-off items.
+          ...(product.vatRate !== undefined && { vatRate: product.vatRate }),
         }
+
+        console.log('[POS] handleConfirmPayment: Item payload:', JSON.stringify(itemPayload, null, 2))
+        console.log('[POS] handleConfirmPayment: SKU identification:', {
+          productId: product.productId,
+          skuId: product.skuId,
+          skuIndex: product.skuIndex,
+          quantity: item.quantity,
+          isInventoryItem: product.isInventoryItem,
+        })
+        return itemPayload
       })
 
+      console.log('[POS] handleConfirmPayment: Prepared items for API:', items.length)
+      console.log('[POS] handleConfirmPayment: All items payload:', JSON.stringify(items, null, 2))
+      console.log('[POS] handleConfirmPayment: Payment totals:', { subtotal, vat, total })
+
       // Call POS sale transaction API
-      const response = await posSaleTransactionApi.createPOSSaleTransaction({
+      const requestPayload = {
         businessId,
         items,
         payment: {
@@ -228,9 +366,16 @@ export default function PointOfSaleScreen() {
           vat,
           total,
         },
-      })
+      }
+      console.log('[POS] handleConfirmPayment: Full request payload:', JSON.stringify(requestPayload, null, 2))
+      
+      const response = await posSaleTransactionApi.createPOSSaleTransaction(requestPayload)
+      console.log('[POS] handleConfirmPayment: API response:', JSON.stringify(response, null, 2))
 
       if (response.success) {
+        // Reload products to reflect updated stock levels after sale
+        await loadProducts()
+        
         Alert.alert(
           'Success',
           `Payment processed successfully!\n\nTransaction ID: ${response.transactionId}`,
@@ -260,13 +405,22 @@ export default function PointOfSaleScreen() {
 
   const getCartTotal = () => {
     let subtotal = 0
+    let vat = 0
+
     cartItems.forEach((item) => {
       const product = products.find((p) => p.id === item.productId)
       if (product) {
-        subtotal += product.price * item.quantity
+        const lineSubtotal = product.price * item.quantity
+        subtotal += lineSubtotal
+
+        // If a VAT rate has been saved for this product/SKU, use it; otherwise treat as 0% VAT.
+        const lineVatRate = product.vatRate !== undefined ? product.vatRate : 0
+        if (lineVatRate > 0) {
+          vat += lineSubtotal * (lineVatRate / 100)
+        }
       }
     })
-    const vat = subtotal * 0.2
+
     const total = subtotal + vat
     return { subtotal, vat, total }
   }
@@ -282,7 +436,12 @@ export default function PointOfSaleScreen() {
       >
         <View style={styles.contentWrapper}>
           <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-            {products.length === 0 ? (
+            {loading ? (
+              <View style={styles.emptyState}>
+                <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+                <Text style={styles.emptyStateText}>Loading Skus...</Text>
+              </View>
+            ) : products.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyStateText}>No products available</Text>
                 <Text style={styles.emptyStateSubtext}>
@@ -294,11 +453,22 @@ export default function PointOfSaleScreen() {
                 {products.map((product) => (
                   <TouchableOpacity
                     key={product.id}
-                    style={styles.productCard}
+                    style={[
+                      styles.productCard,
+                      product.currentStock !== undefined && product.currentStock !== null && product.currentStock <= 0 && styles.productCardOutOfStock,
+                    ]}
                     onPress={() => handleProductPress(product)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.productName} numberOfLines={2} ellipsizeMode="tail">
+                    {product.currentStock !== undefined && product.currentStock !== null && product.currentStock <= 0 && (
+                      <View style={styles.outOfStockBadge}>
+                        <Text style={styles.outOfStockText}>Out of Stock</Text>
+                      </View>
+                    )}
+                    <Text style={[
+                      styles.productName,
+                      product.currentStock !== undefined && product.currentStock !== null && product.currentStock <= 0 && styles.productNameOutOfStock,
+                    ]} numberOfLines={2} ellipsizeMode="tail">
                       {product.name}
                     </Text>
                     {product.isInventoryItem && product.packagingQuantity && product.packagingUnit && (
@@ -312,7 +482,13 @@ export default function PointOfSaleScreen() {
                     {!product.isInventoryItem && product.description && !product.packSize && (
                       <Text style={styles.productPackSize} numberOfLines={2}>{product.description}</Text>
                     )}
-                    <Text style={styles.productPrice}>£{product.price.toFixed(2)}</Text>
+                    {product.currentStock !== undefined && product.currentStock !== null && product.currentStock > 0 && (
+                      <Text style={styles.stockInfo}>Stock: {product.currentStock}</Text>
+                    )}
+                    <Text style={[
+                      styles.productPrice,
+                      product.currentStock !== undefined && product.currentStock !== null && product.currentStock <= 0 && styles.productPriceOutOfStock,
+                    ]}>£{product.price.toFixed(2)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -355,7 +531,7 @@ export default function PointOfSaleScreen() {
                 <Text style={styles.totalValue}>£{subtotal.toFixed(2)}</Text>
               </View>
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabelSmall}>VAT (20%)</Text>
+                <Text style={styles.totalLabelSmall}>VAT</Text>
                 <Text style={styles.totalValue}>£{vat.toFixed(2)}</Text>
               </View>
               <View style={styles.divider} />
@@ -437,7 +613,7 @@ export default function PointOfSaleScreen() {
                     <Text style={styles.summaryValue}>£{subtotal.toFixed(2)}</Text>
                   </View>
                   <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>VAT (20%)</Text>
+                    <Text style={styles.summaryLabel}>VAT</Text>
                     <Text style={styles.summaryValue}>£{vat.toFixed(2)}</Text>
                   </View>
                   <View style={styles.summaryDivider} />
@@ -556,6 +732,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 120,
+    position: 'relative',
+  },
+  productCardOutOfStock: {
+    opacity: 0.6,
+    borderColor: '#333333',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
   },
   productName: {
     fontSize: 18,
@@ -576,6 +759,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#333333',
     textAlign: 'center',
+  },
+  productPriceOutOfStock: {
+    color: '#999999',
+    textDecorationLine: 'line-through',
+  },
+  productNameOutOfStock: {
+    opacity: 0.7,
+  },
+  outOfStockBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#4a4a4a',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    zIndex: 1,
+  },
+  outOfStockText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  stockInfo: {
+    fontSize: 11,
+    color: '#666666',
+    marginTop: 4,
+    marginBottom: 4,
   },
   checkoutCardContainer: {
     position: 'absolute',

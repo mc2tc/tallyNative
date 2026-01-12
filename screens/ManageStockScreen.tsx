@@ -1,14 +1,15 @@
 // Manage Stock screen - displays packaging extraction results
-import React, { useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import React, { useCallback, useEffect, useState } from 'react'
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Linking } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
+import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons, Ionicons } from '@expo/vector-icons'
+import * as WebBrowser from 'expo-web-browser'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
-import { packagingApi, type PackagingExtractionResponse, type PackagingExtractionSuccessResponse, isPackagingExtractionSuccess, type PrimaryPackaging, type SecondaryPackaging } from '../lib/api/packaging'
+import { packagingApi, type PackagingExtractionResponse, type PackagingExtractionSuccessResponse, isPackagingExtractionSuccess, type PrimaryPackaging, type SecondaryPackaging, type UnitConfirmation } from '../lib/api/packaging'
 import { inventoryApi } from '../lib/api/inventory'
 import { transactions2Api, type Transaction } from '../lib/api/transactions2'
 import { ApiError } from '../lib/api/client'
@@ -51,93 +52,263 @@ export default function ManageStockScreen() {
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [itemAmount, setItemAmount] = useState<number | null>(null)
   const [currency, setCurrency] = useState<string>('GBP')
+  // Local edits that persist until "Confirm and Save" is clicked
+  const [localPrimaryPackaging, setLocalPrimaryPackaging] = useState<PrimaryPackaging | null>(null)
+  const [localSecondaryPackaging, setLocalSecondaryPackaging] = useState<SecondaryPackaging | null | undefined>(undefined)
+  const [localOrderQuantity, setLocalOrderQuantity] = useState<number | null>(null)
+  // Unit confirmation state
+  const [unitConfirmation, setUnitConfirmation] = useState<UnitConfirmation | null>(null)
+  const [confirmedUnit, setConfirmedUnit] = useState<string>('')
+  const [showUnitConfirmationModal, setShowUnitConfirmationModal] = useState(false)
+  const [pendingPackagingResponse, setPendingPackagingResponse] = useState<PackagingExtractionSuccessResponse | null>(null)
+  // Invoice display state
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false)
+  const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null)
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+  const [invoiceType, setInvoiceType] = useState<'image' | 'pdf' | null>(null)
 
-  useEffect(() => {
-    const extractPackaging = async () => {
-      if (!businessId || !itemText) {
-        setError('Missing required information')
+  // Retry logic with exponential backoff for rate limit errors
+  const extractPackagingWithRetry = useCallback(async (
+    maxRetries: number = 3,
+    initialDelay: number = 1000
+  ): Promise<PackagingExtractionResponse | null> => {
+    let lastError: PackagingExtractionResponse | null = null
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await packagingApi.extractPackaging(businessId!, itemText!)
+        
+        if (isPackagingExtractionSuccess(response)) {
+          return response
+        }
+        
+        // Check if it's a rate limit error (429) and we should retry
+        const errorResponse = response
+        const isRateLimit = errorResponse.error?.includes('temporarily busy') || 
+                           errorResponse.error?.includes('try again') ||
+                           (errorResponse as any).rateLimit === true
+        
+        if (isRateLimit && attempt < maxRetries) {
+          // Exponential backoff: 1s, 2s, 4s
+          const delay = initialDelay * Math.pow(2, attempt)
+          console.log(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          lastError = errorResponse
+          continue
+        }
+        
+        // Non-retryable error or max retries reached
+        return errorResponse
+        
+      } catch (error) {
+        // Network errors - only retry on first attempt
+        if (attempt === 0 && error instanceof Error) {
+          console.warn('Network error, retrying once:', error.message)
+          await new Promise(resolve => setTimeout(resolve, initialDelay))
+          continue
+        }
+        
+        // Give up after network error retry
+        console.error('Packaging extraction failed after retries:', error)
+        return null
+      }
+    }
+    
+    return lastError
+  }, [businessId, itemText])
+
+  const extractPackaging = useCallback(async () => {
+    if (!businessId || !itemText) {
+      setError('Missing required information')
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Fetch transaction to get item amount and currency if we have transactionId
+      if (transactionId && businessId) {
+        try {
+          const transaction = await transactions2Api.getTransaction(transactionId, businessId)
+          const details = transaction.details as {
+            itemList?: Array<{
+              amount: number
+            }>
+          } | undefined
+          const itemList = details?.itemList || []
+          const item = itemList[itemIndex ?? -1]
+          
+          if (item) {
+            setItemAmount(item.amount)
+          }
+          
+          // Get currency from transaction summary
+          if (transaction.summary?.currency) {
+            setCurrency(transaction.summary.currency)
+          }
+        } catch (err) {
+          console.error('Failed to fetch transaction for amount:', err)
+          // Continue with packaging extraction even if transaction fetch fails
+        }
+      } else if (transactionItem?.amount) {
+        // Use transactionItem from route params if available
+        setItemAmount(transactionItem.amount)
+        if (transactionItem.currency) {
+          setCurrency(transactionItem.currency)
+        }
+      }
+
+      // Use retry logic for packaging extraction
+      const response = await extractPackagingWithRetry()
+      
+      // If extraction failed completely (null response), show graceful error
+      if (!response) {
+        const errorMsg = 'Packaging extraction unavailable. Please try again.'
+        console.warn('Packaging extraction unavailable')
+        setError(errorMsg)
+        // Don't block - allow user to continue
+        return
+      }
+      
+      // Check if response is successful using type guard
+      if (!isPackagingExtractionSuccess(response)) {
+        // Graceful error handling - show user-friendly message but don't block
+        const errorMsg = response.error || response.message || 'Packaging extraction unavailable. You can continue without it.'
+        console.warn('Packaging extraction failed:', {
+          error: errorMsg,
+          requestId: response.requestId,
+          currentUsage: (response as any).currentUsage,
+          limit: (response as any).limit,
+        })
+        setError(errorMsg)
+        // Don't block - allow user to continue without packaging data
+        return
+      }
+      
+      // Handle unit confirmation requirement
+      if (response.requiresConfirmation && response.unitConfirmation) {
+        setPendingPackagingResponse(response)
+        setUnitConfirmation(response.unitConfirmation)
+        setConfirmedUnit(response.unitConfirmation.normalizedUnit || response.unitConfirmation.extractedUnit)
+        setShowUnitConfirmationModal(true)
+        // Don't set packaging data yet - wait for user confirmation
         setLoading(false)
         return
       }
-
-      setLoading(true)
-      setError(null)
-
-      try {
-        // Fetch transaction to get item amount and currency if we have transactionId
-        if (transactionId && businessId) {
-          try {
-            const transaction = await transactions2Api.getTransaction(transactionId, businessId)
-            const details = transaction.details as {
-              itemList?: Array<{
-                amount: number
-              }>
-            } | undefined
-            const itemList = details?.itemList || []
-            const item = itemList[itemIndex ?? -1]
+      
+      // Merge API response with local edits if they exist
+      const effectiveOrderQuantity = localOrderQuantity !== null ? localOrderQuantity : response.packaging.orderQuantity
+      const mergedResponse = {
+        ...response,
+        packaging: {
+          ...response.packaging,
+          orderQuantity: effectiveOrderQuantity,
+          primaryPackaging: localPrimaryPackaging || response.packaging.primaryPackaging,
+          // If localSecondaryPackaging is null, it means deleted (use undefined)
+          // If it's undefined, use API response
+          // Otherwise, use the local edit
+          secondaryPackaging: localSecondaryPackaging !== undefined 
+            ? (localSecondaryPackaging === null ? undefined : localSecondaryPackaging)
+            : response.packaging.secondaryPackaging,
+          // Recalculate totalPrimaryPackages if we have local edits
+          totalPrimaryPackages: (() => {
+            const primary = localPrimaryPackaging || response.packaging.primaryPackaging
+            const secondary = localSecondaryPackaging !== undefined 
+              ? (localSecondaryPackaging === null ? undefined : localSecondaryPackaging)
+              : response.packaging.secondaryPackaging
             
-            if (item) {
-              setItemAmount(item.amount)
+            if (response.packaging.orderPackagingLevel === 'primary') {
+              return effectiveOrderQuantity
+            } else if (secondary) {
+              return secondary.quantity * secondary.primaryPackagesPerSecondary
+            } else if (primary) {
+              return effectiveOrderQuantity
             }
-            
-            // Get currency from transaction summary
-            if (transaction.summary?.currency) {
-              setCurrency(transaction.summary.currency)
-            }
-          } catch (err) {
-            console.error('Failed to fetch transaction for amount:', err)
-            // Continue with packaging extraction even if transaction fetch fails
-          }
-        } else if (transactionItem?.amount) {
-          // Use transactionItem from route params if available
-          setItemAmount(transactionItem.amount)
-          if (transactionItem.currency) {
-            setCurrency(transactionItem.currency)
-          }
-        }
-
-        const response = await packagingApi.extractPackaging(businessId, itemText)
-        
-        // Check if response is successful using type guard
-        if (!isPackagingExtractionSuccess(response)) {
-          const errorMsg = response.error || response.message || 'Failed to extract packaging information'
-          console.error('Packaging extraction failed:', response)
-          setError(errorMsg)
-          Alert.alert('Error', errorMsg)
-          return
-        }
-        
-        setPackagingData(response)
-      } catch (err) {
-        console.error('Failed to extract packaging:', err)
-        console.error('Error details:', {
-          error: err,
-          businessId,
-          itemText,
-          errorType: err instanceof ApiError ? 'ApiError' : err instanceof Error ? 'Error' : 'Unknown',
-          status: err instanceof ApiError ? err.status : undefined,
-          data: err instanceof ApiError ? err.data : undefined,
-        })
-        
-        let errorMessage = 'Failed to extract packaging information. Please try again.'
-        if (err instanceof ApiError) {
-          errorMessage = err.message || errorMessage
-          // Include status code in error message for debugging
-          if (err.status) {
-            errorMessage = `${errorMessage} (Status: ${err.status})`
-          }
-        } else if (err instanceof Error) {
-          errorMessage = err.message
-        }
-        setError(errorMessage)
-        Alert.alert('Error', errorMessage)
-      } finally {
-        setLoading(false)
+            return response.packaging.totalPrimaryPackages
+          })(),
+          // Update orderPackagingLevel if secondary was deleted
+          orderPackagingLevel: (localSecondaryPackaging === null ? 'primary' : response.packaging.orderPackagingLevel) as 'primary' | 'secondary',
+        },
       }
+      
+      setPackagingData(mergedResponse)
+      // Clear error on successful extraction
+      setError(null)
+    } catch (err) {
+      // Unexpected errors - log but don't block
+      console.error('Unexpected packaging extraction error:', err)
+      console.error('Error details:', {
+        error: err,
+        businessId,
+        itemText,
+        errorType: err instanceof ApiError ? 'ApiError' : err instanceof Error ? 'Error' : 'Unknown',
+        status: err instanceof ApiError ? err.status : undefined,
+        data: err instanceof ApiError ? err.data : undefined,
+      })
+      
+      // Show user-friendly error message but allow continuation
+      const errorMessage = 'Packaging extraction unavailable. Please try again.'
+      setError(errorMessage)
+      // Don't show blocking alert - allow user to proceed
+    } finally {
+      setLoading(false)
     }
+  }, [businessId, itemText, transactionId, itemIndex, transactionItem, localOrderQuantity, localPrimaryPackaging, localSecondaryPackaging, extractPackagingWithRetry])
 
+  // Initial load
+  useEffect(() => {
     extractPackaging()
-  }, [businessId, itemText, transactionId, itemIndex, transactionItem])
+  }, [extractPackaging])
+
+  // Refresh on screen focus - but preserve local edits
+  useFocusEffect(
+    useCallback(() => {
+      // Only refresh if we don't have local edits to preserve
+      // If we have local edits, we'll merge them in extractPackaging
+      extractPackaging()
+    }, [extractPackaging])
+  )
+
+  // Get effective packaging data (API data merged with local edits)
+  const getEffectivePackagingData = useCallback((): PackagingExtractionSuccessResponse | null => {
+    if (!packagingData) return null
+
+    // If localSecondaryPackaging is null, it means deleted (use undefined)
+    // If it's undefined, use API response
+    // Otherwise, use the local edit
+    const effectiveSecondaryPackaging = localSecondaryPackaging !== undefined 
+      ? (localSecondaryPackaging === null ? undefined : localSecondaryPackaging)
+      : packagingData.packaging.secondaryPackaging
+
+    // Use local order quantity if it exists, otherwise use API response
+    const effectiveOrderQuantity = localOrderQuantity !== null ? localOrderQuantity : packagingData.packaging.orderQuantity
+
+    return {
+      ...packagingData,
+      packaging: {
+        ...packagingData.packaging,
+        orderQuantity: effectiveOrderQuantity,
+        primaryPackaging: localPrimaryPackaging || packagingData.packaging.primaryPackaging,
+        secondaryPackaging: effectiveSecondaryPackaging,
+        totalPrimaryPackages: (() => {
+          const primary = localPrimaryPackaging || packagingData.packaging.primaryPackaging
+          const secondary = effectiveSecondaryPackaging
+          
+          if (packagingData.packaging.orderPackagingLevel === 'primary') {
+            return effectiveOrderQuantity
+          } else if (secondary) {
+            return secondary.quantity * secondary.primaryPackagesPerSecondary
+          } else if (primary) {
+            return effectiveOrderQuantity
+          }
+          return packagingData.packaging.totalPrimaryPackages
+        })(),
+        orderPackagingLevel: (localSecondaryPackaging === null ? 'primary' : packagingData.packaging.orderPackagingLevel) as 'primary' | 'secondary',
+      },
+    }
+  }, [packagingData, localPrimaryPackaging, localSecondaryPackaging, localOrderQuantity])
 
   const handleConfirmAndSave = async () => {
     if (!businessId) {
@@ -251,15 +422,18 @@ export default function ManageStockScreen() {
         const transactionDate = updatedTransaction.summary?.transactionDate
         const reference = (updatedTransaction.metadata as { reference?: string } | undefined)?.reference
         
+        // Get effective packaging data (with local edits)
+        const effectiveData = getEffectivePackagingData()
+        
         // Calculate cost per primary package and cost per primary packaging unit
         let costPerPrimaryPackage: number | undefined
         let costPerPrimaryPackagingUnit: number | undefined
         
-        if (packagingData && packagingData.packaging.totalPrimaryPackages > 0) {
-          costPerPrimaryPackage = updatedItem.amount / packagingData.packaging.totalPrimaryPackages
+        if (effectiveData && effectiveData.packaging.totalPrimaryPackages > 0) {
+          costPerPrimaryPackage = updatedItem.amount / effectiveData.packaging.totalPrimaryPackages
           
-          if (packagingData.packaging.primaryPackaging && packagingData.packaging.primaryPackaging.quantity > 0) {
-            const totalPrimaryPackagingUnits = packagingData.packaging.totalPrimaryPackages * packagingData.packaging.primaryPackaging.quantity
+          if (effectiveData.packaging.primaryPackaging && effectiveData.packaging.primaryPackaging.quantity > 0) {
+            const totalPrimaryPackagingUnits = effectiveData.packaging.totalPrimaryPackages * effectiveData.packaging.primaryPackaging.quantity
             costPerPrimaryPackagingUnit = updatedItem.amount / totalPrimaryPackagingUnits
           }
         }
@@ -276,14 +450,14 @@ export default function ManageStockScreen() {
           debitAccountConfirmed: true,
           isBusinessExpense: updatedItem.isBusinessExpense,
           category: updatedItem.category,
-          packaging: packagingData ? {
-            primaryPackaging: packagingData.packaging.primaryPackaging,
-            secondaryPackaging: packagingData.packaging.secondaryPackaging,
-            totalPrimaryPackages: packagingData.packaging.totalPrimaryPackages,
-            orderQuantity: packagingData.packaging.orderQuantity,
-            orderPackagingLevel: packagingData.packaging.orderPackagingLevel,
-            confidence: packagingData.packaging.confidence,
-            notes: packagingData.packaging.notes,
+          packaging: effectiveData ? {
+            primaryPackaging: effectiveData.packaging.primaryPackaging,
+            secondaryPackaging: effectiveData.packaging.secondaryPackaging,
+            totalPrimaryPackages: effectiveData.packaging.totalPrimaryPackages,
+            orderQuantity: effectiveData.packaging.orderQuantity,
+            orderPackagingLevel: effectiveData.packaging.orderPackagingLevel,
+            confidence: effectiveData.packaging.confidence,
+            notes: effectiveData.packaging.notes,
           } : undefined,
           costPerPrimaryPackage,
           costPerPrimaryPackagingUnit,
@@ -297,6 +471,11 @@ export default function ManageStockScreen() {
           transactionId,
           itemsToSave,
         )
+
+        // Clear local edits after successful save
+        setLocalPrimaryPackaging(null)
+        setLocalSecondaryPackaging(undefined)
+        setLocalOrderQuantity(null)
 
         setUpdatingStatus(false)
         Alert.alert('Success', 'Item saved successfully', [
@@ -348,61 +527,130 @@ export default function ManageStockScreen() {
     navigation.navigate('InventoryManagement' as never)
   }
 
+  const handleConfirmUnit = async () => {
+    if (!pendingPackagingResponse || !unitConfirmation || !confirmedUnit.trim()) {
+      Alert.alert('Error', 'Please enter a valid unit')
+      return
+    }
+
+    try {
+      setLoading(true)
+      // Update the primary packaging unit with the confirmed unit
+      const updatedPrimaryPackaging: PrimaryPackaging = {
+        ...pendingPackagingResponse.packaging.primaryPackaging!,
+        unit: confirmedUnit.trim(),
+      }
+      
+      // Merge API response with local edits if they exist
+      const mergedResponse = {
+        ...pendingPackagingResponse,
+        packaging: {
+          ...pendingPackagingResponse.packaging,
+          primaryPackaging: updatedPrimaryPackaging,
+        },
+        requiresConfirmation: false,
+        unitConfirmation: undefined,
+      }
+      
+      setPackagingData(mergedResponse)
+      setLocalPrimaryPackaging(updatedPrimaryPackaging)
+      setShowUnitConfirmationModal(false)
+      setUnitConfirmation(null)
+      setConfirmedUnit('')
+      setPendingPackagingResponse(null)
+    } catch (error) {
+      console.error('Failed to confirm unit:', error)
+      Alert.alert('Error', 'Failed to confirm unit. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCancelUnitConfirmation = () => {
+    setShowUnitConfirmationModal(false)
+    setUnitConfirmation(null)
+    setConfirmedUnit('')
+    setPendingPackagingResponse(null)
+    // Navigate back since we can't proceed without unit confirmation
+    navigation.navigate('InventoryManagement' as never)
+  }
+
+  const handleViewInvoice = useCallback(async () => {
+    if (!transactionId || !businessId) {
+      Alert.alert('Error', 'Transaction information is not available')
+      return
+    }
+
+    setInvoiceLoading(true)
+    try {
+      // First, try to get the transaction to check for imageUrl
+      const transaction = await transactions2Api.getTransaction(transactionId, businessId)
+      const imageUrl = (transaction.metadata as { imageUrl?: string } | undefined)?.imageUrl
+
+      if (imageUrl) {
+        // If there's an image URL, display it in modal
+        setInvoiceUrl(imageUrl)
+        setInvoiceType('image')
+        setShowInvoiceModal(true)
+      } else {
+        // Otherwise, generate PDF and open in browser
+        const pdfResponse = await transactions2Api.generateInvoicePDF(transactionId, businessId)
+        if (pdfResponse.success && pdfResponse.pdfUrl) {
+          // Open PDF in in-app browser (closest to modal experience in Expo)
+          await WebBrowser.openBrowserAsync(pdfResponse.pdfUrl, {
+            presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+            controlsColor: GRAYSCALE_PRIMARY,
+          })
+        } else {
+          throw new Error('Failed to generate invoice PDF')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load invoice:', error)
+      let errorMessage = 'Failed to load invoice. Please try again.'
+      if (error instanceof ApiError) {
+        errorMessage = error.message || errorMessage
+      } else if (error instanceof Error) {
+        errorMessage = error.message
+      }
+      Alert.alert('Error', errorMessage)
+    } finally {
+      setInvoiceLoading(false)
+    }
+  }, [transactionId, businessId])
+
   const handleEditPrimaryPackaging = () => {
-    if (!packagingData?.packaging.primaryPackaging) return
+    const effectiveData = getEffectivePackagingData()
+    if (!effectiveData?.packaging.primaryPackaging) return
 
     navigation.navigate('EditPackaging' as never, {
-      packaging: packagingData.packaging.primaryPackaging,
+      packaging: effectiveData.packaging.primaryPackaging,
       packagingType: 'primary',
-      manageStockParams: { itemName, itemText, businessId, inventoryItemId },
+      manageStockParams: { itemName, itemText, businessId, inventoryItemId, transactionId, itemIndex, transactionItem },
       onSave: (updatedPackaging: PrimaryPackaging | SecondaryPackaging) => {
-        if (!packagingData) return
-
         const updatedPrimary = updatedPackaging as PrimaryPackaging
-        const updatedPackagingData = {
-          ...packagingData,
-          packaging: {
-            ...packagingData.packaging,
-            primaryPackaging: updatedPrimary,
-            // Recalculate totalPrimaryPackages based on order level
-            totalPrimaryPackages:
-              packagingData.packaging.orderPackagingLevel === 'primary'
-                ? packagingData.packaging.orderQuantity
-                : packagingData.packaging.secondaryPackaging
-                  ? packagingData.packaging.secondaryPackaging.quantity *
-                    packagingData.packaging.secondaryPackaging.primaryPackagesPerSecondary
-                  : packagingData.packaging.totalPrimaryPackages,
-          },
-        }
-        setPackagingData(updatedPackagingData)
+        // Store in local state to persist across refreshes
+        setLocalPrimaryPackaging(updatedPrimary)
       },
     } as any)
   }
 
   const handleEditSecondaryPackaging = () => {
-    if (!packagingData?.packaging.secondaryPackaging) return
+    const effectiveData = getEffectivePackagingData()
+    if (!effectiveData?.packaging.secondaryPackaging) return
 
     navigation.navigate('EditPackaging' as never, {
-      packaging: packagingData.packaging.secondaryPackaging,
+      packaging: effectiveData.packaging.secondaryPackaging,
       packagingType: 'secondary',
-      manageStockParams: { itemName, itemText, businessId, inventoryItemId },
+      manageStockParams: { itemName, itemText, businessId, inventoryItemId, transactionId, itemIndex, transactionItem },
       onSave: (updatedPackaging: PrimaryPackaging | SecondaryPackaging) => {
-        if (!packagingData) return
-
         const updatedSecondary = updatedPackaging as SecondaryPackaging
-        const updatedPackagingData = {
-          ...packagingData,
-          packaging: {
-            ...packagingData.packaging,
-            secondaryPackaging: updatedSecondary,
-            // Recalculate totalPrimaryPackages for secondary level
-            totalPrimaryPackages:
-              packagingData.packaging.orderPackagingLevel === 'secondary'
-                ? updatedSecondary.quantity * updatedSecondary.primaryPackagesPerSecondary
-                : packagingData.packaging.totalPrimaryPackages,
-          },
-        }
-        setPackagingData(updatedPackagingData)
+        // Store in local state to persist across refreshes
+        setLocalSecondaryPackaging(updatedSecondary)
+      },
+      onDelete: () => {
+        // Store null in local state to indicate deletion
+        setLocalSecondaryPackaging(null)
       },
     } as any)
   }
@@ -418,18 +666,43 @@ export default function ManageStockScreen() {
     )
   }
 
-  if (error) {
+  // Show error state but allow user to continue
+  if (error && !packagingData) {
     return (
       <AppBarLayout title="Manage Stock" onBackPress={handleGoBack}>
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="error-outline" size={48} color="#d32f2f" />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 16 }]}
+        >
+          <View style={styles.errorCard}>
+            <MaterialIcons name="info-outline" size={32} color="#888888" />
+            <Text style={styles.errorText}>{error}</Text>
+            <View style={styles.errorActions}>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={extractPackaging}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="refresh" size={18} color={GRAYSCALE_PRIMARY} />
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.continueButton}
+                onPress={handleGoBack}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.continueButtonText}>Continue Without Packaging</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
       </AppBarLayout>
     )
   }
 
-  if (!packagingData) {
+  // Show loading state if unit confirmation is required but modal is not yet visible
+  // (this should not happen, but handle it gracefully)
+  if (!packagingData && !showUnitConfirmationModal) {
     return (
       <AppBarLayout title="Manage Stock" onBackPress={handleGoBack}>
         <View style={styles.errorContainer}>
@@ -439,19 +712,170 @@ export default function ManageStockScreen() {
     )
   }
 
-  const { packaging } = packagingData
+  // Get effective packaging data (merged with local edits) if available
+  const effectivePackagingData = packagingData ? getEffectivePackagingData() : null
+  
+  // Render modal component helper
+  const renderUnitConfirmationModal = () => (
+    <Modal
+      visible={showUnitConfirmationModal}
+      transparent
+      animationType="fade"
+      onRequestClose={handleCancelUnitConfirmation}
+    >
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={handleCancelUnitConfirmation}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Confirm Unit</Text>
+                <TouchableOpacity
+                  onPress={handleCancelUnitConfirmation}
+                  style={styles.closeButton}
+                >
+                  <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalForm}>
+                <Text style={styles.modalQuestionText}>
+                  {unitConfirmation?.question || 'The extracted unit was not recognized. Please confirm the correct unit of measurement.'}
+                </Text>
+
+                <Text style={styles.modalLabel}>Unit:</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="e.g., lb, kg, L, mL"
+                  value={confirmedUnit}
+                  onChangeText={setConfirmedUnit}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                {unitConfirmation?.extractedUnit && (
+                  <Text style={styles.modalHintText}>
+                    Extracted: "{unitConfirmation.extractedUnit}"
+                    {unitConfirmation.normalizedUnit && ` (normalized: "${unitConfirmation.normalizedUnit}")`}
+                  </Text>
+                )}
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancelButton}
+                    onPress={handleCancelUnitConfirmation}
+                  >
+                    <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalConfirmButton,
+                      !confirmedUnit.trim() && styles.modalConfirmButtonDisabled,
+                    ]}
+                    onPress={handleConfirmUnit}
+                    disabled={!confirmedUnit.trim()}
+                  >
+                    <Text style={styles.modalConfirmButtonText}>Confirm</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </TouchableOpacity>
+    </Modal>
+  )
+
+  if (!packagingData && !showUnitConfirmationModal) {
+    return (
+      <>
+        <AppBarLayout title="Manage Stock" onBackPress={handleGoBack}>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>No packaging data available</Text>
+          </View>
+        </AppBarLayout>
+        {renderUnitConfirmationModal()}
+      </>
+    )
+  }
+
+  // If unit confirmation is required but no packaging data yet, show minimal UI
+  if (showUnitConfirmationModal && !packagingData) {
+    return (
+      <>
+        <AppBarLayout title="Manage Stock" onBackPress={handleGoBack}>
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Please confirm the unit...</Text>
+          </View>
+        </AppBarLayout>
+        {renderUnitConfirmationModal()}
+      </>
+    )
+  }
+
+  if (!effectivePackagingData) {
+    return (
+      <>
+        <AppBarLayout title="Manage Stock" onBackPress={handleGoBack}>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>No packaging data available</Text>
+          </View>
+        </AppBarLayout>
+        {renderUnitConfirmationModal()}
+      </>
+    )
+  }
+
+  const { packaging } = effectivePackagingData
 
   return (
-    <AppBarLayout title="Manage Stock" onBackPress={handleGoBack}>
+    <>
+      <AppBarLayout title="Manage Stock" onBackPress={handleGoBack}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 16 }]}
       >
+        {/* Show non-blocking error banner if there's an error */}
+        {error && (
+          <View style={styles.errorBanner}>
+            <MaterialIcons name="info-outline" size={20} color="#888888" />
+            <Text style={styles.errorBannerText}>{error}</Text>
+            <TouchableOpacity
+              style={styles.errorBannerRetry}
+              onPress={extractPackaging}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="refresh" size={18} color={GRAYSCALE_PRIMARY} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.headerCard}>
           <Text style={styles.itemName}>{itemName}</Text>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Order Quantity:</Text>
-            <Text style={styles.infoValue}>{packaging.orderQuantity}</Text>
+            <TextInput
+              style={styles.orderQuantityInput}
+              value={localOrderQuantity !== null ? localOrderQuantity.toString() : packaging.orderQuantity.toString()}
+              onChangeText={(text) => {
+                if (text === '') {
+                  setLocalOrderQuantity(0)
+                  return
+                }
+                const numValue = parseFloat(text)
+                if (!isNaN(numValue) && numValue >= 0) {
+                  setLocalOrderQuantity(numValue)
+                }
+              }}
+              keyboardType="numeric"
+              selectTextOnFocus
+            />
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Packaging Level:</Text>
@@ -665,6 +1089,28 @@ export default function ManageStockScreen() {
           </View>
         )}
 
+        {/* Invoice Card - Only show if we have a transactionId */}
+        {transactionId && (
+          <View style={styles.infoCard}>
+            <Text style={styles.cardTitle}>Invoice</Text>
+            <TouchableOpacity
+              style={styles.invoiceButton}
+              onPress={handleViewInvoice}
+              activeOpacity={0.7}
+              disabled={invoiceLoading}
+            >
+              {invoiceLoading ? (
+                <ActivityIndicator size="small" color={GRAYSCALE_PRIMARY} />
+              ) : (
+                <MaterialIcons name="description" size={20} color={GRAYSCALE_PRIMARY} />
+              )}
+              <Text style={styles.invoiceButtonText}>
+                {invoiceLoading ? 'Loading...' : 'View Invoice'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Notes */}
         {packaging.notes && (
           <View style={styles.infoCard}>
@@ -719,7 +1165,7 @@ export default function ManageStockScreen() {
           </View>
         )}
 
-        {/* Confirm and Save Button */}
+        {/* Save Button */}
         <TouchableOpacity
           style={[
             styles.confirmButton,
@@ -732,11 +1178,43 @@ export default function ManageStockScreen() {
           {updatingStatus ? (
             <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-          <Text style={styles.confirmButtonText}>Confirm and Save</Text>
+          <Text style={styles.confirmButtonText}>Save</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
-    </AppBarLayout>
+      </AppBarLayout>
+      {renderUnitConfirmationModal()}
+      {/* Invoice Modal */}
+      <Modal
+        visible={showInvoiceModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowInvoiceModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.invoiceModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowInvoiceModal(false)}
+        >
+          <View style={styles.invoiceModalContainer} onStartShouldSetResponder={() => true}>
+            <TouchableOpacity
+              style={[styles.invoiceModalCloseButton, { top: insets.top + 16 }]}
+              onPress={() => setShowInvoiceModal(false)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="close" size={28} color="#ffffff" />
+            </TouchableOpacity>
+            {invoiceUrl && invoiceType === 'image' && (
+              <Image
+                source={{ uri: invoiceUrl }}
+                style={styles.invoiceImage}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
   )
 }
 
@@ -861,6 +1339,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: GRAYSCALE_PRIMARY,
+  },
+  orderQuantityInput: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 80,
+    textAlign: 'right',
+    backgroundColor: '#ffffff',
   },
   packagingItem: {
     marginBottom: 0,
@@ -1001,6 +1492,214 @@ const styles = StyleSheet.create({
   segmentedButtonTextActive: {
     color: '#ffffff',
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '100%',
+    maxWidth: 400,
+    paddingHorizontal: 24,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalForm: {
+    gap: 16,
+  },
+  modalQuestionText: {
+    fontSize: 15,
+    color: GRAYSCALE_PRIMARY,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 4,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: GRAYSCALE_PRIMARY,
+    backgroundColor: '#ffffff',
+  },
+  modalHintText: {
+    fontSize: 13,
+    color: '#888888',
+    fontStyle: 'italic',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#999999',
+    alignItems: 'center',
+  },
+  modalCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666666',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: GRAYSCALE_PRIMARY,
+    alignItems: 'center',
+  },
+  modalConfirmButtonDisabled: {
+    opacity: 0.5,
+  },
+  modalConfirmButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  invoiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginTop: 8,
+  },
+  invoiceButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+  },
+  invoiceModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  invoiceModalContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  invoiceModalCloseButton: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 1000,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  invoiceImage: {
+    width: '100%',
+    height: '100%',
+  },
+  errorCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 24,
+    marginBottom: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  errorBanner: {
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#ffc107',
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#856404',
+    lineHeight: 20,
+  },
+  errorBannerRetry: {
+    padding: 4,
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+    width: '100%',
+  },
+  retryButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+  },
+  continueButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: GRAYSCALE_PRIMARY,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 })
 

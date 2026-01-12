@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
+import { OperationsBottomNav } from '../components/OperationsBottomNav'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
@@ -96,6 +97,7 @@ export default function POSManagementScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <OperationsBottomNav />
     </AppBarLayout>
   )
 }
@@ -106,7 +108,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingBottom: 80, // Extra padding for bottom nav
     paddingTop: 24,
   },
   infoCard: {

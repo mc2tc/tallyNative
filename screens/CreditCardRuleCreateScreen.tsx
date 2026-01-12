@@ -156,7 +156,7 @@ export default function CreditCardRuleCreateScreen() {
           >
             <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New credit card rule</Text>
+          <Text style={styles.headerTitle}>NEW CREDIT CARD RULE</Text>
           <View style={styles.backButton} />
         </View>
 

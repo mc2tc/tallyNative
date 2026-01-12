@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +13,7 @@ import {
   Linking,
 } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import * as FileSystem from 'expo-file-system/legacy'
@@ -19,6 +22,8 @@ import { useAuth } from '../lib/auth/AuthContext'
 import { businessContextApi } from '../lib/api/businessContext'
 import { transactions2Api } from '../lib/api/transactions2'
 import { chartAccountsApi } from '../lib/api/chartAccounts'
+import { productsApi, type Product, type SKU } from '../lib/api/products'
+import { ApiError } from '../lib/api/client'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 
 // Get currency symbol helper
@@ -51,6 +56,15 @@ type InvoiceItem = {
   unitCost: number
   total: number
   hasVat: boolean
+  quantityText?: string // Raw text input for quantity
+  unitCostText?: string // Raw text input for unit cost
+  selectedProductId?: string // Selected product ID
+  selectedSkuId?: string // Selected SKU name (using name as ID like POS screen)
+  /**
+   * Optional VAT rate percentage for this line (e.g. 20 for 20%).
+   * When a SKU is selected, this is populated from SKU.vatRate; otherwise we fall back to 20%.
+   */
+  vatRate?: number
 }
 
 type CreateInvoiceRouteProp = RouteProp<TransactionsStackParamList, 'CreateInvoice'>
@@ -101,6 +115,15 @@ export default function CreateInvoiceScreen() {
   const [selectedIncomeAccount, setSelectedIncomeAccount] = useState<string>('')
   const [loadingAccounts, setLoadingAccounts] = useState(false)
   const [showIncomeAccountPicker, setShowIncomeAccountPicker] = useState(false)
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  
+  // Product and SKU state
+  const [products, setProducts] = useState<Product[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [itemSkus, setItemSkus] = useState<Record<string, SKU[]>>({}) // Map of itemId -> SKUs
+  const [loadingSkus, setLoadingSkus] = useState<Record<string, boolean>>({}) // Map of itemId -> loading state
+  const [showProductPicker, setShowProductPicker] = useState<Record<string, boolean>>({}) // Map of itemId -> show picker
+  const [showSkuPicker, setShowSkuPicker] = useState<Record<string, boolean>>({}) // Map of itemId -> show SKU picker
 
   // Check if customer name was passed from route (from lead detail)
   const isCustomerFromRoute = !!routeCustomerName
@@ -150,18 +173,85 @@ export default function CreateInvoiceScreen() {
     fetchAccounts()
   }, [businessId])
 
-  // Calculate item total when quantity, unitCost, or VAT changes
-  const updateItemTotal = useCallback((itemId: string, field: 'quantity' | 'unitCost' | 'hasVat', value: number | boolean) => {
+  // Fetch products
+  useEffect(() => {
+    if (!businessId) return
+
+    const fetchProducts = async () => {
+      try {
+        setLoadingProducts(true)
+        const response = await productsApi.getProducts(businessId, {
+          page: 1,
+          limit: 500,
+        })
+        setProducts(response.products)
+      } catch (error) {
+        console.error('Failed to fetch products:', error)
+        // Don't show alert - products are optional for invoices
+      } finally {
+        setLoadingProducts(false)
+      }
+    }
+
+    fetchProducts()
+  }, [businessId])
+
+  // Calculate item total when quantity, unitCost, or VAT flag changes
+  const updateItemTotal = useCallback(
+    (itemId: string, field: 'quantity' | 'unitCost' | 'hasVat', value: number | boolean) => {
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.id === itemId) {
+            const updated = {
+              ...item,
+              [field]: value,
+            }
+            // Calculate total: quantity * unitCost, then add VAT if applicable
+            const lineSubtotal = updated.quantity * updated.unitCost
+            const vatRate = updated.vatRate ?? 20 // Default to 20% for backwards compatibility
+            updated.total = updated.hasVat ? lineSubtotal * (1 + vatRate / 100) : lineSubtotal
+            return updated
+          }
+          return item
+        }),
+      )
+    },
+    [],
+  )
+
+  // Update numeric field with raw text input (preserves decimal points)
+  const updateNumericField = useCallback((itemId: string, field: 'quantity' | 'unitCost', text: string) => {
+    // Allow empty string, numbers, and decimal points
+    // Remove any non-numeric characters except decimal point
+    const cleanedText = text.replace(/[^0-9.]/g, '')
+    
+    // Prevent multiple decimal points
+    const parts = cleanedText.split('.')
+    const sanitizedText = parts.length > 2 
+      ? parts[0] + '.' + parts.slice(1).join('')
+      : cleanedText
+
     setItems((prev) =>
       prev.map((item) => {
         if (item.id === itemId) {
+          // Store raw text for display
+          const textField = field === 'quantity' ? 'quantityText' : 'unitCostText'
           const updated = {
             ...item,
-            [field]: value,
+            [textField]: sanitizedText,
           }
+
+          // Parse numeric value for calculations (use 0 if empty or just a decimal point)
+          const numValue =
+            sanitizedText === '' || sanitizedText === '.'
+              ? 0
+              : parseFloat(sanitizedText) || 0
+          updated[field] = numValue
+
           // Calculate total: quantity * unitCost, then add VAT if applicable
-          const subtotal = updated.quantity * updated.unitCost
-          updated.total = updated.hasVat ? subtotal * 1.2 : subtotal // Assuming 20% VAT
+          const lineSubtotal = updated.quantity * updated.unitCost
+          const vatRate = updated.vatRate ?? 20 // Default to 20% for backwards compatibility
+          updated.total = updated.hasVat ? lineSubtotal * (1 + vatRate / 100) : lineSubtotal
           return updated
         }
         return item
@@ -171,8 +261,89 @@ export default function CreateInvoiceScreen() {
 
   // Calculate grand total from all items
   const grandTotal = items.reduce((sum, item) => sum + item.total, 0)
-  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0)
-  const vatTotal = items.reduce((sum, item) => sum + (item.hasVat ? item.quantity * item.unitCost * 0.2 : 0), 0)
+  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)
+  const vatTotal = items.reduce((sum, item) => {
+    if (!item.hasVat) return sum
+    const vatRate = item.vatRate ?? 20 // Default to 20% for backwards compatibility
+    return sum + item.quantity * item.unitCost * (vatRate / 100)
+  }, 0)
+
+  // Fetch SKUs for a product and item
+  const fetchSkusForItem = useCallback(async (itemId: string, productId: string) => {
+    if (!businessId) return
+
+    try {
+      setLoadingSkus((prev) => ({ ...prev, [itemId]: true }))
+      const response = await productsApi.getProductSkus(productId, businessId)
+      setItemSkus((prev) => ({ ...prev, [itemId]: response.skus }))
+    } catch (error) {
+      console.error('Failed to fetch SKUs for product:', error)
+      Alert.alert('Error', 'Failed to load SKUs. Please try again.')
+    } finally {
+      setLoadingSkus((prev) => ({ ...prev, [itemId]: false }))
+    }
+  }, [businessId])
+
+  // Handle product selection for an item
+  const handleProductSelect = useCallback((itemId: string, productId: string) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id === itemId) {
+          return {
+            ...item,
+            selectedProductId: productId,
+            selectedSkuId: undefined, // Clear SKU selection when product changes
+            description: '', // Clear description until SKU is selected
+            unitCost: 0,
+            unitCostText: '',
+          }
+        }
+        return item
+      })
+    )
+    setShowProductPicker((prev) => ({ ...prev, [itemId]: false }))
+    // Fetch SKUs for the selected product
+    fetchSkusForItem(itemId, productId)
+    // Show SKU picker
+    setShowSkuPicker((prev) => ({ ...prev, [itemId]: true }))
+  }, [fetchSkusForItem])
+
+  // Handle SKU selection for an item
+  const handleSkuSelect = useCallback((itemId: string, productId: string, sku: SKU) => {
+    if (!productId) {
+      console.error('Product ID is missing when selecting SKU')
+      return
+    }
+
+    const product = products.find((p) => p.id === productId)
+    const productName = product?.name || ''
+    const skuName = sku.name
+    const description = `${productName} - ${skuName}`
+
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id === itemId) {
+          const updated: InvoiceItem = {
+            ...item,
+            selectedSkuId: sku.name, // Use SKU name as ID (like POS screen)
+            description,
+            unitCost: sku.price,
+            unitCostText: sku.price.toString(),
+            // Optional VAT rate percentage from the selected SKU (e.g. 20 for 20%).
+            // Kept optional for backward compatibility with existing SKUs.
+            vatRate: (sku as any).vatRate,
+          }
+          // Recalculate total
+          const lineSubtotal = updated.quantity * updated.unitCost
+          const vatRate = updated.vatRate ?? 20
+          updated.total = updated.hasVat ? lineSubtotal * (1 + vatRate / 100) : lineSubtotal
+          return updated
+        }
+        return item
+      }),
+    )
+    setShowSkuPicker((prev) => ({ ...prev, [itemId]: false }))
+  }, [products])
 
   // Add new item
   const addItem = useCallback(() => {
@@ -196,8 +367,142 @@ export default function CreateInvoiceScreen() {
       return
     }
     setItems((prev) => prev.filter((item) => item.id !== itemId))
+    // Clean up item-specific state
+    setItemSkus((prev) => {
+      const updated = { ...prev }
+      delete updated[itemId]
+      return updated
+    })
+    setLoadingSkus((prev) => {
+      const updated = { ...prev }
+      delete updated[itemId]
+      return updated
+    })
+    setShowProductPicker((prev) => {
+      const updated = { ...prev }
+      delete updated[itemId]
+      return updated
+    })
+    setShowSkuPicker((prev) => {
+      const updated = { ...prev }
+      delete updated[itemId]
+      return updated
+    })
   }, [items.length])
 
+  // Format date for display (DD/MM/YYYY)
+  const formatDateForDisplay = useCallback((dateString: string) => {
+    if (!dateString) return ''
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return dateString
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  }, [])
+
+  // Handle date picker change
+  const handleDateChange = useCallback((event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false)
+      if (event.type === 'set' && selectedDate) {
+        const dateString = selectedDate.toISOString().split('T')[0] // YYYY-MM-DD format
+        setInvoiceDate(dateString)
+      }
+    } else {
+      // iOS
+      if (selectedDate) {
+        const dateString = selectedDate.toISOString().split('T')[0] // YYYY-MM-DD format
+        setInvoiceDate(dateString)
+      }
+      if (event.type === 'dismissed') {
+        setShowDatePicker(false)
+      }
+    }
+  }, [])
+
+  // Validate stock availability for items with SKUs
+  const validateStockAvailability = useCallback((items: InvoiceItem[], itemSkus: Record<string, SKU[]>): { isValid: boolean; errorMessage?: string } => {
+    for (const item of items) {
+      // Only validate items with selectedProductId and selectedSkuId
+      if (!item.selectedProductId || !item.selectedSkuId) {
+        continue
+      }
+
+      const skus = itemSkus[item.id]
+      if (!skus || skus.length === 0) {
+        // Skip validation if SKUs not loaded (shouldn't happen, but be defensive)
+        continue
+      }
+
+      const selectedSku = skus.find((sku) => sku.name === item.selectedSkuId)
+      if (!selectedSku) {
+        continue
+      }
+
+      // Use currentStockOfPrimaryPackages if available, otherwise fallback to currentStock
+      const availableStock = selectedSku.currentStockOfPrimaryPackages ?? selectedSku.currentStock ?? 0
+
+      if (item.quantity > availableStock) {
+        return {
+          isValid: false,
+          errorMessage: `Insufficient stock for ${item.description}. Available: ${availableStock}, Requested: ${item.quantity}`,
+        }
+      }
+    }
+
+    return { isValid: true }
+  }, [])
+
+  // Transform InvoiceItem[] to API items format
+  const transformItemsToApiFormat = useCallback(
+    (items: InvoiceItem[]): Array<{
+      name: string
+      price: number
+      quantity: number
+      description?: string
+      productId?: string
+      skuId?: string
+      vatRate?: number
+    }> => {
+      return items.map((item) => {
+        const apiItem: {
+          name: string
+          price: number
+          quantity: number
+          description?: string
+          productId?: string
+          skuId?: string
+          vatRate?: number
+        } = {
+          name: item.description,
+          price: item.unitCost,
+          quantity: item.quantity,
+          description: item.description,
+        }
+
+        // Always include productId and skuId for COGS calculation (REQUIRED by backend)
+        // These fields must be included for each item when creating manual invoices
+        // Similar to POS sales - both productId and skuId must be provided together
+        if (item.selectedProductId && item.selectedSkuId) {
+          apiItem.productId = item.selectedProductId
+          apiItem.skuId = item.selectedSkuId // Using SKU name (same as POS screen)
+        }
+        // Note: If productId/skuId are not selected, they are omitted from the request
+        // (JSON serialization omits undefined properties)
+        // Backend requires these fields for COGS tracking when available
+
+        // Include VAT rate when present so backend can apply correct tax logic per line.
+        if (item.vatRate !== undefined) {
+          apiItem.vatRate = item.vatRate
+        }
+
+        return apiItem
+      })
+    },
+    [],
+  )
 
   // Handle create invoice
   const handleCreateInvoice = useCallback(async () => {
@@ -235,9 +540,20 @@ export default function CreateInvoiceScreen() {
     setSubmitting(true)
 
     try {
+      // Validate stock availability for items with SKUs (optional but recommended)
+      const stockValidation = validateStockAvailability(items, itemSkus)
+      if (!stockValidation.isValid) {
+        Alert.alert('Insufficient Stock', stockValidation.errorMessage || 'One or more items have insufficient stock.')
+        setSubmitting(false)
+        return
+      }
+
       // Step 1: Create transaction in backend
       const transactionCurrency = currency || businessCurrency
       const description = items.map(item => item.description).join(', ') || 'Invoice items'
+      
+      // Transform items to API format (includes productId and skuId for SKU stock deduction)
+      const apiItems = transformItemsToApiFormat(items)
       
       const transactionResponse = await transactions2Api.createSaleTransaction({
         businessId,
@@ -252,6 +568,8 @@ export default function CreateInvoiceScreen() {
         // Without this, the entire totalAmount will incorrectly go to Sales Revenue
         // With this, Sales Revenue gets net amount, VAT Output Tax gets VAT amount
         vatAmount: vatTotal > 0 ? vatTotal : undefined,
+        // Include items array for SKU stock deduction (backend will validate and deduct stock)
+        items: apiItems.length > 0 ? apiItems : undefined,
       })
 
       console.log('Transaction created:', transactionResponse.transactionId)
@@ -372,8 +690,17 @@ export default function CreateInvoiceScreen() {
       }
     } catch (error) {
       console.error('Failed to create invoice:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create invoice. Please try again.'
-      Alert.alert('Error', errorMessage)
+      // Handle insufficient stock errors from backend
+      if (error instanceof ApiError) {
+        if (error.status === 400 && error.message.toLowerCase().includes('insufficient stock')) {
+          Alert.alert('Insufficient Stock', error.message || 'One or more items have insufficient stock.')
+        } else {
+          Alert.alert('Error', error.message || 'Failed to create invoice. Please try again.')
+        }
+      } else {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create invoice. Please try again.'
+        Alert.alert('Error', errorMessage)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -385,12 +712,15 @@ export default function CreateInvoiceScreen() {
     businessCurrency,
     reference,
     items,
+    itemSkus,
     grandTotal,
     subtotal,
     vatTotal,
     selectedIncomeAccount,
     businessId,
     navigation,
+    validateStockAvailability,
+    transformItemsToApiFormat,
   ])
 
   return (
@@ -420,12 +750,70 @@ export default function CreateInvoiceScreen() {
           <View style={styles.row}>
             <View style={styles.halfWidth}>
               <Text style={styles.label}>Invoice Date</Text>
-              <TextInput
-                style={styles.input}
-                value={invoiceDate}
-                onChangeText={setInvoiceDate}
-                placeholder="YYYY-MM-DD"
-              />
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text
+                  style={[
+                    styles.datePickerButtonText,
+                    !invoiceDate && styles.datePickerButtonTextPlaceholder,
+                  ]}
+                >
+                  {invoiceDate ? formatDateForDisplay(invoiceDate) : 'Select date'}
+                </Text>
+                <MaterialIcons name="calendar-today" size={20} color={GRAYSCALE_SECONDARY} />
+              </TouchableOpacity>
+              {showDatePicker && (
+                <>
+                  {Platform.OS === 'ios' ? (
+                    <Modal
+                      transparent
+                      animationType="slide"
+                      visible={showDatePicker}
+                      onRequestClose={() => setShowDatePicker(false)}
+                    >
+                      <View style={styles.datePickerModalContainer}>
+                        <View style={styles.datePickerModalContent}>
+                          <View style={styles.datePickerModalHeader}>
+                            <TouchableOpacity
+                              onPress={() => setShowDatePicker(false)}
+                              style={styles.datePickerModalButton}
+                            >
+                              <Text style={styles.datePickerModalButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.datePickerModalTitle}>Select Date</Text>
+                            <TouchableOpacity
+                              onPress={() => setShowDatePicker(false)}
+                              style={styles.datePickerModalButton}
+                            >
+                              <Text style={[styles.datePickerModalButtonText, styles.datePickerModalButtonTextDone]}>
+                                Done
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                          <DateTimePicker
+                            value={new Date(invoiceDate)}
+                            mode="date"
+                            display="spinner"
+                            onChange={handleDateChange}
+                            maximumDate={new Date()}
+                            style={styles.datePickerIOS}
+                          />
+                        </View>
+                      </View>
+                    </Modal>
+                  ) : (
+                    <DateTimePicker
+                      value={new Date(invoiceDate)}
+                      mode="date"
+                      display="default"
+                      onChange={handleDateChange}
+                      maximumDate={new Date()}
+                    />
+                  )}
+                </>
+              )}
             </View>
             <View style={styles.halfWidth}>
               <Text style={styles.label}>Invoice Number</Text>
@@ -527,43 +915,169 @@ export default function CreateInvoiceScreen() {
                 )}
               </View>
 
-              <Text style={styles.label}>Description *</Text>
-              <TextInput
-                style={styles.input}
-                value={item.description}
-                onChangeText={(text) => {
-                  setItems((prev) =>
-                    prev.map((i) => (i.id === item.id ? { ...i, description: text } : i))
-                  )
-                }}
-                placeholder="Enter item description"
-              />
+              {/* Product Selection */}
+              <Text style={styles.label}>Product (Optional)</Text>
+              <TouchableOpacity
+                style={styles.pickerButton}
+                onPress={() => setShowProductPicker((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+              >
+                <Text
+                  style={[
+                    styles.pickerButtonText,
+                    !item.selectedProductId && styles.pickerButtonTextPlaceholder,
+                  ]}
+                >
+                  {item.selectedProductId
+                    ? products.find((p) => p.id === item.selectedProductId)?.name || 'Select product'
+                    : 'Select product'}
+                </Text>
+                <MaterialIcons name="arrow-drop-down" size={20} color={GRAYSCALE_SECONDARY} />
+              </TouchableOpacity>
+              {showProductPicker[item.id] && (
+                <View style={styles.pickerDropdown}>
+                  {loadingProducts ? (
+                    <ActivityIndicator size="small" color={GRAYSCALE_PRIMARY} />
+                  ) : (
+                    <ScrollView style={styles.pickerList} nestedScrollEnabled>
+                      <TouchableOpacity
+                        style={styles.pickerOption}
+                        onPress={() => {
+                          setItems((prev) =>
+                            prev.map((i) =>
+                              i.id === item.id
+                                ? {
+                                    ...i,
+                                    selectedProductId: undefined,
+                                    selectedSkuId: undefined,
+                                    description: '',
+                                    unitCost: 0,
+                                    unitCostText: '',
+                                  }
+                                : i
+                            )
+                          )
+                          setShowProductPicker((prev) => ({ ...prev, [item.id]: false }))
+                          setShowSkuPicker((prev) => ({ ...prev, [item.id]: false }))
+                        }}
+                      >
+                        <Text style={styles.pickerOptionText}>None (Manual Entry)</Text>
+                        {!item.selectedProductId && (
+                          <MaterialIcons name="check" size={18} color={GRAYSCALE_PRIMARY} />
+                        )}
+                      </TouchableOpacity>
+                      {products.map((product) => (
+                        <TouchableOpacity
+                          key={product.id}
+                          style={styles.pickerOption}
+                          onPress={() => handleProductSelect(item.id, product.id)}
+                        >
+                          <Text style={styles.pickerOptionText}>{product.name}</Text>
+                          {item.selectedProductId === product.id && (
+                            <MaterialIcons name="check" size={18} color={GRAYSCALE_PRIMARY} />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+              )}
+
+              {/* SKU Selection (only shown if product is selected) */}
+              {item.selectedProductId && (
+                <>
+                  <Text style={styles.label}>SKU *</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={() => setShowSkuPicker((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerButtonText,
+                        !item.selectedSkuId && styles.pickerButtonTextPlaceholder,
+                      ]}
+                    >
+                      {item.selectedSkuId
+                        ? item.selectedSkuId
+                        : 'Select SKU'}
+                    </Text>
+                    <MaterialIcons name="arrow-drop-down" size={20} color={GRAYSCALE_SECONDARY} />
+                  </TouchableOpacity>
+                  {showSkuPicker[item.id] && (
+                    <View style={styles.pickerDropdown}>
+                      {loadingSkus[item.id] ? (
+                        <ActivityIndicator size="small" color={GRAYSCALE_PRIMARY} />
+                      ) : (
+                        <ScrollView style={styles.pickerList} nestedScrollEnabled>
+                          {itemSkus[item.id] && itemSkus[item.id].length > 0 ? (
+                            itemSkus[item.id].map((sku) => (
+                              <TouchableOpacity
+                                key={sku.name}
+                                style={styles.pickerOption}
+                                onPress={() => handleSkuSelect(item.id, item.selectedProductId!, sku)}
+                              >
+                                <View style={styles.skuOptionContent}>
+                                  <Text style={styles.pickerOptionText}>{sku.name}</Text>
+                                  <Text style={styles.skuOptionDetails}>
+                                    {sku.size} {sku.unit} - {getCurrencySymbol(currency || businessCurrency)}{sku.price.toFixed(2)}
+                                  </Text>
+                                </View>
+                                {item.selectedSkuId === sku.name && (
+                                  <MaterialIcons name="check" size={18} color={GRAYSCALE_PRIMARY} />
+                                )}
+                              </TouchableOpacity>
+                            ))
+                          ) : (
+                            <View style={styles.pickerOption}>
+                              <Text style={styles.pickerOptionText}>No SKUs available</Text>
+                            </View>
+                          )}
+                        </ScrollView>
+                      )}
+                    </View>
+                  )}
+                </>
+              )}
+
+              {/* Only show Description field if no SKU is selected */}
+              {!item.selectedSkuId && (
+                <>
+                  <Text style={styles.label}>Description *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={item.description}
+                    onChangeText={(text) => {
+                      setItems((prev) =>
+                        prev.map((i) => (i.id === item.id ? { ...i, description: text } : i))
+                      )
+                    }}
+                    placeholder="Enter item description"
+                  />
+                </>
+              )}
 
               <View style={styles.row}>
                 <View style={styles.thirdWidth}>
                   <Text style={styles.label}>Quantity *</Text>
                   <TextInput
                     style={styles.input}
-                    value={item.quantity.toString()}
-                    onChangeText={(text) => {
-                      const num = parseFloat(text) || 0
-                      updateItemTotal(item.id, 'quantity', num)
-                    }}
-                    keyboardType="numeric"
+                    value={item.quantityText !== undefined ? item.quantityText : (item.quantity > 0 ? item.quantity.toString() : '')}
+                    onChangeText={(text) => updateNumericField(item.id, 'quantity', text)}
+                    keyboardType="decimal-pad"
                     placeholder="1"
                   />
                 </View>
                 <View style={styles.thirdWidth}>
                   <Text style={styles.label}>Unit Cost *</Text>
                   <TextInput
-                    style={styles.input}
-                    value={item.unitCost > 0 ? item.unitCost.toString() : ''}
-                    onChangeText={(text) => {
-                      const num = parseFloat(text) || 0
-                      updateItemTotal(item.id, 'unitCost', num)
-                    }}
-                    keyboardType="numeric"
+                    style={[
+                      styles.input,
+                      item.selectedSkuId && styles.inputDisabled,
+                    ]}
+                    value={item.unitCostText !== undefined ? item.unitCostText : (item.unitCost > 0 ? item.unitCost.toString() : '')}
+                    onChangeText={(text) => updateNumericField(item.id, 'unitCost', text)}
+                    keyboardType="decimal-pad"
                     placeholder="0.00"
+                    editable={!item.selectedSkuId}
                   />
                 </View>
                 <View style={styles.thirdWidth}>
@@ -604,9 +1118,22 @@ export default function CreateInvoiceScreen() {
           </View>
           {vatTotal > 0 && (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>VAT (20%):</Text>
+              <Text style={styles.summaryLabel}>
+                VAT{' '}
+                {items.some((i) => i.hasVat && i.vatRate !== undefined)
+                  ? `(${Array.from(
+                      new Set(
+                        items
+                          .filter((i) => i.hasVat && i.vatRate !== undefined)
+                          .map((i) => i.vatRate),
+                      ),
+                    ).join(', ')}%)`
+                  : '(20%)'}
+                :
+              </Text>
               <Text style={styles.summaryValue}>
-                {getCurrencySymbol(currency || businessCurrency)}{vatTotal.toFixed(2)}
+                {getCurrencySymbol(currency || businessCurrency)}
+                {vatTotal.toFixed(2)}
               </Text>
             </View>
           )}
@@ -683,6 +1210,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: GRAYSCALE_PRIMARY,
     backgroundColor: '#fafafa',
+  },
+  inputDisabled: {
+    backgroundColor: '#f5f5f5',
+    color: GRAYSCALE_SECONDARY,
+    borderColor: '#e8e8e8',
   },
   row: {
     flexDirection: 'row',
@@ -839,6 +1371,24 @@ const styles = StyleSheet.create({
   pickerButtonTextPlaceholder: {
     color: GRAYSCALE_SECONDARY,
   },
+  datePickerButton: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+  },
+  datePickerButtonText: {
+    fontSize: 14,
+    color: GRAYSCALE_PRIMARY,
+  },
+  datePickerButtonTextPlaceholder: {
+    color: GRAYSCALE_SECONDARY,
+  },
   pickerDropdown: {
     backgroundColor: CARD_BACKGROUND,
     borderWidth: 1,
@@ -863,8 +1413,57 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: GRAYSCALE_PRIMARY,
   },
+  skuOptionContent: {
+    flex: 1,
+  },
+  skuOptionDetails: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+    marginTop: 2,
+  },
   fieldSpacing: {
     height: 12,
+  },
+  datePickerModalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  datePickerModalContent: {
+    backgroundColor: CARD_BACKGROUND,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 20,
+  },
+  datePickerModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  datePickerModalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  datePickerModalButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  datePickerModalButtonText: {
+    fontSize: 16,
+    color: GRAYSCALE_SECONDARY,
+  },
+  datePickerModalButtonTextDone: {
+    color: GRAYSCALE_PRIMARY,
+    fontWeight: '600',
+  },
+  datePickerIOS: {
+    width: '100%',
+    height: 200,
   },
 })
 

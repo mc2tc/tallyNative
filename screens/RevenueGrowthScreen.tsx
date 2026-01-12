@@ -6,9 +6,7 @@ import Svg, { Rect } from 'react-native-svg'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
-import { transactions2Api } from '../lib/api/transactions2'
-import type { Transaction } from '../lib/api/transactions2'
-import { businessContextApi } from '../lib/api/businessContext'
+import { healthScoreApi } from '../lib/api/transactions2'
 import { getCurrencySymbol } from '../lib/utils/currency'
 
 type PeriodData = {
@@ -40,95 +38,9 @@ export default function RevenueGrowthScreen() {
   const growthPercentage = healthScore?.rawMetrics.revenueGrowthPercentage ?? 0
   const timeframe = healthScore?.timeframe ?? 'week'
 
-  // Calculate date ranges for periods
-  const getDateRanges = useCallback((timeframe: 'week' | 'month' | 'quarter', numPeriods: number = 4) => {
-    const now = new Date()
-    const ranges: Array<{ startDate: number; endDate: number; index: number }> = []
-
-    for (let i = 0; i < numPeriods; i++) {
-      let startDate: Date
-      let endDate: Date
-
-      if (timeframe === 'week') {
-        // For week: get the start of the current week (Sunday) and go back
-        const currentWeekStart = new Date(now)
-        currentWeekStart.setDate(now.getDate() - now.getDay()) // Go to Sunday
-        currentWeekStart.setHours(0, 0, 0, 0)
-
-        startDate = new Date(currentWeekStart)
-        startDate.setDate(currentWeekStart.getDate() - (i * 7))
-        endDate = new Date(startDate)
-        endDate.setDate(startDate.getDate() + 6)
-        endDate.setHours(23, 59, 59, 999)
-      } else if (timeframe === 'month') {
-        // For month: get the start of the current month and go back
-        startDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        startDate.setHours(0, 0, 0, 0)
-        endDate = new Date(now.getFullYear(), now.getMonth() - i + 1, 0)
-        endDate.setHours(23, 59, 59, 999)
-      } else {
-        // For quarter: get the start of the current quarter and go back
-        const currentQuarter = Math.floor(now.getMonth() / 3)
-        const currentYear = now.getFullYear()
-        const quarterMonth = currentQuarter * 3
-
-        startDate = new Date(currentYear, quarterMonth - (i * 3), 1)
-        startDate.setHours(0, 0, 0, 0)
-        endDate = new Date(currentYear, quarterMonth - (i * 3) + 3, 0)
-        endDate.setHours(23, 59, 59, 999)
-      }
-
-      ranges.push({
-        startDate: startDate.getTime(),
-        endDate: endDate.getTime(),
-        index: i,
-      })
-    }
-
-    return ranges
-  }, [])
-
-  // Get period label
-  const getPeriodLabel = useCallback((index: number, currentTimeframe: string) => {
-    if (index === 0) return currentTimeframe.charAt(0).toUpperCase() + currentTimeframe.slice(1)
-    const labels = {
-      week: ['Week', 'Week', 'Week'],
-      month: ['Month', 'Month', 'Month'],
-      quarter: ['Quarter', 'Quarter', 'Quarter'],
-    }
-    return `${labels[currentTimeframe as keyof typeof labels]?.[index - 1] || 'Period'} -${index}`
-  }, [])
-
-  // Calculate previous timeframe label
-  const getPreviousTimeframeLabel = (current: string) => {
-    if (current === 'week') return 'Previous Week'
-    if (current === 'month') return 'Previous Month'
-    if (current === 'quarter') return 'Previous Quarter'
-    return 'Previous Period'
-  }
-
-  // Fetch business currency
+  // Fetch period revenue data from backend
   useEffect(() => {
-    const fetchCurrency = async () => {
-      if (!businessId) return
-      
-      try {
-        const context = await businessContextApi.getContext(businessId)
-        if (context.context?.primaryCurrency) {
-          setCurrency(context.context.primaryCurrency)
-        }
-      } catch (error) {
-        console.error('[RevenueGrowthScreen] Failed to fetch business currency:', error)
-        // Default to GBP if fetch fails
-      }
-    }
-
-    fetchCurrency()
-  }, [businessId])
-
-  // Fetch revenue data
-  useEffect(() => {
-    const fetchRevenueData = async () => {
+    const fetchPeriodData = async () => {
       if (!businessId) {
         setError('Business ID not available')
         setLoading(false)
@@ -139,60 +51,43 @@ export default function RevenueGrowthScreen() {
         setLoading(true)
         setError(null)
 
-        // Get date ranges for 4 periods
-        const dateRanges = getDateRanges(timeframe, 4)
-
-        // Fetch all sales transactions (we'll need to fetch all and filter by date client-side
-        // since the API doesn't support date range filtering directly)
-        let allTransactions: Transaction[] = []
-        let page = 1
-        let hasMore = true
-
-        while (hasMore) {
-          const response = await transactions2Api.getTransactions3(
-            businessId,
-            'source_of_truth',
-            { page, limit: 100, kind: 'sale' }
-          )
-
-          allTransactions = [...allTransactions, ...response.transactions]
-          hasMore = response.pagination.hasNextPage
-          page++
+        // Fetch health score with period data
+        const response = await healthScoreApi.getHealthScore(businessId, timeframe, true)
+        
+        if (!response.success || !response.data?.healthScore?.periodData) {
+          setError('Period data not available')
+          setLoading(false)
+          return
         }
 
-        // Calculate revenue for each period
-        const periodRevenues: PeriodData[] = dateRanges.map((range, index) => {
-          const periodTransactions = allTransactions.filter((tx) => {
-            const txDate = tx.summary.transactionDate
-            return txDate >= range.startDate && txDate <= range.endDate
-          })
+        const periodData = response.data.healthScore.periodData
 
-          const revenue = periodTransactions.reduce((sum, tx) => {
-            // For sales, totalAmount is positive revenue
-            return sum + (tx.summary.totalAmount || 0)
-          }, 0)
+        // Set currency from backend response
+        if (periodData.currency) {
+          setCurrency(periodData.currency)
+        }
 
-          return {
-            label: getPeriodLabel(index, timeframe),
-            value: revenue,
-            startDate: range.startDate,
-            endDate: range.endDate,
-          }
-        })
+        // Convert backend period data to frontend format (using revenue values)
+        const periodRevenues: PeriodData[] = periodData.periods.map((period) => ({
+          label: period.label,
+          value: period.revenue,
+          startDate: period.startDate,
+          endDate: period.endDate,
+        }))
 
         setRevenueData(periodRevenues)
-        setCurrentRevenue(periodRevenues[0]?.value || 0)
-        setPreviousRevenue(periodRevenues[1]?.value || 0)
+        setCurrentRevenue(periodData.currentPeriod.revenue)
+        setPreviousRevenue(periodData.previousPeriod.revenue)
       } catch (err) {
-        console.error('[RevenueGrowthScreen] Failed to fetch revenue data:', err)
-        setError(err instanceof Error ? err.message : 'Failed to fetch revenue data')
+        console.error('[RevenueGrowthScreen] Failed to fetch period data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch period data')
       } finally {
         setLoading(false)
       }
     }
 
-    fetchRevenueData()
-  }, [businessId, timeframe, getDateRanges, getPeriodLabel])
+    fetchPeriodData()
+  }, [businessId, timeframe])
 
   const maxValue = revenueData.length > 0
     ? Math.max(...revenueData.map(d => d.value), 1) // Ensure at least 1 to avoid division by zero
@@ -218,13 +113,17 @@ export default function RevenueGrowthScreen() {
               <View style={styles.detailsList}>
                 {/* Top line: Revenue data for current and previous timeframe */}
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}</Text>
+                  <Text style={styles.detailLabel}>
+                    {revenueData[0]?.label || (timeframe === 'week' 
+                      ? (healthScore?.usesRollingAverage ? 'Last 28 days' : 'Last 7 days')
+                      : (timeframe === 'month' ? 'Last 30 days' : 'Last 90 days'))}
+                  </Text>
                   <Text style={styles.detailValue}>
                     {getCurrencySymbol(currency)}{currentRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{getPreviousTimeframeLabel(timeframe)}</Text>
+                  <Text style={styles.detailLabel}>{revenueData[1]?.label || 'Previous Period'}</Text>
                   <Text style={styles.detailValue}>
                     {getCurrencySymbol(currency)}{previousRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Text>

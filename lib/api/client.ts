@@ -15,12 +15,6 @@ const BASE_URL =
         default: 'http://localhost:3000',
       })
 
-// Log the configured base URL for debugging
-if (__DEV__) {
-  console.log(`[API] Configured base URL: ${BASE_URL}`)
-  console.log(`[API] Platform: ${Platform.OS}`)
-  console.log(`[API] Custom base URL from env: ${configuredBaseUrl || 'not set'}`)
-}
 
 
 export class ApiError extends Error {
@@ -54,9 +48,6 @@ async function apiRequest<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const url = `${BASE_URL}${endpoint}`
-  console.log(`[API] Making request to: ${url}`)
-  console.log(`[API] Base URL: ${BASE_URL}`)
-  console.log(`[API] Platform: ${Platform.OS}`)
   
   let token = await getAuthToken(false) // Use cached token first
 
@@ -67,19 +58,16 @@ async function apiRequest<T>(
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}` // Use full token for authentication
-    console.log(`[API] Added Authorization header with token: ${token.substring(0, 20)}...`)
   } else {
     console.warn(`[API] No auth token available - request will be unauthenticated`)
   }
 
   let response: Response
   try {
-    console.log(`[API] Starting fetch request to: ${url}`)
     response = await fetch(url, {
       ...options,
       headers: headers as HeadersInit,
     })
-    console.log(`[API] Fetch completed, status: ${response.status}`)
     
     // If we get a 401, try refreshing the token once
     if (response.status === 401 && token) {

@@ -56,10 +56,6 @@ export default function AddTransactionScreen() {
       : nonPersonalMembershipId) ?? membershipIds[0]
 
   const [busy, setBusy] = useState(false)
-  const [lastImageUri, setLastImageUri] = useState<string | null>(null)
-  const [isPdfFile, setIsPdfFile] = useState(false)
-  const [pdfFileName, setPdfFileName] = useState<string | null>(null)
-  const [resultSummary, setResultSummary] = useState<string | null>(null)
 
   const canCapture = useMemo(() => Boolean(businessId) && !busy, [businessId, busy])
 
@@ -98,138 +94,26 @@ export default function AddTransactionScreen() {
         throw new Error('No file URI returned from picker')
       }
       
-      // Track file type for preview
-      setIsPdfFile(isPdf)
-      if (isPdf) {
-        setPdfFileName(asset.fileName || 'document.pdf')
-        setLastImageUri(null) // Don't try to render PDF as image
-      } else {
-        setLastImageUri(asset.uri)
-        setPdfFileName(null)
-      }
+      const transactionType = getTransactionType()
+      const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
       
-      const { downloadUrl, fileSize } = await uploadReceiptAndGetUrl({
+      // Navigate to UploadProcessingScreen for all OCR uploads
+      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
+        pdfFileName: isPdf ? (asset.fileName || 'document.pdf') : undefined,
+        pdfUri: isPdf ? asset.uri : undefined,
+        imageUri: !isPdf ? asset.uri : undefined,
+        isPdf,
+        success: false,
+        pipelineSection: context?.pipelineSection,
         businessId,
         localUri: asset.uri,
         fileNameHint: asset.fileName ?? undefined,
         contentType: asset.type ?? undefined,
+        transactionType,
+        inputMethod,
       })
-      
-      const transactionType = getTransactionType()
-      const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
-      
-      try {
-        // Sales section ALWAYS uses transactions3 sales invoice OCR endpoint
-        // Bank section ALWAYS uses transactions3 bank statement upload endpoint
-        // Credit Cards section ALWAYS uses transactions3 credit card statement upload endpoint
-        // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
-        // For purchases from receipts section, also use transactions3
-        // For other transaction types, use the unified transactions2 endpoint
-        const useSalesInvoiceOcr = context?.pipelineSection === 'sales'
-        const useBankStatementUpload = context?.pipelineSection === 'bank' && isPdf
-        const useCreditCardStatementUpload = context?.pipelineSection === 'cards' && isPdf
-        const useTransactions3Purchase = context?.pipelineSection === 'purchases3' || 
-          (transactionType === 'purchase' && (inputMethod === 'ocr_image' || inputMethod === 'ocr_pdf'))
-        
-        let response
-        if (useSalesInvoiceOcr) {
-          // Use transactions3 sales invoice OCR endpoint
-          // For images: use fileUrl, for PDFs: use pdfUrl
-          response = await transactions2Api.createSalesInvoiceOcr(
-            businessId,
-            isPdf ? undefined : downloadUrl,
-            isPdf ? downloadUrl : undefined,
-            fileSize
-          )
-          
-          if (response.success) {
-            setResultSummary(`Invoice processed successfully`)
-          } else if (response.logged) {
-            // Transaction type/input method not yet implemented (501)
-            Alert.alert(
-              'Not Yet Available',
-              response.message || `Sales invoice OCR is not yet implemented. This request has been logged for future implementation.`
-            )
-          } else {
-            throw new Error(response.message || 'Failed to process invoice')
-          }
-        } else if (useBankStatementUpload) {
-          // Use transactions3 bank statement upload endpoint
-          // Note: bankName and accountNumber are optional, can be added later if needed
-          response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
-            // TODO: Get bankName and accountNumber from bankAccounts API if context.bankAccountId is available
-            fileSize,
-          })
-          
-          // The response is grouped - show summary
-          if (response.success) {
-            const summary = response.summary
-            setResultSummary(
-              `Bank statement processed: ${summary.totalTransactions} transactions. ` +
-              `${summary.ruleMatched} rule-matched, ${summary.needsReconciliation} need reconciliation.`
-            )
-          } else {
-            throw new Error('Failed to process bank statement')
-          }
-        } else if (useCreditCardStatementUpload) {
-          // Use transactions3 credit card statement upload endpoint
-          // Note: cardName and cardNumber are optional, can be added later if needed
-          response = await transactions2Api.uploadCreditCardStatement(businessId, downloadUrl, {
-            // TODO: Get cardName and cardNumber from creditCards API if context.cardId is available
-            fileSize,
-          })
-          
-          // The response is grouped - show summary
-          if (response.success) {
-            const summary = response.summary
-            setResultSummary(
-              `Credit card statement processed: ${summary.totalTransactions} transactions. ` +
-              `${summary.ruleMatched} rule-matched, ${summary.needsReconciliation} need reconciliation.`
-            )
-          } else {
-            throw new Error('Failed to process credit card statement')
-          }
-        } else if (useTransactions3Purchase) {
-          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl, fileSize)
-          
-          if (response.success) {
-            setResultSummary(`Transaction created successfully`)
-          } else if (response.logged) {
-            // Transaction type/input method not yet implemented (501)
-            Alert.alert(
-              'Not Yet Available',
-              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
-            )
-          } else {
-            throw new Error(response.message || 'Failed to create transaction')
-          }
-        } else {
-          response = await transactions2Api.createTransaction({
-            businessId,
-            transactionType,
-            inputMethod,
-            fileUrl: downloadUrl,
-          })
-          
-          if (response.success) {
-            setResultSummary(`Transaction created successfully`)
-          } else if (response.logged) {
-            // Transaction type/input method not yet implemented (501)
-            Alert.alert(
-              'Not Yet Available',
-              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
-            )
-          } else {
-            throw new Error(response.message || 'Failed to create transaction')
-          }
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to create transaction'
-        Alert.alert('Error', message)
-        throw error
-      }
     },
-    [businessId, getTransactionType, context],
+    [businessId, getTransactionType, context, navigation],
   )
 
   const pickFromLibrary = useCallback(async () => {
@@ -239,10 +123,6 @@ export default function AddTransactionScreen() {
         return
       }
       setBusy(true)
-      setResultSummary(null)
-      setIsPdfFile(false)
-      setPdfFileName(null)
-      setLastImageUri(null)
       const result = await launchImageLibrary({
         mediaType: 'photo',
         selectionLimit: 1,
@@ -267,10 +147,6 @@ export default function AddTransactionScreen() {
         return
       }
       setBusy(true)
-      setResultSummary(null)
-      setIsPdfFile(false)
-      setPdfFileName(null)
-      setLastImageUri(null)
       const result = await launchCamera({
         mediaType: 'photo',
         saveToPhotos: true,
@@ -295,10 +171,6 @@ export default function AddTransactionScreen() {
         return
       }
       setBusy(true)
-      setResultSummary(null)
-      setIsPdfFile(false)
-      setPdfFileName(null)
-      setLastImageUri(null)
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
         copyToCacheDirectory: true,
@@ -330,146 +202,24 @@ export default function AddTransactionScreen() {
         return
       }
       
-      // For PDFs, handle sales invoices directly, others navigate to processing screen
-      if (isPdf) {
-        const transactionType = getTransactionType()
-        const isSalesContext = context?.pipelineSection === 'sales'
-        
-        if (isSalesContext) {
-          // Handle sales invoice PDFs directly using sales invoice OCR endpoint
-          setIsPdfFile(true)
-          setPdfFileName(file.name || 'document.pdf')
-          setLastImageUri(null)
-          
-          const { downloadUrl, fileSize } = await uploadReceiptAndGetUrl({
-            businessId,
-            localUri: file.uri,
-            fileNameHint: file.name ?? undefined,
-            contentType: file.mimeType ?? undefined,
-          })
-          
-          try {
-            const response = await transactions2Api.createSalesInvoiceOcr(
-              businessId,
-              undefined, // fileUrl not used for PDFs
-              downloadUrl, // pdfUrl
-              fileSize
-            )
-            
-            if (response.success) {
-              setResultSummary(`Invoice processed successfully`)
-            } else if (response.logged) {
-              Alert.alert(
-                'Not Yet Available',
-                response.message || `Sales invoice OCR is not yet implemented. This request has been logged for future implementation.`
-              )
-            } else {
-              throw new Error(response.message || 'Failed to process invoice')
-            }
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to process invoice'
-            Alert.alert('Error', message)
-            throw error
-          }
-          
-          setBusy(false)
-          return
-        }
-        
-        // For non-sales PDFs, navigate to processing screen
-        ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
-          pdfFileName: file.name || 'document.pdf',
-          pdfUri: file.uri,
-          isPdf: true,
-          success: false,
-          pipelineSection: context?.pipelineSection,
-          businessId,
-          localUri: file.uri,
-          fileNameHint: file.name ?? undefined,
-          contentType: file.mimeType ?? undefined,
-          transactionType,
-          inputMethod: 'ocr_pdf' as const,
-        })
-        setBusy(false)
-        return
-      }
+      // Navigate to UploadProcessingScreen for all files (PDFs and images)
+      const transactionType = getTransactionType()
+      const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
       
-      // For images, continue with existing flow
-      setIsPdfFile(false)
-      setPdfFileName(null)
-      setLastImageUri(file.uri)
-      
-      const { downloadUrl, fileSize } = await uploadReceiptAndGetUrl({
+      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
+        pdfFileName: isPdf ? (file.name || 'document.pdf') : undefined,
+        pdfUri: isPdf ? file.uri : undefined,
+        imageUri: !isPdf ? file.uri : undefined,
+        isPdf,
+        success: false,
+        pipelineSection: context?.pipelineSection,
         businessId,
         localUri: file.uri,
         fileNameHint: file.name ?? undefined,
         contentType: file.mimeType ?? undefined,
+        transactionType,
+        inputMethod,
       })
-      
-      const transactionType = getTransactionType()
-      const inputMethod = 'ocr_image'
-      
-      try {
-        // Sales section ALWAYS uses transactions3 sales invoice OCR endpoint
-        // Purchases3 section ALWAYS uses transactions3 endpoint (new single-source-of-truth architecture)
-        // For purchases from receipts section, also use transactions3
-        // For other transaction types, use the unified transactions2 endpoint
-        const useSalesInvoiceOcr = context?.pipelineSection === 'sales'
-        const useTransactions3 = context?.pipelineSection === 'purchases3' || 
-          (transactionType === 'purchase' && inputMethod === 'ocr_image')
-        
-        let response
-        if (useSalesInvoiceOcr) {
-          // Use transactions3 sales invoice OCR endpoint for images
-          response = await transactions2Api.createSalesInvoiceOcr(businessId, downloadUrl, undefined, fileSize)
-          
-          if (response.success) {
-            setResultSummary(`Invoice processed successfully`)
-          } else if (response.logged) {
-            Alert.alert(
-              'Not Yet Available',
-              response.message || `Sales invoice OCR is not yet implemented. This request has been logged for future implementation.`
-            )
-          } else {
-            throw new Error(response.message || 'Failed to process invoice')
-          }
-        } else if (useTransactions3) {
-          response = await transactions2Api.createPurchaseOcr(businessId, downloadUrl, fileSize)
-          
-          if (response.success) {
-            setResultSummary(`Transaction created successfully`)
-          } else if (response.logged) {
-            Alert.alert(
-              'Not Yet Available',
-              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
-            )
-          } else {
-            throw new Error(response.message || 'Failed to create transaction')
-          }
-        } else {
-          response = await transactions2Api.createTransaction({
-            businessId,
-            transactionType,
-            inputMethod,
-            fileUrl: downloadUrl,
-          })
-          
-          if (response.success) {
-            setResultSummary(`Transaction created successfully`)
-          } else if (response.logged) {
-            Alert.alert(
-              'Not Yet Available',
-              response.message || `Transaction type '${transactionType}' with input method '${inputMethod}' is not yet implemented. This request has been logged for future implementation.`
-            )
-          } else {
-            throw new Error(response.message || 'Failed to create transaction')
-          }
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to create transaction'
-        Alert.alert('Error', message)
-        throw error
-      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Unexpected error'
       Alert.alert('File selection failed', message)
@@ -519,25 +269,6 @@ export default function AddTransactionScreen() {
     >
       <View style={styles.container}>
         <View style={styles.content}>
-          {context?.pipelineSection && (
-            <Text style={styles.contextLabel}>
-              {context.pipelineSection === 'receipts' ? 'Purchases' :
-               context.pipelineSection === 'bank' ? (
-                 context.bankAccountId 
-                   ? `Bank transactions ..${getLastFour(context.bankAccountId)}`
-                   : 'Bank transactions'
-               ) :
-               context.pipelineSection === 'cards' ? (
-                 context.cardId
-                   ? `Credit card transactions ..${getLastFour(context.cardId)}`
-                   : 'Credit card transactions'
-               ) :
-               context.pipelineSection === 'sales' ? 'Sales' :
-               context.pipelineSection === 'internal' ? 'Internal transactions' :
-               context.pipelineSection === 'reporting' ? 'Reporting ready' :
-               context.pipelineSection}
-            </Text>
-          )}
           <Text style={styles.subtitle}>
             {isSalesContext 
               ? "Choose how you'd like to add invoices."
@@ -651,23 +382,7 @@ export default function AddTransactionScreen() {
           {busy ? (
             <View style={styles.processingContainer}>
               <ActivityIndicator style={styles.progress} />
-              <Text style={styles.processingText}>Processing...</Text>
-            </View>
-          ) : null}
-          {lastImageUri ? (
-            <Image source={{ uri: lastImageUri }} style={styles.preview} />
-          ) : isPdfFile && pdfFileName ? (
-            <View style={styles.pdfPreview}>
-              <MaterialIcons name="picture-as-pdf" size={48} color="#4a4a4a" />
-              <Text style={styles.pdfFileName} numberOfLines={2}>
-                {pdfFileName}
-              </Text>
-            </View>
-          ) : null}
-          {resultSummary ? (
-            <View style={styles.resultContainer}>
-              <MaterialIcons name="check-circle" size={20} color="#4a9eff" />
-              <Text style={styles.result}>{resultSummary}</Text>
+              <Text style={styles.processingText}>Preparing...</Text>
             </View>
           ) : null}
           {!businessId ? (
@@ -727,17 +442,18 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     marginTop: 24,
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 300,
     alignSelf: 'center',
+    alignItems: 'center',
   },
   button: {
     backgroundColor: '#666666',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 8,
-    width: '100%',
+    width: '80%',
     marginBottom: 10,
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
     minHeight: 56,
   },
@@ -758,7 +474,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '500',
-    textAlign: 'left',
+    textAlign: 'center',
     marginLeft: 8,
   },
   buttonTextDisabled: {

@@ -29,6 +29,12 @@ export type PackagingData = {
   notes?: string
 }
 
+export type UnitConfirmation = {
+  extractedUnit: string
+  normalizedUnit?: string
+  question: string
+}
+
 export type PackagingExtractionSuccessResponse = {
   success: true
   packaging: PackagingData
@@ -37,6 +43,8 @@ export type PackagingExtractionSuccessResponse = {
     duration: number
     timestamp: string
   }
+  requiresConfirmation?: boolean
+  unitConfirmation?: UnitConfirmation
 }
 
 export type PackagingExtractionErrorResponse = {

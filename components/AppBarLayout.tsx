@@ -1,7 +1,8 @@
 // Layout component that provides AppBar for authenticated screens
 
 import React from 'react'
-import { SafeAreaView, View, StyleSheet, TouchableOpacity, Text } from 'react-native'
+import { View, StyleSheet, TouchableOpacity, Text } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useNavigation, DrawerActions } from '@react-navigation/native'
 import type { NavigationProp } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
@@ -57,7 +58,7 @@ export function AppBarLayout({
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={[styles.appbar, { borderColor }]}>
         <View style={styles.leftSection}>
           {onBackPress ? (
@@ -69,7 +70,7 @@ export function AppBarLayout({
               <MaterialIcons
                 name="arrow-back"
                 size={24}
-                color="#333333"
+                color="#000000"
               />
             </TouchableOpacity>
           ) : (
@@ -79,10 +80,10 @@ export function AppBarLayout({
                 style={[styles.circleButton, { borderColor }]}
                 onPress={handleFitnessPress}
               >
-                <Ionicons
-                  name="fitness"
+                <MaterialIcons
+                  name="home"
                   size={24}
-                  color="#333333"
+                  color="#000000"
                 />
               </TouchableOpacity>
               <TouchableOpacity
@@ -93,14 +94,18 @@ export function AppBarLayout({
                 <MaterialIcons
                   name="view-module"
                   size={24}
-                  color="#333333"
+                  color="#000000"
                 />
               </TouchableOpacity>
             </>
           )}
         </View>
         <View style={[styles.titleContainer, { borderColor }]}>
-          {title ? <Text style={styles.titleText}>{title}</Text> : null}
+          {title ? (
+            <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
+              {(title.length > 24 ? title.substring(0, 24) + '...' : title).toUpperCase()}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.rightSection}>
           {showProfileIcon ? (
@@ -110,7 +115,7 @@ export function AppBarLayout({
               onPress={handleAvatarPress}
             >
               <View style={styles.avatar}>
-                <MaterialIcons name="account-circle" size={32} color="#333333" />
+                <MaterialIcons name="account-circle" size={32} color="#000000" />
               </View>
             </TouchableOpacity>
           ) : rightIconName && onRightIconPress ? (
@@ -120,7 +125,7 @@ export function AppBarLayout({
               onPress={onRightIconPress}
             >
               <View style={styles.avatar}>
-                <Ionicons name={rightIconName} size={28} color="#333333" />
+                <Ionicons name={rightIconName} size={28} color="#000000" />
               </View>
             </TouchableOpacity>
           ) : (
@@ -137,7 +142,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#fafafa',
-    paddingTop: 40,
   },
   appbar: {
     backgroundColor: '#fafafa',

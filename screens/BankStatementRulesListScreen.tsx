@@ -82,7 +82,7 @@ export default function BankStatementRulesListScreen() {
           >
             <MaterialIcons name="arrow-back" size={24} color={GRAYSCALE_PRIMARY} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Auto bank rules</Text>
+          <Text style={styles.headerTitle}>AUTO BANK RULES</Text>
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleCreateRule}

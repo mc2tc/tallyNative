@@ -29,7 +29,7 @@ type EditPackagingRouteProp =
 export default function EditPackagingScreen() {
   const navigation = useNavigation<any>()
   const route = useRoute<EditPackagingRouteProp>()
-  const { packaging, packagingType, onSave, manageStockParams } = route.params
+  const { packaging, packagingType, onSave, onDelete, manageStockParams } = route.params
   const insets = useSafeAreaInsets()
 
   const [description, setDescription] = useState(packaging.description || '')
@@ -107,6 +107,34 @@ export default function EditPackagingScreen() {
     }
   }
 
+  const handleDelete = () => {
+    if (!onDelete) return
+
+    Alert.alert(
+      'Delete Secondary Packaging',
+      'Are you sure you want to delete the secondary packaging? This will remove it from the item.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            onDelete()
+            // Navigate back to ManageStock screen with params
+            if (manageStockParams) {
+              navigation.navigate('ManageStock' as never, manageStockParams as any)
+            } else {
+              navigation.goBack()
+            }
+          },
+        },
+      ],
+    )
+  }
+
   const title = packagingType === 'primary' ? 'Edit Primary Packaging' : 'Edit Secondary Packaging'
 
   return (
@@ -179,6 +207,18 @@ export default function EditPackagingScreen() {
             <Text style={styles.saveButtonText}>Save</Text>
           )}
         </TouchableOpacity>
+
+        {/* Delete button for secondary packaging */}
+        {packagingType === 'secondary' && onDelete && (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={handleDelete}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="delete-outline" size={20} color="#d32f2f" />
+            <Text style={styles.deleteButtonText}>Delete Secondary Packaging</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </AppBarLayout>
   )
@@ -229,6 +269,24 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#d32f2f',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  deleteButtonText: {
+    color: '#d32f2f',
     fontSize: 16,
     fontWeight: '600',
   },

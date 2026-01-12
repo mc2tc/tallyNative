@@ -20,7 +20,6 @@ const customTheme = {
 }
 
 export default function App() {
-  console.log('App: Initializing with custom Paper theme')
   return (
     <PaperProvider theme={customTheme}>
       <DropProvider>

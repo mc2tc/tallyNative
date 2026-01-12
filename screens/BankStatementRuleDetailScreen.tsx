@@ -89,7 +89,7 @@ export default function BankStatementRuleDetailScreen() {
           >
             <MaterialIcons name="arrow-back" size={24} color={GRAYSCALE_PRIMARY} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{rule.title}</Text>
+          <Text style={styles.headerTitle}>{(rule.title || '').toUpperCase()}</Text>
           <View style={styles.backButton} />
         </View>
 

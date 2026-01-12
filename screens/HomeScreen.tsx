@@ -214,7 +214,7 @@ export default function HomeScreen() {
             />
             <KPIDetailCard
               title="Net Profit"
-              metricValue={`${netProfitMargin.toFixed(1)}%`}
+              metricValue={`${netProfitMargin > 0 ? '+' : ''}${netProfitMargin.toFixed(1)}%`}
               score={netProfit}
               label="Net Profit"
               progress={netProfit}

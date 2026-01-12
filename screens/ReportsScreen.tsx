@@ -51,7 +51,7 @@ const reportCards: ReportCardConfig[] = [
 ]
 
 export default function ReportsScreen() {
-  useModuleTracking('taxPreparation')
+  useModuleTracking('tax_compliance')
   const navigation = useNavigation<StackNavigationProp<ReportsStackParamList>>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
@@ -316,7 +316,7 @@ export default function ReportsScreen() {
   }
 
   return (
-    <AppBarLayout title="Reports">
+    <AppBarLayout title="REPORTS">
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}

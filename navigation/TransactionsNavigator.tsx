@@ -37,6 +37,7 @@ export type TransactionsStackParamList = {
   UploadProcessing: { 
     pdfFileName?: string
     pdfUri?: string
+    imageUri?: string
     isPdf: boolean
     success: boolean
     pipelineSection?: string
@@ -79,6 +80,7 @@ export type TransactionsStackParamList = {
     packaging: PrimaryPackaging | SecondaryPackaging
     packagingType: 'primary' | 'secondary'
     onSave: (updatedPackaging: PrimaryPackaging | SecondaryPackaging) => void
+    onDelete?: () => void
     manageStockParams?: { itemName: string; itemText: string; businessId: string; inventoryItemId?: string }
   }
 }

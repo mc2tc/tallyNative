@@ -1,6 +1,7 @@
 // Inventory Item Detail screen
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, SafeAreaView, PanResponder, Animated, Modal } from 'react-native'
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, PanResponder, Animated, Modal } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
@@ -66,6 +67,7 @@ type InventoryItemDetailRouteParams = {
   businessId: string
   viewAllTitle?: string
   viewAllItems?: InventoryViewAllItem[]
+  previousScreen?: 'InventoryManagement' | 'InventoryViewAll' // Track where user came from
 }
 
 type InventoryItemDetailRouteProp = RouteProp<
@@ -83,7 +85,7 @@ export default function InventoryItemDetailScreen() {
     viewAllTitle: undefined,
     viewAllItems: [],
   }
-  const { item, section, businessId, viewAllItems } = params
+  const { item, section, businessId, viewAllItems, previousScreen } = params
   const viewAllTitle = params.viewAllTitle || section
   const [selectedAction, setSelectedAction] = useState<string>('')
   const [groupedItems, setGroupedItems] = useState<InventoryItem[]>([])
@@ -217,13 +219,19 @@ export default function InventoryItemDetailScreen() {
   }, [item?.groupedItemIds, businessId, item?.inventoryItem?.debitAccount, section])
 
   const handleGoBack = () => {
-    // Navigate explicitly to InventoryViewAll screen
-    ;(navigation as any).navigate('InventoryViewAll', {
-      title: viewAllTitle || section,
-      items: viewAllItems || [],
-      section,
-      businessId,
-    })
+    // Navigate back to the screen the user came from
+    if (previousScreen === 'InventoryManagement') {
+      // Navigate back to InventoryManagement
+      navigation.navigate('InventoryManagement' as never)
+    } else {
+      // Default to InventoryViewAll (for backward compatibility and when coming from ViewAll)
+      ;(navigation as any).navigate('InventoryViewAll', {
+        title: viewAllTitle || section,
+        items: viewAllItems || [],
+        section,
+        businessId,
+      })
+    }
   }
 
   const handleActionButtonPress = useCallback(
@@ -248,6 +256,15 @@ export default function InventoryItemDetailScreen() {
           section,
           viewAllTitle,
           viewAllItems,
+        })
+      } else if (action === 'Create Product') {
+        if (!businessId) {
+          Alert.alert('Error', 'Business ID not found')
+          return
+        }
+        // Navigate to CreateProductScreen
+        ;(navigation as any).navigate('CreateProduct', {
+          businessId,
         })
       } else {
         // TODO: Implement other action handlers
@@ -534,7 +551,7 @@ export default function InventoryItemDetailScreen() {
           )}
 
           {/* Current stock card - separate card */}
-          {isReceivedItem && (currentStock.packages !== null || currentStock.units !== null) && (
+          {isReceivedItem && (currentStock.packages !== null || currentStock.units !== null || currentItemData?.currentStockInMetric) && (
             <View style={styles.detailCard}>
               <Text style={styles.cardSectionTitle}>Current stock</Text>
               {currentStock.packages !== null && (
@@ -550,6 +567,14 @@ export default function InventoryItemDetailScreen() {
                   <Text style={styles.itemSubtitleLabel}>Total {item.primaryPackagingUnit}</Text>
                   <Text style={styles.itemSubtitleValue}>
                     {currentStock.units.toLocaleString()}
+                  </Text>
+                </View>
+              )}
+              {currentItemData?.currentStockInMetric && (
+                <View style={styles.labelValueRow}>
+                  <Text style={styles.itemSubtitleLabel}>Stock in metric</Text>
+                  <Text style={styles.itemSubtitleValue}>
+                    {currentItemData.currentStockInMetric.stock.toLocaleString()} {currentItemData.currentStockInMetric.unit}
                   </Text>
                 </View>
               )}

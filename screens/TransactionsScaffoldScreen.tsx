@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal } from 'react-native'
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
+import { Searchbar } from 'react-native-paper'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -43,6 +44,24 @@ type SalesLead = {
   subtitle?: string
   amount?: string
   stage: 'lead' | 'conversation' | 'proposal' | 'won' | 'lost'
+}
+
+// Helper function to truncate title to 24 characters
+function truncateTitle(title: string | undefined | null): string {
+  if (!title) return ''
+  return title.length > 24 ? title.substring(0, 24) + '...' : title
+}
+
+// Helper function to deduplicate transactions by ID
+function deduplicateTransactions(transactions: Transaction[]): Transaction[] {
+  const seen = new Set<string>()
+  return transactions.filter((tx) => {
+    const id = tx.id || (tx.metadata as any)?.id
+    if (!id) return false
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
 }
 
 // Helper function to parse transaction into TransactionStub
@@ -87,7 +106,7 @@ function parseTransaction(tx: Transaction): TransactionStub | null {
     // Return simple transaction card - verification details will be shown on click
     return {
       id: tx.id,
-      title: tx.summary.thirdPartyName,
+      title: truncateTitle(tx.summary.thirdPartyName),
       amount,
     }
   }
@@ -109,7 +128,7 @@ function parseTransaction(tx: Transaction): TransactionStub | null {
   // For verified transactions, return without verification items
   return {
     id: tx.id,
-    title: tx.summary.thirdPartyName,
+    title: truncateTitle(tx.summary.thirdPartyName),
     amount,
     isReportingReady,
   }
@@ -158,6 +177,47 @@ function isPOSSaleTransaction(tx: Transaction): boolean {
   }
   // POS sales have source = 'pos_one_off_item' and kind = 'sale'
   return metadata.capture?.source === 'pos_one_off_item' && metadata.classification?.kind === 'sale'
+}
+
+// Helper function to check if transaction has Accounts Receivable as a payment method
+function hasAccountsReceivablePayment(tx: Transaction): boolean {
+  try {
+    const accounting = tx.accounting as
+      | {
+          paymentBreakdown?: Array<{ type?: string; paymentType?: string }>
+        }
+      | undefined
+    const details = tx.details as
+      | {
+          paymentType?: Array<{ type?: string }>
+          paymentBreakdown?: Array<{ type?: string }>
+        }
+      | undefined
+    
+    // Check accounting.paymentBreakdown first (most common location)
+    const paymentBreakdown = accounting?.paymentBreakdown
+    // Check details.paymentType (for manual entry)
+    const detailsPaymentType = details?.paymentType
+    // Check details.paymentBreakdown (alternative location)
+    const detailsPaymentBreakdown = details?.paymentBreakdown
+    
+    const allPaymentMethods =
+      paymentBreakdown || detailsPaymentType || detailsPaymentBreakdown || []
+    
+    if (allPaymentMethods.length === 0) {
+      return false
+    }
+    
+    // Check if any payment method is accounts_receivable
+    // Handle both { type: 'accounts_receivable' } and { paymentType: 'accounts_receivable' } formats
+    return allPaymentMethods.some((pm) => {
+      const paymentType = (pm.type || (pm as { paymentType?: string }).paymentType || '').toLowerCase()
+      return paymentType === 'accounts_receivable' || paymentType === 'accountsreceivable'
+    })
+  } catch (error) {
+    console.error('Error checking if transaction has Accounts Receivable:', error)
+    return false
+  }
 }
 
 // Helper function to check if transaction is a sale transaction (invoice)
@@ -429,7 +489,6 @@ export default function TransactionsScaffoldScreen() {
     if (route.params?.activeSection) {
       // Convert legacy 'receipts' to 'purchases3'
       const section = route.params.activeSection === 'receipts' ? 'purchases3' : route.params.activeSection
-      console.log('TransactionsScaffoldScreen: Setting activeSection from route params:', section)
       setActiveSection(section as SectionKey)
     }
   }, [route.params?.activeSection])
@@ -456,6 +515,7 @@ export default function TransactionsScaffoldScreen() {
   const [transactions3CardSourceOfTruth, setTransactions3CardSourceOfTruth] = useState<Transaction[]>([])
   const [reportingReadyTransactions3, setReportingReadyTransactions3] = useState<Transaction[]>([])
   const [transactions3POSSales, setTransactions3POSSales] = useState<Transaction[]>([])
+  const [transactions3SalesInvoices, setTransactions3SalesInvoices] = useState<Transaction[]>([]) // Non-POS sales invoices from transactions3
   const [loading, setLoading] = useState(true)
   const [loadingAccountsAndCards, setLoadingAccountsAndCards] = useState(true)
   const [bankStatementRules, setBankStatementRules] = useState<BankStatementRule[]>([])
@@ -498,7 +558,6 @@ export default function TransactionsScaffoldScreen() {
               ])
               setTransactions3Pending(pendingResponse.transactions || [])
               setTransactions3SourceOfTruth(sourceOfTruthResponse.transactions || [])
-              console.log('TransactionsScaffoldScreen: Refreshed transactions3 on focus')
             } else if (activeSection === 'bank') {
               // For Bank section, refresh transactions3 data using kind=statement_entry filter
               const [pendingResponse, verifiedResponse] = await Promise.all([
@@ -516,10 +575,6 @@ export default function TransactionsScaffoldScreen() {
                 }),
               ])
               
-              console.log('TransactionsScaffoldScreen: Refreshed bank transactions on focus', {
-                bankPending: (pendingResponse.transactions || []).length,
-                bankVerified: (verifiedResponse.transactions || []).length,
-              })
               setTransactions3BankPending(pendingResponse.transactions || [])
               setTransactions3BankSourceOfTruth(verifiedResponse.transactions || [])
             } else if (activeSection === 'cards') {
@@ -539,15 +594,11 @@ export default function TransactionsScaffoldScreen() {
                 }),
               ])
               
-              console.log('TransactionsScaffoldScreen: Refreshed credit card transactions on focus', {
-                cardPending: (pendingResponse.transactions || []).length,
-                cardVerified: (verifiedResponse.transactions || []).length,
-              })
               setTransactions3CardPending(pendingResponse.transactions || [])
               setTransactions3CardSourceOfTruth(verifiedResponse.transactions || [])
             } else if (activeSection === 'sales') {
-              // For Sales section, refresh transactions2 data and POS sales from transactions3
-              const [response, posSalesResponse] = await Promise.all([
+              // For Sales section, refresh transactions2 data, POS sales, and sales invoices from transactions3
+              const [response, posSalesResponse, salesInvoicesResponse] = await Promise.all([
                 transactions2Api.getTransactions(businessId, {
                   page: 1,
                   limit: 200,
@@ -559,13 +610,23 @@ export default function TransactionsScaffoldScreen() {
                   kind: 'sale',
                   source: 'pos_one_off_item', // Backend filters for POS sales
                 }),
+                // Fetch sales invoices (non-POS) from transactions3 - manual sales/invoices
+                transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+                  page: 1,
+                  limit: 200,
+                  kind: 'sale',
+                  // Exclude POS sales - backend should filter out source='pos_one_off_item'
+                  // We'll filter client-side if needed
+                }),
               ])
               setAllTransactions(response.transactions)
               setTransactions3POSSales(posSalesResponse.transactions || [])
-              console.log('TransactionsScaffoldScreen: Refreshed sales transactions on focus', {
-                transactions2: response.transactions.length,
-                posSales: (posSalesResponse.transactions || []).length,
+              // Filter out POS sales from the sales invoices response
+              const nonPOSSales = (salesInvoicesResponse.transactions || []).filter((tx) => {
+                const metadata = tx.metadata as { capture?: { source?: string } }
+                return metadata.capture?.source !== 'pos_one_off_item'
               })
+              setTransactions3SalesInvoices(nonPOSSales)
             } else if (activeSection === 'reporting') {
               // For reporting section, refresh reporting-ready transactions from transactions3
               const reportingReadyRes = await transactions2Api.getTransactions3(businessId, 'source_of_truth', {
@@ -574,14 +635,12 @@ export default function TransactionsScaffoldScreen() {
                 // No kind filter - get all reporting-ready transactions from all sources
               })
               setReportingReadyTransactions3(reportingReadyRes.transactions || [])
-              console.log('TransactionsScaffoldScreen: Refreshed reporting-ready transactions on focus, count:', (reportingReadyRes.transactions || []).length)
             } else {
               // For other sections, refresh transactions2 data
               const response = await transactions2Api.getTransactions(businessId, {
                 page: 1,
                 limit: 200,
               })
-              console.log('TransactionsScaffoldScreen: Refreshed transactions on focus, count:', response.transactions.length)
               setAllTransactions(response.transactions)
             }
           } catch (error) {
@@ -724,7 +783,6 @@ export default function TransactionsScaffoldScreen() {
             // No kind filter - get all reporting-ready transactions from all sources
           })
           setReportingReadyTransactions3(response.transactions || [])
-          console.log('TransactionsScaffoldScreen: Fetched reporting-ready transactions from transactions3:', (response.transactions || []).length)
         } catch (error) {
           console.error('Failed to fetch reporting-ready transactions:', error)
           setReportingReadyTransactions3([])
@@ -806,39 +864,6 @@ export default function TransactionsScaffoldScreen() {
           }, [] as Transaction[])
           
           setTransactions3SourceOfTruth(uniqueTransactions)
-          
-          // Debug logging
-          console.log('Transactions3 fetch results:', {
-            pending: pendingResponse.transactions?.length || 0,
-            bankReconciliation: bankReconciliationResponse.transactions?.length || 0,
-            allVerified: allVerifiedResponse.transactions?.length || 0,
-            reconciled: reconciledResponse.transactions?.length || 0,
-            notRequired: notRequiredResponse.transactions?.length || 0,
-            totalUnique: uniqueTransactions.length,
-            bankReconciliationSample: bankReconciliationResponse.transactions?.[0] ? {
-              id: bankReconciliationResponse.transactions[0].id || (bankReconciliationResponse.transactions[0].metadata as any)?.id,
-              verificationStatus: (bankReconciliationResponse.transactions[0].metadata as any)?.verification?.status,
-              reconciliationStatus: (bankReconciliationResponse.transactions[0].metadata as any)?.reconciliation?.status,
-              paymentBreakdown: (bankReconciliationResponse.transactions[0].details as any)?.paymentBreakdown,
-            } : null,
-            // Check for cash transactions with not_required status
-            cashTransactions: uniqueTransactions.filter((tx) => {
-              const reconciliationStatus = (tx.metadata as any)?.reconciliation?.status
-              return reconciliationStatus === 'not_required'
-            }).map((tx) => ({
-              id: tx.id || (tx.metadata as any)?.id,
-              verificationStatus: (tx.metadata as any)?.verification?.status,
-              reconciliationStatus: (tx.metadata as any)?.reconciliation?.status,
-              classificationKind: (tx.metadata as any)?.classification?.kind,
-            })),
-            // Sample of all transactions to debug
-            allTransactionsSample: uniqueTransactions.slice(0, 5).map((tx) => ({
-              id: tx.id || (tx.metadata as any)?.id,
-              verificationStatus: (tx.metadata as any)?.verification?.status,
-              reconciliationStatus: (tx.metadata as any)?.reconciliation?.status,
-              classificationKind: (tx.metadata as any)?.classification?.kind,
-            })),
-          })
         } catch (error) {
           console.error('Failed to fetch transactions3:', error)
           setTransactions3Pending([])
@@ -867,7 +892,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isReportingReady: true,
           isCredit: isCreditToAccount(tx),
@@ -911,7 +936,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
@@ -953,7 +978,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
@@ -1009,7 +1034,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName || tx.summary.description || 'Unknown',
+          title: truncateTitle(tx.summary.thirdPartyName || tx.summary.description || 'Unknown'),
           amount,
           isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
@@ -1071,7 +1096,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isReportingReady: true,
           isCredit: isCreditToAccount(tx),
@@ -1106,7 +1131,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
@@ -1148,7 +1173,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
@@ -1204,7 +1229,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName || tx.summary.description || 'Unknown',
+          title: truncateTitle(tx.summary.thirdPartyName || tx.summary.description || 'Unknown'),
           amount,
           isCredit: isCreditToAccount(tx),
           originalTransaction: tx,
@@ -1266,7 +1291,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isReportingReady: true,
           isCredit: isCreditToAccount(tx),
@@ -1298,7 +1323,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               originalTransaction: tx,
             }))
@@ -1317,7 +1342,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
@@ -1337,7 +1362,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
@@ -1362,7 +1387,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
@@ -1382,7 +1407,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
@@ -1428,7 +1453,7 @@ export default function TransactionsScaffoldScreen() {
           })
           .map((tx) => ({
             id: tx.id,
-            title: tx.summary.thirdPartyName,
+            title: truncateTitle(tx.summary.thirdPartyName),
             amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
             originalTransaction: tx,
           }))
@@ -1456,7 +1481,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName || tx.summary.description || 'Unknown',
+              title: truncateTitle(tx.summary.thirdPartyName || tx.summary.description || 'Unknown'),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
@@ -1483,7 +1508,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName || tx.summary.description || 'Unknown',
+              title: truncateTitle(tx.summary.thirdPartyName || tx.summary.description || 'Unknown'),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isCredit: isCreditToAccount(tx),
               originalTransaction: tx,
@@ -1515,7 +1540,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isReportingReady: true,
               originalTransaction: tx,
@@ -1549,7 +1574,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isReportingReady: true,
               originalTransaction: tx,
@@ -1583,7 +1608,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isReportingReady: true,
               originalTransaction: tx,
@@ -1593,9 +1618,13 @@ export default function TransactionsScaffoldScreen() {
         }
       
       case 'Unpaid invoices':
-        return allTransactions
+        // Combine transactions2 and transactions3 sales invoices, deduplicate by ID
+        const allSalesInvoicesForViewAll = deduplicateTransactions([...allTransactions, ...transactions3SalesInvoices])
+        return allSalesInvoicesForViewAll
           .filter((tx) => {
             if (!isSaleTransaction(tx)) return false
+            // Exclude POS sales
+            if (isPOSSaleTransaction(tx)) return false
             const metadata = tx.metadata as {
               verification?: { status?: string }
               reconciliation?: { status?: string }
@@ -1604,15 +1633,12 @@ export default function TransactionsScaffoldScreen() {
             // Explicitly exclude purchase transactions
             if (metadata.classification?.kind === 'purchase') return false
             
-            const verificationStatus = metadata.verification?.status
-            const reconciliationStatus = metadata.reconciliation?.status
-            const isUnverified = verificationStatus === 'unverified'
-            const isReconciled =
-              reconciliationStatus === 'matched' ||
-              reconciliationStatus === 'reconciled' ||
-              reconciliationStatus === 'exception'
-            const isCashOnly = isCashOnlyTransaction(tx)
-            return isUnverified || (verificationStatus !== 'unverified' && !isReconciled && !isCashOnly)
+            // An invoice is unpaid if it still has accounts_receivable in payment breakdown
+            // When marked as paid, backend removes accounts_receivable and replaces it with the payment method
+            const hasAccountsReceivable = hasAccountsReceivablePayment(tx)
+            
+            // Unpaid invoices: still have accounts_receivable in payment breakdown
+            return hasAccountsReceivable
           })
           .sort((a, b) => {
             const aDate = a.summary.transactionDate || 0
@@ -1621,7 +1647,7 @@ export default function TransactionsScaffoldScreen() {
           })
           .map((tx) => ({
             id: tx.id,
-            title: tx.summary.thirdPartyName,
+            title: truncateTitle(tx.summary.thirdPartyName),
             amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
             originalTransaction: tx,
           }))
@@ -1649,38 +1675,35 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               originalTransaction: tx,
             }))
-        } else {
-          return allTransactions
+        } else if (activeSection === 'sales') {
+          // Use transactions3 data - filter for verified sale transactions needing bank reconciliation
+          // Combine transactions2 and transactions3 sales invoices, deduplicate by ID
+          const allSalesInvoicesForAwaitingMatch = deduplicateTransactions([...allTransactions, ...transactions3SalesInvoices])
+          return allSalesInvoicesForAwaitingMatch
             .filter((tx) => {
               if (!isSaleTransaction(tx)) return false
+              // Exclude POS sales
+              if (isPOSSaleTransaction(tx)) return false
               const metadata = tx.metadata as {
                 verification?: { status?: string }
                 reconciliation?: { status?: string }
+                classification?: { kind?: string }
               }
-              const accounting = tx.accounting as
-                | {
-                    credits?: Array<{ chartName?: string }>
-                  }
-                | undefined
+              // Explicitly exclude purchase transactions
+              if (metadata.classification?.kind === 'purchase') return false
+              
               const verificationStatus = metadata.verification?.status
               const reconciliationStatus = metadata.reconciliation?.status
               const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-              const isReconciled =
-                reconciliationStatus === 'matched' ||
-                reconciliationStatus === 'reconciled' ||
-                reconciliationStatus === 'exception'
+              const isPendingBankMatch = reconciliationStatus === 'pending_bank_match'
               const isCashOnly = isCashOnlyTransaction(tx)
               
-              // Check if there's a credit to Accounts Receivable
-              const hasAccountsReceivable = accounting?.credits?.some(
-                (credit) => credit.chartName === 'Accounts Receivable'
-              ) ?? false
-              
-              return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
+              // Needs match if: verified, not cash-only, and has pending_bank_match status (marked as paid but needs bank reconciliation)
+              return isVerified && !isCashOnly && isPendingBankMatch
             })
             .sort((a, b) => {
               const aDate = a.summary.transactionDate || 0
@@ -1689,10 +1712,12 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               originalTransaction: tx,
             }))
+        } else {
+          return []
         }
       
       case 'POS Sales':
@@ -1713,14 +1738,16 @@ export default function TransactionsScaffoldScreen() {
           })
           .map((tx) => ({
             id: tx.id,
-            title: tx.summary.thirdPartyName,
+            title: truncateTitle(tx.summary.thirdPartyName),
             amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
             isReportingReady: true,
             originalTransaction: tx,
           }))
       
       case 'Sales Invoices':
-        return allTransactions
+        // Combine transactions2 and transactions3 sales invoices, deduplicate by ID
+        const allSalesInvoicesForReconciled = deduplicateTransactions([...allTransactions, ...transactions3SalesInvoices])
+        return allSalesInvoicesForReconciled
           .filter((tx) => {
             if (!isSaleTransaction(tx)) return false
             // Exclude POS sales
@@ -1742,7 +1769,7 @@ export default function TransactionsScaffoldScreen() {
           })
           .map((tx) => ({
             id: tx.id,
-            title: tx.summary.thirdPartyName,
+            title: truncateTitle(tx.summary.thirdPartyName),
             amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
             isReportingReady: true,
             originalTransaction: tx,
@@ -1774,7 +1801,7 @@ export default function TransactionsScaffoldScreen() {
           })
           .map((tx) => ({
             id: tx.id,
-            title: tx.summary.thirdPartyName,
+            title: truncateTitle(tx.summary.thirdPartyName),
             amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
             isReportingReady: true,
             originalTransaction: tx,
@@ -1800,7 +1827,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               originalTransaction: tx,
             }))
@@ -1831,7 +1858,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               originalTransaction: tx,
             }))
@@ -1862,7 +1889,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               originalTransaction: tx,
             }))
@@ -1893,7 +1920,7 @@ export default function TransactionsScaffoldScreen() {
             })
             .map((tx) => ({
               id: tx.id,
-              title: tx.summary.thirdPartyName,
+              title: truncateTitle(tx.summary.thirdPartyName),
               amount: formatAmount(tx.summary.totalAmount, tx.summary.currency, true),
               isReportingReady: true,
               originalTransaction: tx,
@@ -1934,10 +1961,14 @@ export default function TransactionsScaffoldScreen() {
 
   // Filter sale transactions (invoices) into 4 categories
   // 1. Invoices submitted pending payment (unverified or not paid)
+  // Combine transactions2 and transactions3 sales invoices, deduplicate by ID
+  const allSalesInvoices = deduplicateTransactions([...allTransactions, ...transactions3SalesInvoices])
   const invoicesPendingPayment: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
+    allSalesInvoices
       .filter((tx) => {
         if (!isSaleTransaction(tx)) return false
+        // Exclude POS sales (they go to "POS Sales" card)
+        if (isPOSSaleTransaction(tx)) return false
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
@@ -1946,19 +1977,12 @@ export default function TransactionsScaffoldScreen() {
         // Explicitly exclude purchase transactions
         if (metadata.classification?.kind === 'purchase') return false
         
-        const verificationStatus = metadata.verification?.status
-        const reconciliationStatus = metadata.reconciliation?.status
+        // An invoice is unpaid if it still has accounts_receivable in payment breakdown
+        // When marked as paid, backend removes accounts_receivable and replaces it with the payment method
+        const hasAccountsReceivable = hasAccountsReceivablePayment(tx)
         
-        // Pending payment if: unverified OR (verified but not reconciled and not cash-only)
-        const isUnverified = verificationStatus === 'unverified'
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
-        const isCashOnly = isCashOnlyTransaction(tx)
-        
-        // Pending if unverified, or verified but not paid (not reconciled and not cash)
-        return isUnverified || (verificationStatus !== 'unverified' && !isReconciled && !isCashOnly)
+        // Unpaid invoices: still have accounts_receivable in payment breakdown
+        return hasAccountsReceivable
       })
       .sort((a, b) => {
         const aDate = a.summary.transactionDate || 0
@@ -1970,20 +1994,28 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           originalTransaction: tx,
         }
       })
 
   // 2. Invoices paid in cash (cash-only, verified)
+  // Combine transactions2 and transactions3 sales invoices, deduplicate by ID
+  const allSalesInvoicesForCash = deduplicateTransactions([...allTransactions, ...transactions3SalesInvoices])
   const invoicesPaidCash: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
+    allSalesInvoicesForCash
       .filter((tx) => {
         if (!isSaleTransaction(tx)) return false
+        // Exclude POS sales
+        if (isPOSSaleTransaction(tx)) return false
         const metadata = tx.metadata as {
           verification?: { status?: string }
+          classification?: { kind?: string }
         }
+        // Explicitly exclude purchase transactions
+        if (metadata.classification?.kind === 'purchase') return false
+        
         const verificationStatus = metadata.verification?.status
         const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
         const isCashOnly = isCashOnlyTransaction(tx)
@@ -2000,42 +2032,38 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           originalTransaction: tx,
         }
       })
 
   // 3. Invoices paid, needs match (paid but needs reconciliation)
+  // Combine transactions2 and transactions3 sales invoices, deduplicate by ID
+  const allSalesInvoicesForPaidMatch = deduplicateTransactions([...allTransactions, ...transactions3SalesInvoices])
   const invoicesPaidNeedsMatch: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
+    allSalesInvoicesForPaidMatch
       .filter((tx) => {
         if (!isSaleTransaction(tx)) return false
+        // Exclude POS sales
+        if (isPOSSaleTransaction(tx)) return false
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
+          classification?: { kind?: string }
         }
-        const accounting = tx.accounting as
-          | {
-              credits?: Array<{ chartName?: string }>
-            }
-          | undefined
+        // Explicitly exclude purchase transactions
+        if (metadata.classification?.kind === 'purchase') return false
+        
         const verificationStatus = metadata.verification?.status
         const reconciliationStatus = metadata.reconciliation?.status
         const isVerified = verificationStatus === 'verified' || verificationStatus === 'exception'
-        const isReconciled =
-          reconciliationStatus === 'matched' ||
-          reconciliationStatus === 'reconciled' ||
-          reconciliationStatus === 'exception'
+        const isPendingBankMatch = reconciliationStatus === 'pending_bank_match'
         const isCashOnly = isCashOnlyTransaction(tx)
         
-        // Check if there's a credit to Accounts Receivable
-        const hasAccountsReceivable = accounting?.credits?.some(
-          (credit) => credit.chartName === 'Accounts Receivable'
-        ) ?? false
-        
-        // Needs match if: verified, not cash-only, not reconciled, AND has Accounts Receivable credit
-        return isVerified && !isCashOnly && !isReconciled && hasAccountsReceivable
+        // Needs match if: verified, not cash-only, and has pending_bank_match status (marked as paid but needs bank reconciliation)
+        // Only for sales transactions (invoices) - purchases have their own section
+        return isVerified && !isCashOnly && isPendingBankMatch
       })
       .sort((a, b) => {
         const aDate = a.summary.transactionDate || 0
@@ -2047,7 +2075,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           originalTransaction: tx,
         }
@@ -2077,7 +2105,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isReportingReady: true,
           originalTransaction: tx,
@@ -2085,16 +2113,22 @@ export default function TransactionsScaffoldScreen() {
       })
 
   // 4b. Sales Invoices - reconciled invoices (excluding POS sales)
+  // Combine transactions2 and transactions3 sales invoices, deduplicate by ID
+  const allSalesInvoicesForAudit = deduplicateTransactions([...allTransactions, ...transactions3SalesInvoices])
   const salesInvoicesAuditReady: Array<TransactionStub & { originalTransaction: Transaction }> =
-    allTransactions
+    allSalesInvoicesForAudit
       .filter((tx) => {
         if (!isSaleTransaction(tx)) return false
-        // Exclude POS sales
-        if (isPOSSaleTransaction(tx)) return false
         const metadata = tx.metadata as {
           verification?: { status?: string }
           reconciliation?: { status?: string }
+          classification?: { kind?: string }
         }
+        // Explicitly exclude purchase transactions
+        if (metadata.classification?.kind === 'purchase') return false
+        // Exclude POS sales
+        if (isPOSSaleTransaction(tx)) return false
+        
         const reconciliationStatus = metadata.reconciliation?.status
         const isReconciled =
           reconciliationStatus === 'matched' ||
@@ -2113,7 +2147,7 @@ export default function TransactionsScaffoldScreen() {
         const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
         return {
           id: tx.id,
-          title: tx.summary.thirdPartyName,
+          title: truncateTitle(tx.summary.thirdPartyName),
           amount,
           isReportingReady: true,
           originalTransaction: tx,
@@ -2149,7 +2183,7 @@ export default function TransactionsScaffoldScreen() {
     const amount = formatAmount(tx.summary.totalAmount, tx.summary.currency, true)
     return {
       id: tx.id,
-      title: tx.summary.thirdPartyName,
+      title: truncateTitle(tx.summary.thirdPartyName),
       amount,
       originalTransaction: tx,
     }
@@ -2634,8 +2668,8 @@ export default function TransactionsScaffoldScreen() {
         setTransactions3CardSourceOfTruth(cardVerified)
         setReportingReadyTransactions3(reportingReadyRes.transactions || [])
       } else if (activeSection === 'sales') {
-        // For Sales section, refresh transactions2 data and POS sales from transactions3
-        const [response, posSalesResponse, reportingReadyRes] = await Promise.all([
+        // For Sales section, refresh transactions2 data, POS sales, and sales invoices from transactions3
+        const [response, posSalesResponse, salesInvoicesResponse, reportingReadyRes] = await Promise.all([
           transactions2Api.getTransactions(businessId, {
             page: 1,
             limit: 200,
@@ -2647,6 +2681,13 @@ export default function TransactionsScaffoldScreen() {
             kind: 'sale',
             source: 'pos_one_off_item', // Backend filters for POS sales
           }),
+          // Fetch sales invoices (non-POS) from transactions3 - manual sales/invoices
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 200,
+            kind: 'sale',
+            // Exclude POS sales - we'll filter client-side
+          }),
           // Always refresh reporting-ready transactions (used by reporting section)
           transactions2Api.getTransactions3(businessId, 'source_of_truth', {
             page: 1,
@@ -2656,6 +2697,12 @@ export default function TransactionsScaffoldScreen() {
         ])
         setAllTransactions(response.transactions)
         setTransactions3POSSales(posSalesResponse.transactions || [])
+        // Filter out POS sales from the sales invoices response
+        const nonPOSSales = (salesInvoicesResponse.transactions || []).filter((tx) => {
+          const metadata = tx.metadata as { capture?: { source?: string } }
+          return metadata.capture?.source !== 'pos_one_off_item'
+        })
+        setTransactions3SalesInvoices(nonPOSSales)
         setReportingReadyTransactions3(reportingReadyRes.transactions || [])
       } else if (activeSection === 'reporting') {
         // For reporting section, only refresh reporting-ready transactions
@@ -2691,7 +2738,7 @@ export default function TransactionsScaffoldScreen() {
 
   return (
     <AppBarLayout
-      title="Transactions"
+      title="TRANSACTIONS"
       rightIconName={activeSection !== 'reporting' ? 'add-circle-sharp' : undefined}
       onRightIconPress={activeSection !== 'reporting' ? handleAddClick : undefined}
     >
@@ -2946,12 +2993,15 @@ function PipelineRow({
         title: lead.title,
         amount: lead.amount || '',
         subtitle: lead.subtitle,
+        projectTitle: lead.projectTitle,
+        stage: lead.stage,
       }))
       navigation.navigate('ScaffoldViewAll', {
         section: column.title,
         title: column.title,
         items,
         showReconcileButton: false,
+        pipelineSection: 'sales',
       })
       return
     }
@@ -2982,7 +3032,7 @@ function PipelineRow({
                     <View style={styles.salesInfoTextContainer}>
                       <Text style={styles.salesInfoTitle}>Understanding your Sales pipeline</Text>
                       <Text style={styles.salesInfoBody}>
-                        When you create invoices, Tally organises them for you. Check that everything looks right, confirm and they will immediately show up in your financial reports. The other cards on this screen help you stay organised: track unpaid invoices, see payments waiting to be matched with your statements (you'll match them from your bank records), and view completed invoices.
+                        Create or upload an invoice using the '+' button. Once added the invoice will be staged pending confirmation of payment and reconciliation with your bank account. Invoices are immediately added to your financial reports and audit ready once paid and reconciled.
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -3010,7 +3060,8 @@ function PipelineRow({
                     <View style={styles.salesInfoTextContainer}>
                       <Text style={styles.salesInfoTitle}>Understanding your Purchases pipeline</Text>
                       <Text style={styles.salesInfoBody}>
-                      When you upload purchase receipts, Tally automatically reads the items and organises them. Check that everything looks right, confirm and they will immediately show up in your financial reports. The other cards on this screen help you stay organised: track and manage unpaid purchases, see payments waiting to be reconciled with bank and credit cards statements and view completed transactions.
+                      Purchase transactions follow a path from 'Needs verification' to 'Audit ready'. Verify the transaction by confirming payment method and item categorization. If an item is not a business expense categorise it as 'Drawings'.
+                      Certain transactions will get staged before they can be confirmed as 'Audit ready', but all verified transactions will appear in your financial reports.
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -3055,29 +3106,41 @@ function PipelineRow({
             )}
             {column.actions.length > 0 || (isNeedsReconciliation(column.title) && handleReconcileClick) ? (
               <View style={styles.pipelineActions}>
-                {column.actions.map((action) => (
-                  <TouchableOpacity
-                    key={action}
-                    activeOpacity={0.7}
-                    style={styles.linkButton}
-                    onPress={() => {
-                      if (action === 'View all') {
-                        handleViewAll(column)
-                      }
-                      if (action === '+ Add rules') {
-                        if (pipelineSection === 'bank') {
-                          // Navigate to Bank Statement Rules screen (lists existing rules)
-                          // This screen should display the list of bankStatementRules
-                          navigation.navigate('BankStatementRules')
-                        } else if (pipelineSection === 'cards') {
-                          navigation.navigate('CreditCardRuleCreate')
+                {column.actions.map((action) => {
+                  // Get full transaction count for "View all" action
+                  let displayText = action
+                  if (action === 'View all' && getFullTransactions) {
+                    const fullTransactions = getFullTransactions(column.title)
+                    const fullCount = fullTransactions.length
+                    if (fullCount > 3) {
+                      displayText = `View all (${fullCount})`
+                    }
+                  }
+                  
+                  return (
+                    <TouchableOpacity
+                      key={action}
+                      activeOpacity={0.7}
+                      style={styles.linkButton}
+                      onPress={() => {
+                        if (action === 'View all') {
+                          handleViewAll(column)
                         }
-                      }
-                    }}
-                  >
-                    <Text style={styles.linkButtonText}>{action}</Text>
-                  </TouchableOpacity>
-                ))}
+                        if (action === '+ Add rules') {
+                          if (pipelineSection === 'bank') {
+                            // Navigate to Bank Statement Rules screen (lists existing rules)
+                            // This screen should display the list of bankStatementRules
+                            navigation.navigate('BankStatementRules')
+                          } else if (pipelineSection === 'cards') {
+                            navigation.navigate('CreditCardRuleCreate')
+                          }
+                        }
+                      }}
+                    >
+                      <Text style={styles.linkButtonText}>{displayText}</Text>
+                    </TouchableOpacity>
+                  )
+                })}
                 {isNeedsReconciliation(column.title) && handleReconcileClick && (
                   <TouchableOpacity
                     activeOpacity={0.7}
@@ -3127,6 +3190,91 @@ function PipelineRow({
   )
 }
 
+// Helper function to group transactions by date for Reporting Ready
+function groupReportingTransactionsByDate(
+  items: Array<TransactionStub & { originalTransaction: Transaction }>
+): Array<{
+  date: string
+  dateLabel: string
+  items: Array<TransactionStub & { originalTransaction: Transaction }>
+  totalAmount: number
+  currency: string
+}> {
+  const dateMap = new Map<string, Array<TransactionStub & { originalTransaction: Transaction }>>()
+  
+  items.forEach((item) => {
+    const tx = item.originalTransaction
+    if (!tx) return
+    
+    const date = new Date(tx.summary.transactionDate)
+    const dateKey = date.toDateString()
+    
+    if (!dateMap.has(dateKey)) {
+      dateMap.set(dateKey, [])
+    }
+    dateMap.get(dateKey)!.push(item)
+  })
+  
+  // Convert to array and format date labels
+  const groups: Array<{
+    date: string
+    dateLabel: string
+    items: Array<TransactionStub & { originalTransaction: Transaction }>
+    totalAmount: number
+    currency: string
+  }> = []
+  
+  dateMap.forEach((txs, dateKey) => {
+    const date = new Date(dateKey)
+    const dateLabel = date.toLocaleDateString('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    })
+    
+    // Calculate total for this date group
+    let totalAmount = 0
+    let currency = 'GBP' // Default currency
+    const currencyTotals = new Map<string, number>()
+    
+    txs.forEach((item) => {
+      const tx = item.originalTransaction
+      if (tx) {
+        const txCurrency = tx.summary.currency || 'GBP'
+        const amount = Math.abs(tx.summary.totalAmount) // Use absolute value
+        const currentTotal = currencyTotals.get(txCurrency) || 0
+        currencyTotals.set(txCurrency, currentTotal + amount)
+      }
+    })
+    
+    // Use the most common currency for the group
+    let maxTotal = 0
+    currencyTotals.forEach((total, curr) => {
+      if (total > maxTotal) {
+        maxTotal = total
+        currency = curr
+      }
+    })
+    
+    totalAmount = currencyTotals.get(currency) || 0
+    
+    groups.push({
+      date: dateKey,
+      dateLabel,
+      items: txs.sort((a, b) => {
+        const aDate = a.originalTransaction?.summary.transactionDate || 0
+        const bDate = b.originalTransaction?.summary.transactionDate || 0
+        return bDate - aDate // Most recent first within group
+      }),
+      totalAmount,
+      currency,
+    })
+  })
+  
+  // Sort groups by date (most recent first)
+  return groups.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+}
+
 // Reporting Ready List Component - shows all transactions directly
 function ReportingReadyList({
   allTransactions,
@@ -3135,7 +3283,8 @@ function ReportingReadyList({
   allTransactions: Array<TransactionStub & { originalTransaction: Transaction }>
   navigation: StackNavigationProp<TransactionsStackParamList>
 }) {
-  const [showHelpModal, setShowHelpModal] = useState(false)
+  const [reportingInfoCardDismissed, setReportingInfoCardDismissed] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const handleItemPress = useCallback((item: TransactionStub & { originalTransaction: Transaction }) => {
     if (item.originalTransaction) {
@@ -3143,150 +3292,130 @@ function ReportingReadyList({
     }
   }, [navigation])
 
-  return (
-    <>
-      <View style={styles.reportingListContainer}>
-        <View style={styles.cardTitleRowHeader}>
-          <Text style={styles.sectionHeader}>Reporting ready (all sources)</Text>
-          <TouchableOpacity 
-            activeOpacity={0.6} 
-            style={styles.learnMoreButton} 
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            onPress={() => setShowHelpModal(true)}
-          >
-            <Text style={styles.learnMoreText}>Learn more</Text>
-          </TouchableOpacity>
-        </View>
+  // Filter transactions based on search query
+  const filteredTransactions = allTransactions.filter((item) => {
+    if (!searchQuery.trim()) {
+      return true
+    }
+    const query = searchQuery.toLowerCase()
+    const title = item.title?.toLowerCase() || ''
+    const amount = item.amount?.toLowerCase() || ''
+    const thirdPartyName = item.originalTransaction?.summary.thirdPartyName?.toLowerCase() || ''
+    const description = item.originalTransaction?.summary.description?.toLowerCase() || ''
+    
+    return (
+      title.includes(query) ||
+      amount.includes(query) ||
+      thirdPartyName.includes(query) ||
+      description.includes(query)
+    )
+  })
 
-        {allTransactions.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No reporting ready transactions</Text>
+  // Group filtered transactions by date
+  const groupedTransactions = useMemo(() => {
+    return groupReportingTransactionsByDate(filteredTransactions)
+  }, [filteredTransactions])
+
+  return (
+    <View style={styles.reportingListContainer}>
+      {!reportingInfoCardDismissed && (
+        <View style={styles.salesInfoCard}>
+          <View style={styles.salesInfoContent}>
+            <View style={styles.salesInfoTextContainer}>
+              <Text style={styles.salesInfoTitle}>Understanding Reporting Ready transactions</Text>
+              <Text style={styles.salesInfoBody}>
+                Reporting ready transactions are verified transactions from all sources (purchases, sales, bank, and credit cards) that are shown in your financial reports.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.salesInfoDismissButton}
+              onPress={() => setReportingInfoCardDismissed(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.salesInfoDismissIcon}>×</Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.reportingList}>
-            {allTransactions.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.reportingListItem}
-                onPress={() => handleItemPress(item)}
-                activeOpacity={0.7}
-                disabled={!item.originalTransaction}
-              >
-                <View style={styles.reportingItemTextGroup}>
-                  <View style={styles.reportingItemTitleRow}>
-                    <View style={styles.auditIconContainer}>
-                      {item.originalTransaction && isAuditReady(item.originalTransaction) && (
-                        <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
-                      )}
-                      {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
-                        <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
-                      )}
-                    </View>
-                    <Text style={styles.reportingItemTitle}>{item.title}</Text>
-                  </View>
-                </View>
-                <View style={styles.reportingItemAmountContainer}>
-                  <Text style={[
-                    styles.reportingInputOutputIndicator,
-                    item.isCredit ? styles.inputIndicator : styles.outputIndicator
-                  ]}>
-                    {item.isCredit ? '+' : '-'}
-                  </Text>
-                  <Text style={styles.reportingItemAmount}>{item.amount}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+        </View>
+      )}
+
+      <View style={styles.searchBarContainer}>
+        <Searchbar
+          placeholder="Search transactions..."
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          style={styles.searchBar}
+          inputStyle={styles.searchBarInput}
+          iconColor={GRAYSCALE_SECONDARY}
+          clearIcon={() => (
+            <Text style={styles.salesInfoDismissIcon}>×</Text>
+          )}
+        />
       </View>
 
-      {/* Help Modal */}
-      <Modal
-        visible={showHelpModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowHelpModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.helpModal}>
-            <View style={styles.helpModalHeader}>
-              <Text style={styles.helpModalTitle}>Understanding Reporting Ready Transactions</Text>
-              <TouchableOpacity
-                onPress={() => setShowHelpModal(false)}
-                style={styles.helpModalClose}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.helpModalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.helpModalSectionTitle}>Transaction Categories</Text>
-              <Text style={styles.helpModalText}>
-                Reporting ready transactions are categorized into two types based on their impact on your business:
-              </Text>
-              
-              <View style={styles.helpCategoryCard}>
-                <View style={styles.helpCategoryHeader}>
-                  <View style={[styles.helpCategoryIndicator, styles.inputIndicatorDot]} />
-                  <Text style={styles.helpCategoryTitle}>Inputs (Credits / Income)</Text>
-                </View>
-                <Text style={styles.helpCategoryDescription}>
-                  These are transactions that bring money into your business:
-                </Text>
-                <View style={styles.helpCategoryList}>
-                  <Text style={styles.helpCategoryItem}>• Sales invoices and revenue</Text>
-                  <Text style={styles.helpCategoryItem}>• Bank deposits and credits</Text>
-                  <Text style={styles.helpCategoryItem}>• Credit card payments received</Text>
-                  <Text style={styles.helpCategoryItem}>• Other income transactions</Text>
-                </View>
-              </View>
-
-              <View style={styles.helpCategoryCard}>
-                <View style={styles.helpCategoryHeader}>
-                  <View style={[styles.helpCategoryIndicator, styles.outputIndicatorDot]} />
-                  <Text style={styles.helpCategoryTitle}>Outputs (Debits / Expenses)</Text>
-                </View>
-                <Text style={styles.helpCategoryDescription}>
-                  These are transactions that take money out of your business:
-                </Text>
-                <View style={styles.helpCategoryList}>
-                  <Text style={styles.helpCategoryItem}>• Purchase receipts and expenses</Text>
-                  <Text style={styles.helpCategoryItem}>• Bank withdrawals and debits</Text>
-                  <Text style={styles.helpCategoryItem}>• Credit card charges</Text>
-                  <Text style={styles.helpCategoryItem}>• Other expense transactions</Text>
-                </View>
-              </View>
-
-              <Text style={styles.helpModalSectionTitle}>How Transactions Are Categorized</Text>
-              <Text style={styles.helpModalText}>
-                The system automatically determines if a transaction is an input or output by analyzing:
-              </Text>
-              <View style={styles.helpCategoryList}>
-                <Text style={styles.helpCategoryItem}>• Transaction type (sale, purchase, statement entry)</Text>
-                <Text style={styles.helpCategoryItem}>• Accounting entries (debits and credits)</Text>
-                <Text style={styles.helpCategoryItem}>• Bank statement context (credit vs debit)</Text>
-                <Text style={styles.helpCategoryItem}>• Chart of accounts classification</Text>
-              </View>
-
-              <Text style={styles.helpModalSectionTitle}>Why This Matters</Text>
-              <Text style={styles.helpModalText}>
-                Understanding inputs vs outputs helps you:
-              </Text>
-              <View style={styles.helpCategoryList}>
-                <Text style={styles.helpCategoryItem}>• Track revenue vs expenses accurately</Text>
-                <Text style={styles.helpCategoryItem}>• Generate accurate financial reports</Text>
-                <Text style={styles.helpCategoryItem}>• Understand cash flow patterns</Text>
-                <Text style={styles.helpCategoryItem}>• Make informed business decisions</Text>
-              </View>
-
-              <Text style={styles.helpModalNote}>
-                Note: Some transactions may be complex and require manual review. If you notice a transaction is incorrectly categorized, you can review and adjust it in the transaction detail view.
-              </Text>
-            </ScrollView>
-          </View>
+      {filteredTransactions.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            {searchQuery.trim() ? 'No transactions found' : 'No reporting ready transactions'}
+          </Text>
         </View>
-      </Modal>
-    </>
+      ) : (
+        <View style={styles.reportingList}>
+          {groupedTransactions.map((group) => (
+            <View key={group.date} style={styles.dateGroup}>
+              <View style={styles.dateHeader}>
+                <Text style={styles.dateLabel}>{group.dateLabel}</Text>
+                <Text style={styles.dateTotal}>
+                  {formatAmount(group.totalAmount, group.currency, group.currency === 'GBP')}
+                </Text>
+              </View>
+              {group.items.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.reportingListItem}
+                  onPress={() => handleItemPress(item)}
+                  activeOpacity={0.7}
+                  disabled={!item.originalTransaction}
+                >
+                  <View style={styles.reportingItemTextGroup}>
+                    <View style={styles.reportingItemTitleRow}>
+                      {(item.originalTransaction && (isAuditReady(item.originalTransaction) || isUnreconciled(item.originalTransaction))) && (
+                        <View style={styles.auditIconContainer}>
+                          {item.originalTransaction && isAuditReady(item.originalTransaction) && (
+                            <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
+                          )}
+                          {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
+                            <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
+                          )}
+                        </View>
+                      )}
+                      <Text style={styles.reportingItemTitle}>{item.title}</Text>
+                    </View>
+                    {item.originalTransaction && item.originalTransaction.summary.currency !== group.currency && (
+                      <Text style={styles.foreignCurrency}>
+                        {formatAmount(
+                          Math.abs(item.originalTransaction.summary.totalAmount),
+                          item.originalTransaction.summary.currency,
+                          false
+                        )}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.reportingItemAmountContainer}>
+                    <Text style={[
+                      styles.reportingInputOutputIndicator,
+                      item.isCredit ? styles.inputIndicator : styles.outputIndicator
+                    ]}>
+                      {item.isCredit ? '+' : '-'}
+                    </Text>
+                    <Text style={styles.reportingItemAmount}>{item.amount}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
   )
 }
 
@@ -3317,14 +3446,16 @@ function CardList({
         >
           <View style={styles.cardTextGroup}>
             <View style={styles.cardTitleRow}>
-              <View style={styles.auditIconContainer}>
-                {item.originalTransaction && isAuditReady(item.originalTransaction) && (
-                  <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
-                )}
-                {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
-                  <Ionicons name="shield-outline" size={16} color={GRAYSCALE_SECONDARY} style={{ opacity: 0.5 }} />
-                )}
-              </View>
+              {(item.originalTransaction && (isAuditReady(item.originalTransaction) || isUnreconciled(item.originalTransaction))) ? (
+                <View style={styles.auditIconContainer}>
+                  {item.originalTransaction && isAuditReady(item.originalTransaction) && (
+                    <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
+                  )}
+                  {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
+                    <Ionicons name="shield-outline" size={16} color={GRAYSCALE_SECONDARY} style={{ opacity: 0.5 }} />
+                  )}
+                </View>
+              ) : null}
               <Text style={styles.cardTitle}>{item.title}</Text>
             </View>
             {item.isCredit && !showInputOutputIndicator && (
@@ -3655,7 +3786,7 @@ const styles = StyleSheet.create({
   },
   cardListItem: {
     paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e6e6e6',
@@ -3681,7 +3812,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: GRAYSCALE_PRIMARY,
+    color: '#000000',
     flex: 1,
   },
   creditLabel: {
@@ -3733,7 +3864,7 @@ const styles = StyleSheet.create({
   cardAmount: {
     fontSize: 14,
     fontWeight: '600',
-    color: GRAYSCALE_PRIMARY,
+    color: '#000000',
   },
   inputOutputIndicator: {
     fontSize: 16,
@@ -4056,6 +4187,46 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderLeftWidth: 3,
     borderLeftColor: '#4caf50',
+  },
+  searchBarContainer: {
+    marginBottom: 16,
+  },
+  searchBar: {
+    backgroundColor: CARD_BACKGROUND,
+    elevation: 0,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e6e6e6',
+  },
+  searchBarInput: {
+    fontSize: 14,
+    color: GRAYSCALE_PRIMARY,
+  },
+  dateGroup: {
+    marginBottom: 20,
+  },
+  dateHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  dateLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_SECONDARY,
+  },
+  dateTotal: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_SECONDARY,
+  },
+  foreignCurrency: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+    marginTop: 2,
   },
 })
 

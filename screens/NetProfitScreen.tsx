@@ -6,9 +6,7 @@ import Svg, { Rect } from 'react-native-svg'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
-import { transactions2Api } from '../lib/api/transactions2'
-import type { Transaction } from '../lib/api/transactions2'
-import { businessContextApi } from '../lib/api/businessContext'
+import { healthScoreApi } from '../lib/api/transactions2'
 import { getCurrencySymbol } from '../lib/utils/currency'
 
 type PeriodData = {
@@ -40,91 +38,9 @@ export default function NetProfitScreen() {
   const rawValue = healthScore?.rawMetrics.netProfitMargin ?? 0
   const timeframe = healthScore?.timeframe ?? 'week'
 
-  // Calculate date ranges for periods
-  const getDateRanges = useCallback((timeframe: 'week' | 'month' | 'quarter', numPeriods: number = 4) => {
-    const now = new Date()
-    const ranges: Array<{ startDate: number; endDate: number; index: number }> = []
-
-    for (let i = 0; i < numPeriods; i++) {
-      let startDate: Date
-      let endDate: Date
-
-      if (timeframe === 'week') {
-        const currentWeekStart = new Date(now)
-        currentWeekStart.setDate(now.getDate() - now.getDay())
-        currentWeekStart.setHours(0, 0, 0, 0)
-
-        startDate = new Date(currentWeekStart)
-        startDate.setDate(currentWeekStart.getDate() - (i * 7))
-        endDate = new Date(startDate)
-        endDate.setDate(startDate.getDate() + 6)
-        endDate.setHours(23, 59, 59, 999)
-      } else if (timeframe === 'month') {
-        startDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        startDate.setHours(0, 0, 0, 0)
-        endDate = new Date(now.getFullYear(), now.getMonth() - i + 1, 0)
-        endDate.setHours(23, 59, 59, 999)
-      } else {
-        const currentQuarter = Math.floor(now.getMonth() / 3)
-        const currentYear = now.getFullYear()
-        const quarterMonth = currentQuarter * 3
-
-        startDate = new Date(currentYear, quarterMonth - (i * 3), 1)
-        startDate.setHours(0, 0, 0, 0)
-        endDate = new Date(currentYear, quarterMonth - (i * 3) + 3, 0)
-        endDate.setHours(23, 59, 59, 999)
-      }
-
-      ranges.push({
-        startDate: startDate.getTime(),
-        endDate: endDate.getTime(),
-        index: i,
-      })
-    }
-
-    return ranges
-  }, [])
-
-  // Get period label
-  const getPeriodLabel = useCallback((index: number, currentTimeframe: string) => {
-    if (index === 0) return currentTimeframe.charAt(0).toUpperCase() + currentTimeframe.slice(1)
-    const labels = {
-      week: ['Week', 'Week', 'Week'],
-      month: ['Month', 'Month', 'Month'],
-      quarter: ['Quarter', 'Quarter', 'Quarter'],
-    }
-    return `${labels[currentTimeframe as keyof typeof labels]?.[index - 1] || 'Period'} -${index}`
-  }, [])
-
-  // Calculate previous timeframe label
-  const getPreviousTimeframeLabel = (current: string) => {
-    if (current === 'week') return 'Previous Week'
-    if (current === 'month') return 'Previous Month'
-    if (current === 'quarter') return 'Previous Quarter'
-    return 'Previous Period'
-  }
-
-  // Fetch business currency
+  // Fetch period profit data from backend
   useEffect(() => {
-    const fetchCurrency = async () => {
-      if (!businessId) return
-      
-      try {
-        const context = await businessContextApi.getContext(businessId)
-        if (context.context?.primaryCurrency) {
-          setCurrency(context.context.primaryCurrency)
-        }
-      } catch (error) {
-        console.error('[NetProfitScreen] Failed to fetch business currency:', error)
-      }
-    }
-
-    fetchCurrency()
-  }, [businessId])
-
-  // Fetch profit data
-  useEffect(() => {
-    const fetchProfitData = async () => {
+    const fetchPeriodData = async () => {
       if (!businessId) {
         setError('Business ID not available')
         setLoading(false)
@@ -135,64 +51,43 @@ export default function NetProfitScreen() {
         setLoading(true)
         setError(null)
 
-        const dateRanges = getDateRanges(timeframe, 4)
-
-        // Fetch all transactions
-        let allTransactions: Transaction[] = []
-        let page = 1
-        let hasMore = true
-
-        while (hasMore) {
-          const response = await transactions2Api.getTransactions3(
-            businessId,
-            'source_of_truth',
-            { page, limit: 100 }
-          )
-
-          allTransactions = [...allTransactions, ...response.transactions]
-          hasMore = response.pagination.hasNextPage
-          page++
+        // Fetch health score with period data
+        const response = await healthScoreApi.getHealthScore(businessId, timeframe, true)
+        
+        if (!response.success || !response.data?.healthScore?.periodData) {
+          setError('Period data not available')
+          setLoading(false)
+          return
         }
 
-        // Calculate profit for each period
-        // Profit = Revenue (sales) - Expenses (purchases)
-        const periodProfits: PeriodData[] = dateRanges.map((range, index) => {
-          const periodTransactions = allTransactions.filter((tx) => {
-            const txDate = tx.summary.transactionDate
-            return txDate >= range.startDate && txDate <= range.endDate
-          })
+        const periodData = response.data.healthScore.periodData
 
-          const revenue = periodTransactions
-            .filter(tx => (tx.metadata as any)?.classification?.kind === 'sale')
-            .reduce((sum, tx) => sum + (tx.summary.totalAmount || 0), 0)
+        // Set currency from backend response
+        if (periodData.currency) {
+          setCurrency(periodData.currency)
+        }
 
-          const expenses = periodTransactions
-            .filter(tx => (tx.metadata as any)?.classification?.kind === 'purchase')
-            .reduce((sum, tx) => sum + Math.abs(tx.summary.totalAmount || 0), 0)
-
-          const profit = revenue - expenses
-
-          return {
-            label: getPeriodLabel(index, timeframe),
-            value: profit,
-            startDate: range.startDate,
-            endDate: range.endDate,
-          }
-        })
+        // Convert backend period data to frontend format
+        const periodProfits: PeriodData[] = periodData.periods.map((period) => ({
+          label: period.label,
+          value: period.profit,
+          startDate: period.startDate,
+          endDate: period.endDate,
+        }))
 
         setProfitData(periodProfits)
-        setCurrentProfit(periodProfits[0]?.value || 0)
-        setPreviousProfit(periodProfits[1]?.value || 0)
+        setCurrentProfit(periodData.currentPeriod.profit)
+        setPreviousProfit(periodData.previousPeriod.profit)
       } catch (err) {
-        console.error('[NetProfitScreen] Failed to fetch profit data:', err)
-        setError(err instanceof Error ? err.message : 'Failed to fetch profit data')
+        console.error('[NetProfitScreen] Failed to fetch period data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch period data')
       } finally {
         setLoading(false)
       }
     }
 
-    fetchProfitData()
-  }, [businessId, timeframe, getDateRanges, getPeriodLabel])
+    fetchPeriodData()
+  }, [businessId, timeframe])
 
   const maxValue = profitData.length > 0
     ? Math.max(...profitData.map(d => Math.abs(d.value)), 1)
@@ -217,15 +112,19 @@ export default function NetProfitScreen() {
               
               <View style={styles.detailsList}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}</Text>
+                  <Text style={styles.detailLabel}>
+                    {profitData[0]?.label || (timeframe === 'week' 
+                      ? (healthScore?.usesRollingAverage ? 'Last 28 days' : 'Last 7 days')
+                      : (timeframe === 'month' ? 'Last 30 days' : 'Last 90 days'))}
+                  </Text>
                   <Text style={styles.detailValue}>
-                    {getCurrencySymbol(currency)}{currentProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {currentProfit >= 0 ? '+' : '-'}{getCurrencySymbol(currency)}{Math.abs(currentProfit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{getPreviousTimeframeLabel(timeframe)}</Text>
+                  <Text style={styles.detailLabel}>{profitData[1]?.label || 'Previous Period'}</Text>
                   <Text style={styles.detailValue}>
-                    {getCurrencySymbol(currency)}{previousProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {previousProfit >= 0 ? '+' : '-'}{getCurrencySymbol(currency)}{Math.abs(previousProfit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Text>
                 </View>
                 

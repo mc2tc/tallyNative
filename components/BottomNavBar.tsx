@@ -1,9 +1,10 @@
 // Reusable bottom navigation bar component
 
 import React from 'react'
-import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native'
+import { View, StyleSheet, TouchableOpacity, Text } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons'
-import { useNavigation } from '@react-navigation/native'
+import { useNavigation, useRoute, useNavigationState } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 
@@ -24,6 +25,25 @@ const tabs: TabItem[] = [
 
 export function BottomNavBar() {
   const navigation = useNavigation<DrawerNavigationProp<AppDrawerParamList>>()
+  const route = useRoute()
+  const navigationState = useNavigationState((state) => state)
+
+  // Find the active MainTab by traversing the navigation state
+  const getActiveTab = (): string | null => {
+    if (!navigationState) return null
+    
+    // Find MainTabs in the navigation state
+    const mainTabsRoute = navigationState.routes.find((r) => r.name === 'MainTabs')
+    if (mainTabsRoute?.state) {
+      const activeTabIndex = mainTabsRoute.state.index ?? 0
+      const activeTab = mainTabsRoute.state.routes[activeTabIndex]
+      return activeTab?.name ?? null
+    }
+    
+    return null
+  }
+
+  const activeTab = getActiveTab()
 
   const handleTabPress = (tab: TabItem) => {
     if (tab.route === 'MainTabs') {
@@ -31,20 +51,32 @@ export function BottomNavBar() {
     }
   }
 
+  const ACTIVE_COLOR = '#000000'
+  const INACTIVE_COLOR = '#999999'
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.name}
-            style={styles.tab}
-            onPress={() => handleTabPress(tab)}
-            activeOpacity={0.7}
-          >
-            <MaterialIcons name={tab.icon} size={24} color="#999999" />
-            <Text style={styles.tabLabel}>{tab.label}</Text>
-          </TouchableOpacity>
-        ))}
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.name
+          return (
+            <TouchableOpacity
+              key={tab.name}
+              style={styles.tab}
+              onPress={() => handleTabPress(tab)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons 
+                name={tab.icon} 
+                size={24} 
+                color={isActive ? ACTIVE_COLOR : INACTIVE_COLOR} 
+              />
+              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
       </View>
     </SafeAreaView>
   )
@@ -72,6 +104,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999999',
     marginTop: 4,
+  },
+  tabLabelActive: {
+    color: '#000000',
+    fontWeight: '500',
   },
 })
 

@@ -46,12 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const refreshAuthState = useCallback(async () => {
-    console.log('AuthContext: refreshAuthState called')
     const auth = getFirebaseAuth()
     const currentUser = auth.currentUser
 
     if (!currentUser) {
-      console.log('AuthContext: No current user in refreshAuthState')
       setUser(null)
       setBusinessUser(null)
       setMemberships(null)
@@ -60,9 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      console.log('AuthContext: Calling authApi.refreshClaims()...')
       const response = await authApi.refreshClaims()
-      console.log('AuthContext: refreshClaims response received:', Object.keys(response.memberships || {}).length, 'memberships')
       setMemberships(response.memberships)
 
       // Determine the primary business user context
@@ -138,12 +134,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // until the API is available
     } finally {
       setLoading(false)
-      console.log('AuthContext: refreshAuthState completed (loading set to false)')
     }
   }, [evaluateBusinessContext])
 
   useEffect(() => {
-    console.log('AuthContext: Setting up auth state listener...')
     const auth = getFirebaseAuth()
     let isInitialized = false
     
@@ -165,16 +159,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 5000) // 5 second timeout
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log('AuthContext: Auth state changed, user:', firebaseUser ? firebaseUser.email : 'null')
       clearTimeout(initTimeout) // Clear timeout since we got a response
       try {
         setUser(firebaseUser)
         if (firebaseUser) {
-          console.log('AuthContext: User found, refreshing auth state...')
           await refreshAuthState()
-          console.log('AuthContext: Auth state refresh completed')
         } else {
-          console.log('AuthContext: No user, setting initial state...')
           setBusinessUser(null)
           setMemberships(null)
           setBusinessContextComplete(true)
@@ -188,7 +178,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBusinessContextComplete(true)
         setLoading(false)
       } finally {
-        console.log('AuthContext: Setting initialized to true')
         setInitialized(true)
         isInitialized = true
       }
@@ -202,14 +191,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     try {
-      console.log('AuthContext: Starting Firebase sign in...')
       const auth = getFirebaseAuth()
       if (!auth) {
         throw new Error('Firebase auth is not initialized')
       }
-      console.log('AuthContext: Calling signInWithEmailAndPassword...')
       await signInWithEmailAndPassword(auth, email, password)
-      console.log('AuthContext: Firebase sign in successful, waiting for auth state change...')
       // Auth state will update via onAuthStateChanged
     } catch (error) {
       console.error('AuthContext: Sign in error:', error)

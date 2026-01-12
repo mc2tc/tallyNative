@@ -60,6 +60,10 @@ type InventoryViewAllItem = {
   groupedItemIds?: string[]              // Array of inventory item IDs (only on grouped items)
   currentStockOfPrimaryPackages?: number // Current stock count in primary packages
   currentStockInPrimaryUnits?: number    // Current stock count in primary packaging units
+  currentStockInMetric?: {
+    stock: number
+    unit: string
+  }
 }
 
 type InventoryViewAllRouteParams = {
@@ -87,17 +91,89 @@ export default function InventoryViewAllScreen() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
   const [hoveredDropTargetId, setHoveredDropTargetId] = useState<string | null>(null)
   const [items, setItems] = useState<InventoryViewAllItem[]>(routeItems || [])
-  const [loading, setLoading] = useState(section !== 'Receiving') // Only load for Raw Materials/Finished Goods/Pending Orders
+  const [loading, setLoading] = useState(true) // Always start with loading state
   const [infoCardDismissed, setInfoCardDismissed] = useState(false)
   const lastFetchedSectionRef = useRef<string | null>(null)
 
   // Fetch items function - extracted to be reusable
   const fetchItems = useCallback(async () => {
-    if (!businessId || section === 'Receiving') {
-      // For Receiving, use items from route params (transaction items)
-      setItems(routeItems || [])
+    if (!businessId) {
       setLoading(false)
-      lastFetchedSectionRef.current = null
+      return
+    }
+
+    // For Receiving, fetch fresh transaction data and filter out confirmed items
+    if (section === 'Receiving') {
+      try {
+        setLoading(true)
+        // Fetch all transactions for "Receiving" items (Inventory)
+        const response = await transactions2Api.getTransactions(businessId, {
+          page: 1,
+          limit: 500,
+        })
+        
+        // Extract items from transactions for "Receiving" section (Inventory)
+        const receiving: InventoryViewAllItem[] = []
+
+        response.transactions.forEach((tx: Transaction) => {
+          const details = tx.details as {
+            itemList?: Array<{
+              name: string
+              amount: number
+              debitAccount?: string
+              quantity?: number
+              unit?: string
+            }>
+          } | undefined
+
+          const itemList = details?.itemList || []
+          const transactionDate = tx.summary?.transactionDate || Date.now()
+
+          itemList.forEach((item, index) => {
+            // Include all items with debitAccount === 'Inventory'
+            if (item.debitAccount === 'Inventory') {
+              const currency = tx.summary?.currency || 'GBP'
+              const itemId = `${tx.id}-${index}`
+
+              receiving.push({
+                id: itemId,
+                title: item.name,
+                amount: formatAmount(item.amount, currency, true),
+                currency,
+                transactionDate, // Store transaction date for sorting
+                transactionItem: {
+                  name: item.name,
+                  amount: item.amount,
+                  currency,
+                  transactionId: tx.id,
+                  itemIndex: index,
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  debitAccount: item.debitAccount,
+                },
+              })
+            }
+          })
+        })
+
+        // Sort by transaction date (most recent first)
+        receiving.sort((a, b) => (b.transactionDate || 0) - (a.transactionDate || 0))
+
+        console.log(`[Receiving] Fetched ${receiving.length} items with debitAccount === 'Inventory'`)
+        
+        setItems(receiving)
+        lastFetchedSectionRef.current = section
+      } catch (error) {
+        console.error('Failed to fetch receiving items:', error)
+        // Fallback to route items if fetch fails, or if no items found
+        const fallbackItems = routeItems && routeItems.length > 0 ? routeItems : []
+        setItems(fallbackItems)
+        if (fallbackItems.length === 0) {
+          Alert.alert('Error', 'Failed to load items. Please try again.')
+        }
+      } finally {
+        setLoading(false)
+      }
       return
     }
 
@@ -114,28 +190,32 @@ export default function InventoryViewAllScreen() {
       })
 
       // Convert inventory items to InventoryViewAllItem format
-      const viewAllItems: InventoryViewAllItem[] = response.items.map((item: InventoryItem) => {
-        const currency = item.currency || 'GBP'
-        return {
-          id: item.id,
-          title: item.name,
-          amount: formatAmount(item.amount, currency, true),
-          inventoryItem: item,
-          costPerPrimaryPackage: item.costPerPrimaryPackage,
-          costPerPrimaryPackagingUnit: item.costPerPrimaryPackagingUnit,
-          totalPrimaryPackages: item.packaging?.totalPrimaryPackages,
-          primaryPackagingUnit: item.packaging?.primaryPackaging?.unit,
-          primaryPackagingDescription: item.packaging?.primaryPackaging?.description,
-          primaryPackagingQuantity: item.packaging?.primaryPackaging?.quantity,
-          thirdPartyName: item.thirdPartyName,
-          transactionDate: item.transactionDate,
-          reference: item.reference,
-          groupedItemIds: item.groupedItemIds,
-          currentStockOfPrimaryPackages: item.currentStockOfPrimaryPackages,
-          currentStockInPrimaryUnits: item.currentStockInPrimaryUnits,
-          currency,
-        }
-      })
+      // Filter out Water items
+      const viewAllItems: InventoryViewAllItem[] = response.items
+        .filter((item: InventoryItem) => item.name?.toLowerCase() !== 'water')
+        .map((item: InventoryItem) => {
+          const currency = item.currency || 'GBP'
+          return {
+            id: item.id,
+            title: item.name,
+            amount: formatAmount(item.amount, currency, true),
+            inventoryItem: item,
+            costPerPrimaryPackage: item.costPerPrimaryPackage,
+            costPerPrimaryPackagingUnit: item.costPerPrimaryPackagingUnit,
+            totalPrimaryPackages: item.packaging?.totalPrimaryPackages,
+            primaryPackagingUnit: item.packaging?.primaryPackaging?.unit,
+            primaryPackagingDescription: item.packaging?.primaryPackaging?.description,
+            primaryPackagingQuantity: item.packaging?.primaryPackaging?.quantity,
+            thirdPartyName: item.thirdPartyName,
+            transactionDate: item.transactionDate,
+            reference: item.reference,
+            groupedItemIds: item.groupedItemIds,
+            currentStockOfPrimaryPackages: item.currentStockOfPrimaryPackages,
+            currentStockInPrimaryUnits: item.currentStockInPrimaryUnits,
+            currentStockInMetric: item.currentStockInMetric,
+            currency,
+          }
+        })
 
       setItems(viewAllItems)
       lastFetchedSectionRef.current = section
@@ -147,9 +227,9 @@ export default function InventoryViewAllScreen() {
     }
   }, [businessId, section, routeItems])
 
-  // Fetch items for Raw Materials and Finished Goods (View All shows both grouped and individual items)
+  // Fetch items for all sections (Receiving, Raw Materials, and Finished Goods)
   useEffect(() => {
-    if (!businessId || section === 'Receiving') {
+    if (!businessId) {
       return
     }
 
@@ -158,19 +238,28 @@ export default function InventoryViewAllScreen() {
       setItems([])
     }
 
+    // Force refresh on initial load by clearing the cache reference
+    lastFetchedSectionRef.current = null
     fetchItems()
   }, [businessId, section, fetchItems]) // Refetch when businessId or section changes
 
   // Refetch when screen comes into focus (e.g., after returning from stock-take or detail screen)
   useFocusEffect(
     useCallback(() => {
-      if (section !== 'Receiving' && businessId) {
+      if (businessId) {
         // Force refetch to get latest data by resetting the cache check
         lastFetchedSectionRef.current = null
         fetchItems()
       }
     }, [fetchItems, section, businessId])
   )
+
+  // Clear hover state when dragging stops
+  useEffect(() => {
+    if (!draggingItemId) {
+      setHoveredDropTargetId(null)
+    }
+  }, [draggingItemId])
 
   const handleGoBack = () => {
     navigation.navigate('InventoryManagement' as never)
@@ -189,6 +278,27 @@ export default function InventoryViewAllScreen() {
       return title.includes(query) || thirdPartyName.includes(query) || reference.includes(query)
     })
   }, [items, searchQuery])
+
+  // Helper function to format stock display for inventory items
+  const formatStockDisplay = useCallback((item: InventoryViewAllItem): string => {
+    // Only format stock for received items (Raw Materials or Finished Goods), not Receiving items
+    if (section === 'Receiving' || !item.inventoryItem) {
+      return ''
+    }
+
+    // Priority 1: Use currentStockInMetric if available
+    if (item.currentStockInMetric) {
+      return `${item.currentStockInMetric.stock} ${item.currentStockInMetric.unit}`
+    }
+
+    // Priority 2: Use currentStockInPrimaryUnits with primaryPackagingUnit
+    if (item.currentStockInPrimaryUnits !== undefined && item.primaryPackagingUnit) {
+      return `${item.currentStockInPrimaryUnits} ${item.primaryPackagingUnit}`
+    }
+
+    // No stock data available
+    return ''
+  }, [section])
 
   const handleItemPress = useCallback(
     (item: InventoryViewAllItem) => {
@@ -227,13 +337,120 @@ export default function InventoryViewAllScreen() {
           businessId,
           viewAllTitle: title,
           viewAllItems: filteredItems,
+          previousScreen: 'InventoryViewAll',
         })
       }
     },
     [businessId, navigation, section, title, filteredItems],
   )
 
-  // Check if two items can be grouped together (same name and packaging)
+  // Helper function to convert a word to singular form
+  // Matches backend implementation in src/app/authenticated/transactions3/api/inventory-items/group/route.ts
+  const toSingular = useCallback((word: string): string => {
+    if (!word || word.length < 2) return word // Too short to be a plural
+
+    const lowerWord = word.toLowerCase()
+
+    // Common irregular plurals dictionary (checked first)
+    const irregular: Record<string, string> = {
+      potatoes: 'potato',
+      tomatoes: 'tomato',
+      heroes: 'hero',
+      echoes: 'echo',
+      vetoes: 'veto',
+    }
+
+    if (irregular[lowerWord]) {
+      return irregular[lowerWord]
+    }
+
+    // Words ending in 'ies' (cities -> city, berries -> berry)
+    if (word.length > 3 && word.endsWith('ies')) {
+      return word.slice(0, -3) + 'y'
+    }
+
+    // Words ending in 'ves' (leaves -> leaf, knives -> knife, lives -> life)
+    if (word.length > 3 && word.endsWith('ves')) {
+      // Common irregular cases
+      if (lowerWord === 'leaves') return word.slice(0, -5) + 'leaf'
+      if (lowerWord === 'knives') return word.slice(0, -5) + 'knife'
+      if (lowerWord === 'lives') return word.slice(0, -5) + 'life'
+      // Default: remove 'ves' and add 'f' (shelves -> shelf)
+      return word.slice(0, -3) + 'f'
+    }
+
+    // Words ending in 'es' after 's', 'x', 'z', 'ch', 'sh' (boxes -> box, dishes -> dish)
+    if (word.length > 4 && word.endsWith('es')) {
+      const beforeEs = word.slice(0, -2)
+      if (
+        beforeEs.endsWith('s') ||
+        beforeEs.endsWith('x') ||
+        beforeEs.endsWith('z') ||
+        beforeEs.endsWith('ch') ||
+        beforeEs.endsWith('sh')
+      ) {
+        return beforeEs
+      }
+      // FIX: For words ending in 'es' that don't match the pattern above,
+      // remove just the 's' (e.g., swedes -> swede, apples -> apple)
+      return word.slice(0, -1)
+    }
+
+    // Words ending in 's' but not 'ss', 'us', 'is', 'es', or already processed endings
+    // This handles: onions -> onion, apples -> apple (potatoes handled above)
+    // FIX: Use length > 3 to avoid breaking short words like "yes", "is", "us"
+    if (
+      word.length > 3 &&
+      word.endsWith('s') &&
+      !word.endsWith('ss') &&
+      !word.endsWith('us') &&
+      !word.endsWith('is') &&
+      !word.endsWith('ies') &&
+      !word.endsWith('ves')
+    ) {
+      return word.slice(0, -1)
+    }
+
+    return word
+  }, [])
+
+  // Helper function to normalize item names for fuzzy matching
+  // Removes parenthetical content, quoted content, common descriptive words, normalizes whitespace, and handles plurals
+  const normalizeNameForMatching = useCallback((name: string): string => {
+    if (!name) return ''
+    
+    // Convert to lowercase and trim
+    let normalized = name.toLowerCase().trim()
+    
+    // Remove parenthetical content (e.g., "(Large Sacks)", "(Top-up)", "(Washed)")
+    normalized = normalized.replace(/\s*\([^)]*\)/g, '')
+    
+    // Remove quoted content (e.g., "Maris Piper", 'some text')
+    normalized = normalized.replace(/\s*["'][^"']*["']/g, '')
+    
+    // Remove common descriptive words that don't affect product identity
+    const descriptiveWords = [
+      'bulk', 'large', 'small', 'medium', 'top-up', 'top up',
+      'sack', 'sacks', 'bag', 'bags', 'box', 'boxes', 'pack', 'packs',
+      'of', 'the', 'a', 'an'
+    ]
+    descriptiveWords.forEach(word => {
+      const regex = new RegExp(`\\b${word}\\b`, 'gi')
+      normalized = normalized.replace(regex, '')
+    })
+    
+    // Normalize whitespace (multiple spaces to single space)
+    normalized = normalized.replace(/\s+/g, ' ').trim()
+    
+    // Convert plurals to singular: split into words, convert each to singular, rejoin
+    const words = normalized.split(/\s+/).filter(word => word.length > 0)
+    const singularWords = words.map(word => toSingular(word))
+    normalized = singularWords.join(' ').trim()
+    
+    return normalized
+  }, [toSingular])
+
+  // Check if two items can be grouped together (fuzzy name match and same packaging unit)
   const canGroupItems = useCallback((draggedItem: InventoryViewAllItem, targetItem: InventoryViewAllItem): boolean => {
     if (!draggedItem || !targetItem) {
       return false
@@ -244,28 +461,20 @@ export default function InventoryViewAllScreen() {
       return false
     }
 
-    // Check if items have the same name
-    const sameName = draggedItem.title === targetItem.title
+    // Check if items have a fuzzy name match
+    const draggedNameNormalized = normalizeNameForMatching(draggedItem.title)
+    const targetNameNormalized = normalizeNameForMatching(targetItem.title)
+    const fuzzyNameMatch = draggedNameNormalized === targetNameNormalized && draggedNameNormalized.length > 0
 
-    // Check if items have the same primaryPackaging (description, quantity, unit)
-    const draggedPackaging = {
-      description: draggedItem.primaryPackagingDescription,
-      quantity: draggedItem.primaryPackagingQuantity,
-      unit: draggedItem.primaryPackagingUnit,
-    }
-    const targetPackaging = {
-      description: targetItem.primaryPackagingDescription,
-      quantity: targetItem.primaryPackagingQuantity,
-      unit: targetItem.primaryPackagingUnit,
-    }
+    // Check if items have the same primaryPackaging unit
+    const samePackagingUnit = Boolean(
+      draggedItem.primaryPackagingUnit && 
+      targetItem.primaryPackagingUnit &&
+      draggedItem.primaryPackagingUnit === targetItem.primaryPackagingUnit
+    )
 
-    const samePackaging =
-      draggedPackaging.description === targetPackaging.description &&
-      draggedPackaging.quantity === targetPackaging.quantity &&
-      draggedPackaging.unit === targetPackaging.unit
-
-    return sameName && samePackaging
-  }, [])
+    return fuzzyNameMatch && samePackagingUnit
+  }, [normalizeNameForMatching])
 
   // Handle drop event - check if items match
   // This function is called when an item is dropped on a droppable area
@@ -365,14 +574,14 @@ export default function InventoryViewAllScreen() {
         contentContainerStyle={styles.contentContainer}
         nestedScrollEnabled={true}
       >
-        {/* Explainer Card - only show for Raw Materials and Finished Goods (not Receiving) */}
-        {!infoCardDismissed && section !== 'Receiving' && (
+        {/* Explainer Card - only show for Raw Materials (not Receiving or Finished Goods) */}
+        {!infoCardDismissed && section === 'Raw Materials' && (
           <View style={styles.infoCard}>
             <View style={styles.infoCardContent}>
               <View style={styles.infoCardTextContainer}>
                 <Text style={styles.infoCardTitle}>Group Similar Items</Text>
                 <Text style={styles.infoCardBody}>
-                  Drag and drop items with the same name and packaging to group them together. This helps you manage inventory more efficiently.
+                  Drag and drop items with a similar name and primary packaging unit to group them together.
                 </Text>
               </View>
               <TouchableOpacity
@@ -410,6 +619,9 @@ export default function InventoryViewAllScreen() {
               const isHoveredDropTarget = hoveredDropTargetId === item.id && isValidDropTarget
               const isDragging = draggingItemId === item.id
               
+              // Compute stock display for received items
+              const stockDisplay = isReceivedItem ? formatStockDisplay(item) : ''
+              
               const cardContent = (
                 <TouchableOpacity
                   style={[
@@ -421,12 +633,12 @@ export default function InventoryViewAllScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={styles.itemTextGroup}>
-                    {/* Only show thirdPartyName and date/reference for non-grouped items */}
-                    {isReceivedItem && !isGroupedItem && item.thirdPartyName && (
-                      <Text style={styles.itemThirdPartyName}>{item.thirdPartyName}</Text>
-                    )}
-                    {isReceivedItem && !isGroupedItem && (item.transactionDate || item.reference) && (
-                      <View style={styles.dateReferenceRow}>
+                    {/* Third party name and date on one line */}
+                    {isReceivedItem && !isGroupedItem && (item.thirdPartyName || item.transactionDate) && (
+                      <View style={styles.thirdPartyDateRow}>
+                        {item.thirdPartyName && (
+                          <Text style={styles.itemThirdPartyName}>{item.thirdPartyName}</Text>
+                        )}
                         {item.transactionDate && (
                           <Text style={styles.itemTransactionDate}>
                             {new Date(item.transactionDate).toLocaleDateString('en-GB', {
@@ -436,90 +648,93 @@ export default function InventoryViewAllScreen() {
                             })}
                           </Text>
                         )}
-                        {item.reference && (
-                          <Text style={styles.itemReference}>{item.reference}</Text>
-                        )}
                       </View>
                     )}
-                     <View style={styles.titleRow}>
-                       <Text style={styles.itemTitle}>{item.title}</Text>
-                       {isGroupedItem && (
-                         <Octicons name="stack" size={16} color={GRAYSCALE_SECONDARY} style={styles.stackIcon} />
-                       )}
-                     </View>
-                     {isReceivedItem && (item.totalPrimaryPackages !== undefined || (item.primaryPackagingDescription && item.primaryPackagingQuantity !== undefined && item.primaryPackagingUnit)) && (
-                       <View style={[styles.labelValueRow, isGroupedItem && styles.labelValueRowGrouped]}>
-                        <Text style={styles.itemSubtitleLabel}>
-                          {item.totalPrimaryPackages !== undefined ? `Total primary packages` : ''}
-                          {item.totalPrimaryPackages !== undefined && item.primaryPackagingDescription && item.primaryPackagingQuantity !== undefined && item.primaryPackagingUnit ? ': ' : ''}
-                          {item.primaryPackagingDescription && item.primaryPackagingQuantity !== undefined && item.primaryPackagingUnit ? `${item.primaryPackagingDescription} ${item.primaryPackagingQuantity} ${item.primaryPackagingUnit}` : ''}
-                        </Text>
-                        {item.totalPrimaryPackages !== undefined && (
-                          <Text style={styles.itemSubtitleValue}>
-                            {(() => {
-                              // Use currentStockOfPrimaryPackages if available, otherwise default to totalPrimaryPackages
-                              // (for display purposes - initially they should be equal)
-                              const currentStock = item.currentStockOfPrimaryPackages ?? item.totalPrimaryPackages
-                              return `${currentStock.toLocaleString()} of ${item.totalPrimaryPackages.toLocaleString()}`
-                            })()}
-                          </Text>
+                    {/* Item title (name) */}
+                    <View style={styles.titleRow}>
+                      <View style={styles.titleWithIcon}>
+                        <Text style={styles.itemTitle}>{item.title}</Text>
+                        {isGroupedItem && (
+                          <Octicons name="stack" size={16} color={GRAYSCALE_SECONDARY} style={styles.stackIcon} />
                         )}
+                      </View>
+                    </View>
+                    {/* Reference on separate line if exists */}
+                    {isReceivedItem && !isGroupedItem && item.reference && (
+                      <Text style={styles.itemReference}>{item.reference}</Text>
+                    )}
+                     {isReceivedItem && stockDisplay && (
+                       <View style={[styles.labelValueRow, isGroupedItem && styles.labelValueRowGrouped]}>
+                        <Text style={styles.itemSubtitleLabel}>Current stock</Text>
+                        <Text style={styles.itemSubtitleValue}>{stockDisplay}</Text>
                       </View>
                     )}
                   </View>
                 </TouchableOpacity>
               )
 
-              return (
-                <View 
-                  key={item.id} 
-                  style={[
-                    styles.droppableWrapper,
-                    isDragging && styles.droppableWrapperDragging,
-                    isValidDropTarget && styles.droppableWrapperValidTarget,
-                  ]}
-                  onLayout={() => {
-                    // Track when item layout changes during drag
-                  }}
-                >
-                  <Droppable
-                    onDrop={createDropHandler(item)}
+              // Only enable drag and drop for Raw Materials, not Receiving or Finished Goods
+              const isDraggable = section === 'Raw Materials'
+              
+              if (isDraggable) {
+                return (
+                  <View 
+                    key={item.id} 
+                    style={[
+                      styles.droppableWrapper,
+                      isDragging && styles.droppableWrapperDragging,
+                      isValidDropTarget && styles.droppableWrapperValidTarget,
+                    ]}
                   >
-                    <Draggable 
-                      data={item}
-                      onStateChange={(state) => {
-                        console.log(`[Drag Debug] Item ${item.id} (${item.title}) state changed:`, state, `current draggingItemId: ${draggingItemId}`)
-                        if (state === DraggableState.DRAGGING) {
-                          console.log(`[Drag Debug] Setting draggingItemId to: ${item.id}`)
-                          setDraggingItemId(item.id)
-                        } else if (state === DraggableState.IDLE || state === DraggableState.DROPPED) {
-                          // Only clear if THIS item was the one being dragged
-                          // Use functional update to get current state
-                          setDraggingItemId((currentDraggingId) => {
-                            if (currentDraggingId === item.id) {
-                              console.log(`[Drag Debug] Clearing draggingItemId (was: ${currentDraggingId}) - this item was being dragged`)
-                              return null
-                            } else {
-                              console.log(`[Drag Debug] Ignoring IDLE/DROPPED state for item ${item.id} - not the dragged item (current: ${currentDraggingId})`)
-                              return currentDraggingId
-                            }
-                          })
-                        }
-                      }}
-                      onDragStart={(data) => {
-                        console.log(`[Drag Debug] Drag started for item:`, item.id, item.title, 'data:', data)
-                      }}
-                      onDragEnd={(data) => {
-                        console.log(`[Drag Debug] Drag ended for item:`, item.id, item.title, 'data:', data)
-                        // Clear hover state when drag ends
-                        setHoveredDropTargetId(null)
-                      }}
+                    <Droppable
+                      onDrop={createDropHandler(item)}
                     >
-                      {cardContent}
-                    </Draggable>
-                  </Droppable>
-                </View>
-              )
+                      <Draggable 
+                        data={item}
+                        onStateChange={(state) => {
+                          console.log(`[Drag Debug] Item ${item.id} (${item.title}) state changed:`, state, `current draggingItemId: ${draggingItemId}`)
+                          if (state === DraggableState.DRAGGING) {
+                            console.log(`[Drag Debug] Setting draggingItemId to: ${item.id}`)
+                            setDraggingItemId(item.id)
+                          } else if (state === DraggableState.IDLE || state === DraggableState.DROPPED) {
+                            // Only clear if THIS item was the one being dragged
+                            // Use functional update to get current state
+                            setDraggingItemId((currentDraggingId) => {
+                              if (currentDraggingId === item.id) {
+                                console.log(`[Drag Debug] Clearing draggingItemId (was: ${currentDraggingId}) - this item was being dragged`)
+                                return null
+                              } else {
+                                console.log(`[Drag Debug] Ignoring IDLE/DROPPED state for item ${item.id} - not the dragged item (current: ${currentDraggingId})`)
+                                return currentDraggingId
+                              }
+                            })
+                          }
+                        }}
+                        onDragStart={(data) => {
+                          console.log(`[Drag Debug] Drag started for item:`, item.id, item.title, 'data:', data)
+                        }}
+                        onDragEnd={(data) => {
+                          console.log(`[Drag Debug] Drag ended for item:`, item.id, item.title, 'data:', data)
+                          // Clear hover state when drag ends
+                          setHoveredDropTargetId(null)
+                        }}
+                      >
+                        {cardContent}
+                      </Draggable>
+                    </Droppable>
+                  </View>
+                )
+              } else {
+                // For Receiving items, render without drag/drop functionality
+                return (
+                  <View 
+                    key={item.id} 
+                    style={styles.droppableWrapper}
+                  >
+                    {cardContent}
+                  </View>
+                )
+              }
             })}
           </View>
         )}
@@ -619,25 +834,33 @@ const styles = StyleSheet.create({
   listItemValidDropTarget: {
     // Style for items that are valid drop targets (when something is being dragged)
     borderWidth: 2,
-    borderColor: '#d0d0d0',
-    backgroundColor: '#fafafa',
+    borderColor: '#b0b0b0',
+    backgroundColor: '#f8f8f8',
+    borderStyle: 'dashed',
   },
   listItemHoveredDropTarget: {
     // Style when hovering over a valid drop target
     borderWidth: 2,
     borderColor: GRAYSCALE_PRIMARY,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f0f0f0',
+    borderStyle: 'solid',
   },
   itemTextGroup: {
     flex: 1,
+  },
+  thirdPartyDateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
   },
   itemThirdPartyName: {
     fontSize: 11,
     fontWeight: '400',
     color: GRAYSCALE_SECONDARY,
-    marginBottom: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    flex: 1,
   },
   dateReferenceRow: {
     flexDirection: 'row',
@@ -649,12 +872,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '400',
     color: GRAYSCALE_SECONDARY,
+    flexShrink: 0,
+    textAlign: 'right',
   },
   itemReference: {
     fontSize: 11,
     fontWeight: '400',
     color: GRAYSCALE_SECONDARY,
-    textAlign: 'right',
+    marginTop: 2,
   },
   nameAmountRow: {
     flexDirection: 'row',
@@ -668,11 +893,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
+  titleWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
   itemTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: GRAYSCALE_SECONDARY,
-    flex: 1,
   },
   stackIcon: {
     marginLeft: 8,

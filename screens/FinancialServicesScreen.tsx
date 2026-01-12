@@ -4,7 +4,7 @@ import React from 'react'
 import { View, StyleSheet, ScrollView, Text, TouchableOpacity } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { BottomNavBar } from '../components/BottomNavBar'
+import { TallyNetworkBottomNav } from '../components/TallyNetworkBottomNav'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { useModuleTracking } from '../lib/hooks/useModuleTracking'
 import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
@@ -48,7 +48,7 @@ export default function FinancialServicesScreen({ navigation }: Props) {
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <BottomNavBar />
+        <TallyNetworkBottomNav />
       </AppBarLayout>
     </View>
   )
@@ -64,6 +64,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
+    paddingBottom: 80, // Extra padding for bottom nav
   },
   serviceCard: {
     backgroundColor: '#ffffff',

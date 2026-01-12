@@ -34,6 +34,13 @@ type TransactionItem = {
   vatAmount?: number
   debitAccountConfirmed?: boolean
   isBusinessExpense?: boolean
+  isMixedExpense?: boolean
+  expenseSplit?: {
+    businessAmount: number
+    personalAmount: number
+  }
+  splitFromItemId?: string
+  isActive?: boolean
   category?: string
 }
 
@@ -50,10 +57,14 @@ type TransactionAccounting = {
     chartName?: string
     paymentMethod?: string
   }>
+  debits?: Array<{
+    chartName?: string
+  }>
   paymentBreakdown?: Array<{
     type?: string
     amount?: number
   }>
+  hasGeneralExpenseFallback?: boolean
 }
 
 
@@ -95,9 +106,21 @@ export default function TransactionDetailScreen() {
   const [invoicePdfUrl, setInvoicePdfUrl] = useState<string | null>(null)
   // For receipt image display
   const [showReceiptImage, setShowReceiptImage] = useState(false)
+  // For expense split modal
+  const [showSplitModal, setShowSplitModal] = useState(false)
+  const [splittingItemIndex, setSplittingItemIndex] = useState<number | null>(null)
+  const [splitBusinessAmount, setSplitBusinessAmount] = useState<string>('')
+  const [splitPersonalAmount, setSplitPersonalAmount] = useState<string>('')
+  const [splitError, setSplitError] = useState<string>('')
+  const [savingSplit, setSavingSplit] = useState(false)
+  // For General Expense fallback warning: track edited item amounts and warning dismissal
+  // Store as strings to preserve decimal input while typing (e.g., "12." doesn't get converted to 12)
+  const [editedItemAmounts, setEditedItemAmounts] = useState<Map<number, string>>(new Map())
+  const [warningDismissed, setWarningDismissed] = useState(false)
   const salesPaymentSlideAnim = React.useRef(new Animated.Value(0)).current
   const paymentMethodSlideAnim = React.useRef(new Animated.Value(0)).current
   const slideAnim = React.useRef(new Animated.Value(0)).current
+  const splitModalSlideAnim = React.useRef(new Animated.Value(0)).current
   const headerWiggleAnim = React.useRef(new Animated.Value(0)).current
   const insets = useSafeAreaInsets()
 
@@ -148,22 +171,44 @@ export default function TransactionDetailScreen() {
   const isSale = classification?.kind === 'sale'
   
   // Check if transaction has accounting entries (to determine if it needs reconciliation)
-  const accounting = transaction?.accounting as {
-    debits?: Array<unknown>
-    credits?: Array<{ paymentMethod?: string; chartName?: string }>
-    paymentBreakdown?: Array<{ type?: string; amount?: number }>
-  } | undefined
+  const accounting = transaction?.accounting as TransactionAccounting | undefined
+  
+  // Detect General Expense fallback warning
+  // Check both the flag and if any debit entry uses "General Expense"
+  const hasGeneralExpenseWarning = 
+    (accounting?.hasGeneralExpenseFallback === true) ||
+    (accounting?.debits?.some(
+      (debit) => debit.chartName === 'General Expense'
+    ) === true)
   
   // For sales transactions: determine if invoice is paid
-  // Paid if: reconciliation status is 'matched', 'reconciled', or 'exception'
-  // Also check if it's cash-only (cash payments are considered paid immediately)
-  const isCashOnlySale = isSale && accounting?.paymentBreakdown?.some(
+  // Paid if:
+  // 1. Reconciliation status is 'matched', 'reconciled', 'exception', or 'pending_bank_match'
+  //    (pending_bank_match means marked as paid but awaiting bank reconciliation)
+  // 2. Payment breakdown exists and is not accounts_receivable (has been marked as paid)
+  // 3. Cash-only payments (cash payments are considered paid immediately)
+  const paymentBreakdown = accounting?.paymentBreakdown || []
+  const hasAccountsReceivable = paymentBreakdown.some(
+    (pm) => pm.type?.toLowerCase() === 'accounts_receivable' || pm.type?.toLowerCase() === 'accountsreceivable'
+  )
+  const isCashOnlySale = isSale && paymentBreakdown.some(
     (pm) => pm.type === 'cash' || pm.type?.toLowerCase() === 'cash'
   )
-  const isSalePaid = isSale && (
+  const isPendingBankMatch = reconciliationStatus === 'pending_bank_match'
+  const isReconciled = 
     reconciliationStatus === 'matched' ||
     reconciliationStatus === 'reconciled' ||
-    reconciliationStatus === 'exception' ||
+    reconciliationStatus === 'exception'
+  
+  // Invoice is paid if:
+  // - It's been reconciled (matched/reconciled/exception), OR
+  // - Payment breakdown exists and doesn't have accounts_receivable (has been marked as paid), OR
+  // - It's cash-only (immediately paid)
+  // Note: pending_bank_match alone doesn't mean paid - newly created invoices have this status
+  // but are still unpaid. Only consider it paid if accounts_receivable is NOT in payment breakdown.
+  const isSalePaid = isSale && (
+    isReconciled ||
+    (paymentBreakdown.length > 0 && !hasAccountsReceivable) ||
     isCashOnlySale
   )
   const hasAccountingEntries = (accounting?.debits?.length ?? 0) > 0 || (accounting?.credits?.length ?? 0) > 0
@@ -222,6 +267,15 @@ export default function TransactionDetailScreen() {
     paymentBreakdown?: Array<{ type?: string; amount?: number }>
   } | undefined
 
+  // Format item amounts (without currency symbol, as it's shown in header)
+  // Defined early so it can be used in callbacks
+  const formatItemAmount = (amount: number): string => {
+    return new Intl.NumberFormat('en-GB', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount)
+  }
+
   const handleConfirmVerification = useCallback(async () => {
     if (!businessId) {
       Alert.alert('Error', 'Business ID is missing. Cannot verify transaction.')
@@ -248,19 +302,39 @@ export default function TransactionDetailScreen() {
           paymentMethod?: string
         } = {}
 
-      // Build updated itemList with staged debitAccount changes
+      // Build updated itemList with staged debitAccount and amount changes
         const currentItemList = details?.itemList || []
         if (currentItemList.length > 0) {
           updateOptions.itemList = currentItemList.map((item, index) => {
             const debitAccount = editedItemDebitAccounts.has(index)
               ? editedItemDebitAccounts.get(index)!
               : item.debitAccount || ''
+            
+            // Use edited amount if available, otherwise use original
+            // Convert string to number (handle empty string or invalid input)
+            const editedAmountStr = editedItemAmounts.has(index) ? editedItemAmounts.get(index)! : null
+            const amount = editedAmountStr !== null
+              ? (editedAmountStr === '' || editedAmountStr === '.' ? 0 : parseFloat(editedAmountStr) || item.amount)
+              : item.amount
+            
+            // Recalculate amountExcluding and vatAmount proportionally if amount changed
+            let amountExcluding = item.amountExcluding
+            let vatAmount = item.vatAmount
+            if (editedItemAmounts.has(index) && item.amount > 0 && amount !== item.amount) {
+              const ratio = amount / item.amount
+              amountExcluding = item.amountExcluding !== undefined 
+                ? Number((item.amountExcluding * ratio).toFixed(2))
+                : undefined
+              vatAmount = item.vatAmount !== undefined
+                ? Number((item.vatAmount * ratio).toFixed(2))
+                : undefined
+            }
 
             return {
               name: item.name,
-              amount: item.amount,
-              amountExcluding: item.amountExcluding,
-              vatAmount: item.vatAmount,
+              amount,
+              amountExcluding,
+              vatAmount,
               debitAccount,
               debitAccountConfirmed: true,
               isBusinessExpense: item.isBusinessExpense,
@@ -443,15 +517,17 @@ export default function TransactionDetailScreen() {
       Alert.alert('Success', 'Transaction verified successfully', [
         {
           text: 'OK',
-          onPress: () => {
-            // Clear local state after successful verification
-            setSelectedPaymentMethod(null)
-            setEditedItemDebitAccounts(new Map())
-            // Navigate back immediately - parent screen will refresh and show transaction in correct collection
-            if (navigation.canGoBack()) {
-              navigation.goBack()
-            }
-          },
+            onPress: () => {
+              // Clear local state after successful verification
+              setSelectedPaymentMethod(null)
+              setEditedItemDebitAccounts(new Map())
+              setEditedItemAmounts(new Map())
+              setWarningDismissed(false)
+              // Navigate back immediately - parent screen will refresh and show transaction in correct collection
+              if (navigation.canGoBack()) {
+                navigation.goBack()
+              }
+            },
         },
       ])
     } catch (error) {
@@ -463,7 +539,7 @@ export default function TransactionDetailScreen() {
       Alert.alert('Error', errorMessage)
       setConfirmingVerification(false)
     }
-  }, [transaction.id, transaction?.summary?.totalAmount, businessId, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, transaction?.details, navigation])
+  }, [transaction.id, transaction?.summary?.totalAmount, businessId, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, editedItemAmounts, transaction?.details, navigation])
 
   // Handler for confirming unreconcilable transaction
   const handleConfirmUnreconcilable = useCallback(async () => {
@@ -710,9 +786,10 @@ export default function TransactionDetailScreen() {
     [handleClosePaymentMethodPicker],
   )
 
-  // Detect unsaved changes (staged accounts, payment methods, or unreconcilable form edits)
+  // Detect unsaved changes (staged accounts, amounts, payment methods, or unreconcilable form edits)
   const hasUnsavedChanges =
     editedItemDebitAccounts.size > 0 ||
+    editedItemAmounts.size > 0 ||
     !!selectedPaymentMethod ||
     !!selectedSalesPaymentMethod ||
     noMatchingRecord ||
@@ -748,6 +825,7 @@ export default function TransactionDetailScreen() {
             onPress: () => {
               // Clear staged state and proceed with the original navigation action
               setEditedItemDebitAccounts(new Map())
+              setEditedItemAmounts(new Map())
               setSelectedPaymentMethod(null)
               setSelectedSalesPaymentMethod(null)
               setItemActionSelection(new Map())
@@ -755,6 +833,7 @@ export default function TransactionDetailScreen() {
               setUnreconcilableDescription('')
               setUnreconcilableAccount('')
               setUnreconcilableReason('')
+              setWarningDismissed(false)
               navigation.dispatch(e.data.action)
             },
           },
@@ -777,11 +856,25 @@ export default function TransactionDetailScreen() {
     setUnreconcilableReason,
   ])
 
-  // Handler for sales payment method selection
-  const handleSelectSalesPaymentMethod = useCallback((method: PaymentMethodOption) => {
-    setSelectedSalesPaymentMethod(method.value)
-    handleCloseSalesPaymentPicker()
-  }, [])
+  // Sales payment methods - fixed list for marking invoices as paid
+  // Bank Transfer and Card both debit "Bank", Cash debits "Cash"
+  const salesPaymentMethods: PaymentMethodOption[] = [
+    {
+      label: 'Bank Transfer',
+      value: 'bank_transfer',
+      chartName: 'Bank',
+    },
+    {
+      label: 'Cash',
+      value: 'cash',
+      chartName: 'Cash',
+    },
+    {
+      label: 'Card',
+      value: 'card',
+      chartName: 'Bank',
+    },
+  ]
 
   // Handler for closing sales payment picker
   const handleCloseSalesPaymentPicker = useCallback(() => {
@@ -793,6 +886,12 @@ export default function TransactionDetailScreen() {
       setShowSalesPaymentPicker(false)
     })
   }, [salesPaymentSlideAnim])
+
+  // Handler for sales payment method selection
+  const handleSelectSalesPaymentMethod = useCallback((method: PaymentMethodOption) => {
+    setSelectedSalesPaymentMethod(method.value)
+    handleCloseSalesPaymentPicker()
+  }, [handleCloseSalesPaymentPicker])
 
   // Handler for generating invoice PDF
   const handleGenerateInvoicePDF = useCallback(async () => {
@@ -885,6 +984,182 @@ export default function TransactionDetailScreen() {
     }
     setShowReceiptImage(true)
   }, [transaction?.metadata?.imageUrl])
+
+  // Handler for opening split modal
+  const handleOpenSplitModal = useCallback((itemIndex: number) => {
+    const currentItemList = details?.itemList || []
+    const item = currentItemList[itemIndex]
+    if (!item) return
+
+    setSplittingItemIndex(itemIndex)
+    setSplitBusinessAmount(item.amount.toFixed(2))
+    setSplitPersonalAmount('0.00')
+    setSplitError('')
+    setShowSplitModal(true)
+    // Trigger animation
+    splitModalSlideAnim.setValue(0)
+    Animated.spring(splitModalSlideAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 10,
+    }).start()
+  }, [details?.itemList, splitModalSlideAnim])
+
+  // Handler for closing split modal
+  const handleCloseSplitModal = useCallback(() => {
+    Animated.timing(splitModalSlideAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowSplitModal(false)
+      setSplittingItemIndex(null)
+      setSplitBusinessAmount('')
+      setSplitPersonalAmount('')
+      setSplitError('')
+    })
+  }, [splitModalSlideAnim])
+
+  // Handler for saving split
+  const handleSaveSplit = useCallback(async () => {
+    if (splittingItemIndex === null || !businessId || !transaction?.id) {
+      return
+    }
+
+    const currentItemList = details?.itemList || []
+    const item = currentItemList[splittingItemIndex]
+    if (!item) return
+
+    const businessAmount = parseFloat(splitBusinessAmount) || 0
+    const personalAmount = parseFloat(splitPersonalAmount) || 0
+    const totalAmount = item.amount
+    const tolerance = 0.01
+
+    // Validate amounts
+    if (businessAmount < 0 || personalAmount < 0) {
+      setSplitError('Amounts cannot be negative')
+      return
+    }
+
+    if (Math.abs(businessAmount + personalAmount - totalAmount) > tolerance) {
+      setSplitError(`Amounts must sum to ${formatItemAmount(totalAmount)}`)
+      return
+    }
+
+    setSavingSplit(true)
+    setSplitError('')
+
+    try {
+      // Stage split locally on the transaction details so the user can save via the main API flow
+      const currentDetails = (transaction?.details as { itemList?: TransactionItem[] } | undefined) || {}
+      const currentItemList = currentDetails.itemList || []
+      const originalItem = currentItemList[splittingItemIndex]
+
+      if (!originalItem) {
+        throw new Error('Item not found')
+      }
+
+      const originalAmount = originalItem.amount
+      const businessRatio = originalAmount !== 0 ? businessAmount / originalAmount : 0
+      const personalRatio = originalAmount !== 0 ? personalAmount / originalAmount : 0
+
+      const proportional = (value?: number, ratio?: number) =>
+        value !== undefined && ratio !== undefined
+          ? Number((value * ratio).toFixed(2))
+          : value
+
+      // Generate a local splitFromItemId for grouping – backend will handle real IDs
+      const splitFromItemId = originalItem.splitFromItemId || `local-${splittingItemIndex}`
+
+      // Calculate VAT allocation:
+      // - Personal expenses (Drawings) cannot reclaim VAT, so vatAmount = 0
+      // - Business portion gets all VAT proportionally based on business amount ratio
+      const originalVatAmount = originalItem.vatAmount || 0
+      const businessVatAmount = originalAmount !== 0 
+        ? Number((originalVatAmount * businessRatio).toFixed(2))
+        : 0
+      
+      // Personal portion: no VAT reclaimable, full amount is net
+      // Business portion: gets proportional VAT, net = amount - VAT
+      const businessItem: TransactionItem = {
+        ...originalItem,
+        amount: businessAmount,
+        amountExcluding: businessAmount - businessVatAmount,
+        vatAmount: businessVatAmount,
+        isBusinessExpense: true,
+        debitAccount: originalItem.debitAccount,
+        splitFromItemId,
+        isActive: true,
+      }
+
+      const personalItem: TransactionItem = {
+        ...originalItem,
+        amount: personalAmount,
+        amountExcluding: personalAmount, // Full amount is net (no VAT reclaimable)
+        vatAmount: 0, // Personal expenses cannot reclaim VAT
+        isBusinessExpense: false,
+        debitAccount: 'Drawings',
+        splitFromItemId,
+        isActive: true,
+      }
+
+      // Mark original as inactive and store the split summary
+      const updatedOriginal: TransactionItem = {
+        ...originalItem,
+        isActive: false,
+        expenseSplit: { businessAmount, personalAmount },
+      }
+
+      const newItemList = [...currentItemList]
+      // Replace original with [original (inactive), business, personal]
+      newItemList.splice(splittingItemIndex, 1, updatedOriginal, businessItem, personalItem)
+
+      const newDetails = {
+        ...(transaction?.details as object | undefined),
+        itemList: newItemList,
+      }
+
+      setTransaction({
+        ...transaction,
+        details: newDetails,
+      } as Transaction)
+
+      handleCloseSplitModal()
+      Alert.alert('Success', 'Expense split staged. Tap "Confirm and save" to apply changes.')
+    } catch (error) {
+      console.error('Failed to split expense:', error)
+      let errorMessage = 'Failed to split expense. Please try again.'
+      if (error instanceof ApiError) {
+        errorMessage = error.message || errorMessage
+      }
+      setSplitError(errorMessage)
+    } finally {
+      setSavingSplit(false)
+    }
+  }, [splittingItemIndex, businessId, transaction?.id, transaction?.details, splitBusinessAmount, splitPersonalAmount, formatItemAmount, handleCloseSplitModal])
+
+  // Handler for updating split amounts (auto-adjust one when other changes)
+  const handleSplitAmountChange = useCallback((type: 'business' | 'personal', value: string) => {
+    if (splittingItemIndex === null) return
+    const currentItemList = details?.itemList || []
+    const item = currentItemList[splittingItemIndex]
+    if (!item) return
+
+    const numValue = parseFloat(value) || 0
+    const totalAmount = item.amount
+
+    if (type === 'business') {
+      setSplitBusinessAmount(value)
+      const remaining = Math.max(0, totalAmount - numValue)
+      setSplitPersonalAmount(remaining.toFixed(2))
+    } else {
+      setSplitPersonalAmount(value)
+      const remaining = Math.max(0, totalAmount - numValue)
+      setSplitBusinessAmount(remaining.toFixed(2))
+    }
+    setSplitError('')
+  }, [splittingItemIndex, details?.itemList])
 
   // Handler for marking invoice as paid
   // Calls transactions3 mark-paid endpoint which handles both AP and AR invoices
@@ -1031,15 +1306,79 @@ export default function TransactionDetailScreen() {
   }).format(transactionAmount)
   const amountWithSymbol = `${currencySymbol}${formattedAmount}`
 
-  // Format item amounts (without currency symbol, as it's shown in header)
-  const formatItemAmount = (amount: number): string => {
-    return new Intl.NumberFormat('en-GB', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
-  }
-
   const itemList = details?.itemList || []
+
+  // Helper function to check if item should show split button
+  const shouldShowSplitButton = useCallback((item: TransactionItem): boolean => {
+    return (
+      item.isMixedExpense === true &&
+      !item.expenseSplit &&
+      !item.splitFromItemId &&
+      item.isActive !== false
+    )
+  }, [])
+
+
+  // Filter out inactive items and group split items
+  const visibleItems = React.useMemo(() => {
+    // Create array with indices
+    const itemsWithIndices = itemList.map((item, index) => ({ item, index }))
+    
+    // Filter out inactive items (split originals)
+    const activeItems = itemsWithIndices.filter(({ item }) => item.isActive !== false)
+
+    // Group split items together
+    const processedIndices = new Set<number>()
+    const grouped: Array<{ items: Array<{ item: TransactionItem; index: number }>; isSplit: boolean }> = []
+
+    activeItems.forEach(({ item, index }) => {
+      if (processedIndices.has(index)) return
+
+      if (item.splitFromItemId) {
+        // This is a split item - find its pair
+        const paired = activeItems.find(
+          (other) => other.index !== index && other.item.splitFromItemId === item.splitFromItemId
+        )
+        if (paired) {
+          processedIndices.add(index)
+          processedIndices.add(paired.index)
+          // Sort so business comes first
+          const items = [item, paired.item].sort((a, b) => {
+            if (a.isBusinessExpense !== false && b.isBusinessExpense === false) return -1
+            if (a.isBusinessExpense === false && b.isBusinessExpense !== false) return 1
+            return 0
+          })
+          const indices = [index, paired.index].sort((a, b) => {
+            const aItem = itemList[a]
+            const bItem = itemList[b]
+            if (aItem.isBusinessExpense !== false && bItem.isBusinessExpense === false) return -1
+            if (aItem.isBusinessExpense === false && bItem.isBusinessExpense !== false) return 1
+            return 0
+          })
+          grouped.push({
+            items: items.map((itm, idx) => ({ item: itm, index: indices[idx] })),
+            isSplit: true,
+          })
+        } else {
+          // Paired item not found, show as regular item
+          processedIndices.add(index)
+          grouped.push({
+            items: [{ item, index }],
+            isSplit: false,
+          })
+        }
+      } else {
+        // Regular item
+        processedIndices.add(index)
+        grouped.push({
+          items: [{ item, index }],
+          isSplit: false,
+        })
+      }
+    })
+
+    return grouped
+  }, [itemList])
 
   // Check if classification kind is "purchase" and get chart name (for transactions2)
   // Note: accounting is already extracted above for hasAccountingEntries check
@@ -1205,92 +1544,240 @@ export default function TransactionDetailScreen() {
           )}
         </Animated.View>
 
-        {itemList.length > 0 && (
-          <View style={styles.itemsContainer}>
-            {itemList.map((item, index) => (
-              <View key={index} style={styles.itemCard}>
-                <View style={styles.itemRow}>
-                  <View style={styles.itemLeft}>
-                    <Text style={styles.itemName}>{item.name}</Text>
-                    {(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) && (
-                      <>
-                        <View style={styles.accountRow}>
-                          <Text style={styles.accountLabel}>
-                            {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount}
-                          </Text>
-                        </View>
-                      </>
-                    )}
-                  </View>
-                  <Text style={styles.itemAmount}>{formatItemAmount(item.amount)}</Text>
+        {/* General Expense Fallback Warning */}
+        {hasGeneralExpenseWarning && !warningDismissed && (
+          <View style={styles.warningBanner}>
+            <View style={styles.warningBannerContent}>
+              <MaterialIcons name="warning" size={20} color={GRAYSCALE_PRIMARY} style={styles.warningIcon} />
+              <View style={styles.warningTextContainer}>
+                <Text style={styles.warningTitle}>General Expense Fallback</Text>
+                <Text style={styles.warningDescription}>
+                  This transaction fell back to General Expense, likely due to OCR extraction errors or unbalanced accounting. Please review:
+                </Text>
+                <View style={styles.warningBullets}>
+                  <Text style={styles.warningBullet}>• Verify item quantities and unit costs match the receipt</Text>
+                  <Text style={styles.warningBullet}>• Update items to more specific expense accounts</Text>
+                  <Text style={styles.warningBullet}>• Check that item amounts add up correctly</Text>
                 </View>
+              </View>
+              <TouchableOpacity
+                style={styles.warningCloseButton}
+                onPress={() => setWarningDismissed(true)}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="close" size={18} color={GRAYSCALE_PRIMARY} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
-                {(isUnverified || item.debitAccount) && (
-                  <View style={styles.segmentedButtonsContainer}>
-                    <Text style={styles.segmentedButtonsLabel}>Update Account</Text>
-                    <View style={styles.segmentedButtonsWrapper}>
-                      <TouchableOpacity
-                        style={[
-                          styles.segmentedButton,
-                          itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonActive,
-                          { borderTopLeftRadius: 8, borderBottomLeftRadius: 8, borderRightWidth: 0.5 },
-                        ]}
-                        onPress={async () => {
-                          const newSelection = new Map(itemActionSelection)
-                          newSelection.set(index, 'inventory')
-                          setItemActionSelection(newSelection)
-
-                          await handleSelectAccount('Inventory', index)
-
-                          setTimeout(() => {
-                            const resetSelection = new Map(itemActionSelection)
-                            resetSelection.delete(index)
-                            setItemActionSelection(resetSelection)
-                          }, 100)
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            styles.segmentedButtonText,
-                            itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonTextActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          Inventory
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[
-                          styles.segmentedButton,
-                          itemActionSelection.get(index) === 'other' && styles.segmentedButtonActive,
-                          { borderTopRightRadius: 8, borderBottomRightRadius: 8, borderLeftWidth: 0.5 },
-                        ]}
-                        onPress={() => {
-                          const newSelection = new Map(itemActionSelection)
-                          newSelection.set(index, 'other')
-                          setItemActionSelection(newSelection)
-                          handleEditAccount(index)
-                          setTimeout(() => {
-                            const resetSelection = new Map(itemActionSelection)
-                            resetSelection.delete(index)
-                            setItemActionSelection(resetSelection)
-                          }, 100)
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            styles.segmentedButtonText,
-                            itemActionSelection.get(index) === 'other' && styles.segmentedButtonTextActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          Other
-                        </Text>
-                      </TouchableOpacity>
+        {visibleItems.length > 0 && (
+          <View style={styles.itemsContainer}>
+            {visibleItems.map((group, groupIndex) => (
+              <View key={groupIndex} style={styles.itemCard}>
+                {group.isSplit ? (
+                  // Split items display
+                  <>
+                    <View style={styles.splitHeader}>
+                      <Text style={styles.splitHeaderText}>{group.items[0]?.item.name} (SPLIT)</Text>
+                      <Text style={styles.splitTotalAmount}>
+                        {formatItemAmount(
+                          (() => {
+                            const item0Index = group.items[0]?.index ?? -1
+                            const item1Index = group.items[1]?.index ?? -1
+                            const amount0Str = editedItemAmounts.has(item0Index) ? editedItemAmounts.get(item0Index)! : null
+                            const amount1Str = editedItemAmounts.has(item1Index) ? editedItemAmounts.get(item1Index)! : null
+                            const amount0 = amount0Str !== null
+                              ? (amount0Str === '' || amount0Str === '.' ? 0 : parseFloat(amount0Str) || group.items[0]?.item.amount || 0)
+                              : (group.items[0]?.item.amount || 0)
+                            const amount1 = amount1Str !== null
+                              ? (amount1Str === '' || amount1Str === '.' ? 0 : parseFloat(amount1Str) || group.items[1]?.item.amount || 0)
+                              : (group.items[1]?.item.amount || 0)
+                            return amount0 + amount1
+                          })()
+                        )}
+                      </Text>
                     </View>
-                  </View>
+                    {group.items.map(({ item, index }) => {
+                      const isBusiness = item.isBusinessExpense !== false
+                      return (
+                        <View key={`split-${index}`} style={styles.splitItemRow}>
+                          <View style={styles.splitItemLeft}>
+                            <View style={styles.splitBadge}>
+                              <Text style={styles.splitBadgeText}>
+                                {isBusiness ? 'Business' : 'Personal'}
+                              </Text>
+                            </View>
+                            <Text style={styles.splitItemAccount}>
+                              {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount || 'Unknown'}
+                            </Text>
+                          </View>
+                          {hasGeneralExpenseWarning ? (
+                            <TextInput
+                              style={styles.splitItemAmountInput}
+                              value={editedItemAmounts.has(index)
+                                ? editedItemAmounts.get(index)!
+                                : item.amount.toFixed(2)}
+                              onChangeText={(text) => {
+                                // Allow empty string, numbers, and decimal point while typing
+                                // Remove any non-numeric characters except decimal point
+                                const cleaned = text.replace(/[^0-9.]/g, '')
+                                // Ensure only one decimal point
+                                const parts = cleaned.split('.')
+                                const sanitized = parts.length > 2 
+                                  ? parts[0] + '.' + parts.slice(1).join('')
+                                  : cleaned
+                                
+                                const newEditedAmounts = new Map(editedItemAmounts)
+                                if (sanitized === '' || sanitized === '.') {
+                                  // Allow empty or just decimal point while typing
+                                  newEditedAmounts.set(index, sanitized)
+                                } else {
+                                  newEditedAmounts.set(index, sanitized)
+                                }
+                                setEditedItemAmounts(newEditedAmounts)
+                              }}
+                              keyboardType="decimal-pad"
+                              selectTextOnFocus
+                            />
+                          ) : (
+                            <Text style={styles.splitItemAmount}>{formatItemAmount(item.amount)}</Text>
+                          )}
+                        </View>
+                      )
+                    })}
+                  </>
+                ) : (
+                  // Regular item display
+                  <>
+                    {group.items.map(({ item, index }) => (
+                      <React.Fragment key={index}>
+                        <View style={styles.itemRow}>
+                          <View style={styles.itemLeft}>
+                            <Text style={styles.itemName}>{item.name}</Text>
+                            {(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) && (
+                              <>
+                                <View style={styles.accountRow}>
+                                  <Text style={styles.accountLabel}>
+                                    {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount}
+                                  </Text>
+                                </View>
+                              </>
+                            )}
+                          </View>
+                          {hasGeneralExpenseWarning ? (
+                            <TextInput
+                              style={styles.itemAmountInput}
+                              value={editedItemAmounts.has(index) 
+                                ? editedItemAmounts.get(index)!
+                                : item.amount.toFixed(2)}
+                              onChangeText={(text) => {
+                                // Allow empty string, numbers, and decimal point while typing
+                                // Remove any non-numeric characters except decimal point
+                                const cleaned = text.replace(/[^0-9.]/g, '')
+                                // Ensure only one decimal point
+                                const parts = cleaned.split('.')
+                                const sanitized = parts.length > 2 
+                                  ? parts[0] + '.' + parts.slice(1).join('')
+                                  : cleaned
+                                
+                                const newEditedAmounts = new Map(editedItemAmounts)
+                                if (sanitized === '' || sanitized === '.') {
+                                  // Allow empty or just decimal point while typing
+                                  newEditedAmounts.set(index, sanitized)
+                                } else {
+                                  newEditedAmounts.set(index, sanitized)
+                                }
+                                setEditedItemAmounts(newEditedAmounts)
+                              }}
+                              keyboardType="decimal-pad"
+                              selectTextOnFocus
+                            />
+                          ) : (
+                            <Text style={styles.itemAmount}>{formatItemAmount(item.amount)}</Text>
+                          )}
+                        </View>
+
+                        {(isUnverified || item.debitAccount) && (
+                          <View style={styles.segmentedButtonsContainer}>
+                            <Text style={styles.segmentedButtonsLabel}>Update Account</Text>
+                            <View style={styles.segmentedButtonsWrapper}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.segmentedButton,
+                                  itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonActive,
+                                  { borderTopLeftRadius: 8, borderBottomLeftRadius: 8, borderRightWidth: 0.5 },
+                                ]}
+                                onPress={async () => {
+                                  const newSelection = new Map(itemActionSelection)
+                                  newSelection.set(index, 'inventory')
+                                  setItemActionSelection(newSelection)
+
+                                  await handleSelectAccount('Inventory', index)
+
+                                  setTimeout(() => {
+                                    const resetSelection = new Map(itemActionSelection)
+                                    resetSelection.delete(index)
+                                    setItemActionSelection(resetSelection)
+                                  }, 100)
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[
+                                    styles.segmentedButtonText,
+                                    itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonTextActive,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  Inventory
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  styles.segmentedButton,
+                                  itemActionSelection.get(index) === 'other' && styles.segmentedButtonActive,
+                                  { borderTopRightRadius: 8, borderBottomRightRadius: 8, borderLeftWidth: 0.5 },
+                                ]}
+                                onPress={() => {
+                                  const newSelection = new Map(itemActionSelection)
+                                  newSelection.set(index, 'other')
+                                  setItemActionSelection(newSelection)
+                                  handleEditAccount(index)
+                                  setTimeout(() => {
+                                    const resetSelection = new Map(itemActionSelection)
+                                    resetSelection.delete(index)
+                                    setItemActionSelection(resetSelection)
+                                  }, 100)
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[
+                                    styles.segmentedButtonText,
+                                    itemActionSelection.get(index) === 'other' && styles.segmentedButtonTextActive,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  Other
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            {shouldShowSplitButton(item) && (
+                              <TouchableOpacity
+                                style={styles.splitButton}
+                                onPress={() => handleOpenSplitModal(index)}
+                                activeOpacity={0.7}
+                              >
+                                <MaterialCommunityIcons name="briefcase-eye" size={24} color={GRAYSCALE_PRIMARY} style={styles.splitButtonIcon} />
+                                <Text style={styles.splitButtonText}>Split Expense</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </>
                 )}
               </View>
             ))}
@@ -1429,7 +1916,9 @@ export default function TransactionDetailScreen() {
                 <View style={styles.paymentMethodInfo}>
                   <Text style={styles.paymentStatusLabel}>Payment Method:</Text>
                   <Text style={styles.paymentMethodValue}>
-                    {getPaymentMethodLabel(currentPaymentMethodType) || currentPaymentMethodType}
+                    {salesPaymentMethods.find(m => m.value === currentPaymentMethodType)?.label || 
+                     getPaymentMethodLabel(currentPaymentMethodType) || 
+                     currentPaymentMethodType}
                   </Text>
                 </View>
               )}
@@ -1469,27 +1958,15 @@ export default function TransactionDetailScreen() {
             {!isSalePaid && (
               <View style={styles.markAsPaidSection}>
                 <Text style={styles.markAsPaidLabel}>Mark invoice as paid</Text>
-                <Text style={styles.markAsPaidSubtext}>Select the payment method used to pay this invoice</Text>
+                <Text style={styles.markAsPaidSubtext}>Select the payment method received for this invoice</Text>
                 
                 <TouchableOpacity
                   style={styles.paymentMethodSelectButton}
-                  onPress={async () => {
+                  onPress={() => {
                     salesPaymentSlideAnim.setValue(0)
                     setShowSalesPaymentPicker(true)
-                    // Load payment methods if not already loaded
-                    if (availablePaymentMethods.length === 0 && businessId) {
-                      setLoadingPaymentMethods(true)
-                      try {
-                        const methods = await paymentMethodsApi.getPaymentMethods(businessId)
-                        const methodsArray = Array.isArray(methods) ? methods : []
-                        setAvailablePaymentMethods(methodsArray)
-                      } catch (error) {
-                        console.error('Failed to fetch payment methods:', error)
-                        setAvailablePaymentMethods([])
-                      } finally {
-                        setLoadingPaymentMethods(false)
-                      }
-                    }
+                    // Use predefined sales payment methods - no need to fetch from API
+                    setAvailablePaymentMethods(salesPaymentMethods)
                     Animated.spring(salesPaymentSlideAnim, {
                       toValue: 1,
                       useNativeDriver: true,
@@ -1501,8 +1978,8 @@ export default function TransactionDetailScreen() {
                 >
                   <Text style={[styles.paymentMethodSelectText, !selectedSalesPaymentMethod && styles.paymentMethodSelectPlaceholder]}>
                     {selectedSalesPaymentMethod 
-                      ? (getPaymentMethodLabel(selectedSalesPaymentMethod) || selectedSalesPaymentMethod)
-                      : 'Select payment method'}
+                      ? (salesPaymentMethods.find(m => m.value === selectedSalesPaymentMethod)?.label || selectedSalesPaymentMethod)
+                      : 'Select payment received'}
                   </Text>
                   <MaterialIcons name="arrow-drop-down" size={20} color={GRAYSCALE_PRIMARY} />
                 </TouchableOpacity>
@@ -1745,49 +2222,33 @@ export default function TransactionDetailScreen() {
                   <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
                 </TouchableOpacity>
               </View>
-              {loadingPaymentMethods ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
-                  <Text style={styles.loadingText}>Loading payment methods...</Text>
-                </View>
-              ) : (
-                <ScrollView
-                  style={styles.accountList}
-                  contentContainerStyle={{ paddingBottom: insets.bottom }}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {(() => {
-                    const methods = Array.isArray(availablePaymentMethods) ? availablePaymentMethods : []
-                    return methods.length === 0 ? (
-                      <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No payment methods available</Text>
-                      </View>
-                    ) : (
-                      methods.map((method, idx) => {
-                        const isSelected = selectedSalesPaymentMethod === method.value
-                        return (
-                          <TouchableOpacity
-                            key={idx}
-                            style={[
-                              styles.accountOption,
-                              isSelected && styles.accountOptionSelected,
-                            ]}
-                            onPress={() => handleSelectSalesPaymentMethod(method)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={[styles.accountOptionText, isSelected && styles.accountOptionTextSelected]}>
-                              {method.label}
-                            </Text>
-                            {isSelected && (
-                              <MaterialIcons name="check" size={20} color={GRAYSCALE_PRIMARY} style={styles.checkIcon} />
-                            )}
-                          </TouchableOpacity>
-                        )
-                      })
-                    )
-                  })()}
-                </ScrollView>
-              )}
+              <ScrollView
+                style={styles.accountList}
+                contentContainerStyle={{ paddingBottom: insets.bottom }}
+                showsVerticalScrollIndicator={false}
+              >
+                {salesPaymentMethods.map((method, idx) => {
+                  const isSelected = selectedSalesPaymentMethod === method.value
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[
+                        styles.accountOption,
+                        isSelected && styles.accountOptionSelected,
+                      ]}
+                      onPress={() => handleSelectSalesPaymentMethod(method)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.accountOptionText, isSelected && styles.accountOptionTextSelected]}>
+                        {method.label}
+                      </Text>
+                      {isSelected && (
+                        <MaterialIcons name="check" size={20} color={GRAYSCALE_PRIMARY} style={styles.checkIcon} />
+                      )}
+                    </TouchableOpacity>
+                  )
+                })}
+              </ScrollView>
             </TouchableOpacity>
           </Animated.View>
         </TouchableOpacity>
@@ -1963,6 +2424,126 @@ export default function TransactionDetailScreen() {
               />
             )}
           </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Expense Split Modal */}
+      <Modal
+        visible={showSplitModal}
+        transparent
+        animationType="none"
+        onRequestClose={handleCloseSplitModal}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={handleCloseSplitModal}
+        >
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                transform: [
+                  {
+                    translateY: splitModalSlideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [400, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Split Expense</Text>
+                <TouchableOpacity onPress={handleCloseSplitModal} style={styles.closeButton}>
+                  <MaterialIcons name="close" size={24} color={GRAYSCALE_PRIMARY} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.splitModalContent}
+                contentContainerStyle={{ paddingBottom: insets.bottom }}
+                showsVerticalScrollIndicator={false}
+              >
+                {splittingItemIndex !== null && itemList[splittingItemIndex] && (() => {
+                  const item = itemList[splittingItemIndex]
+                  return (
+                    <>
+                      <View style={styles.splitItemInfo}>
+                        <Text style={styles.splitItemInfoName}>{item.name}</Text>
+                        <Text style={styles.splitItemInfoTotal}>Total: {currencySymbol}{formatItemAmount(item.amount)}</Text>
+                        {item.debitAccount && (
+                          <Text style={styles.splitItemInfoAccount}>Account: {item.debitAccount}</Text>
+                        )}
+                      </View>
+
+                      <View style={styles.splitInputContainer}>
+                        <View style={styles.splitInputRow}>
+                          <Text style={styles.splitInputLabel}>Business Amount</Text>
+                          <TextInput
+                            style={styles.splitInput}
+                            value={splitBusinessAmount}
+                            onChangeText={(value) => handleSplitAmountChange('business', value)}
+                            keyboardType="decimal-pad"
+                            placeholder="0.00"
+                          />
+                        </View>
+
+                        <View style={styles.splitInputRow}>
+                          <Text style={styles.splitInputLabel}>Personal Amount</Text>
+                          <TextInput
+                            style={styles.splitInput}
+                            value={splitPersonalAmount}
+                            onChangeText={(value) => handleSplitAmountChange('personal', value)}
+                            keyboardType="decimal-pad"
+                            placeholder="0.00"
+                          />
+                        </View>
+
+                        <View style={styles.splitSummary}>
+                          <Text style={styles.splitSummaryText}>
+                            Business: {currencySymbol}{formatItemAmount(parseFloat(splitBusinessAmount) || 0)} | 
+                            Personal: {currencySymbol}{formatItemAmount(parseFloat(splitPersonalAmount) || 0)} | 
+                            Total: {currencySymbol}{formatItemAmount(item.amount)}
+                          </Text>
+                        </View>
+
+                        {splitError && (
+                          <View style={styles.splitErrorContainer}>
+                            <Text style={styles.splitErrorText}>{splitError}</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.splitActions}>
+                        <TouchableOpacity
+                          style={[styles.splitCancelButton, savingSplit && styles.splitButtonDisabled]}
+                          onPress={handleCloseSplitModal}
+                          activeOpacity={0.7}
+                          disabled={savingSplit}
+                        >
+                          <Text style={styles.splitCancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.splitSaveButton, savingSplit && styles.splitButtonDisabled]}
+                          onPress={handleSaveSplit}
+                          activeOpacity={0.8}
+                          disabled={savingSplit}
+                        >
+                          {savingSplit ? (
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          ) : (
+                            <Text style={styles.splitSaveButtonText}>Save Split</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )
+                })()}
+              </ScrollView>
+            </TouchableOpacity>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
     </AppBarLayout>
@@ -2546,6 +3127,266 @@ const styles = StyleSheet.create({
   receiptImage: {
     width: '100%',
     height: '100%',
+  },
+  // Split button styles
+  splitButton: {
+    marginTop: 12,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  splitButtonIcon: {
+    marginRight: 0,
+  },
+  splitButtonText: {
+    color: GRAYSCALE_PRIMARY,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Split items display styles
+  splitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  splitHeaderText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  splitTotalAmount: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  splitItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingLeft: 16,
+  },
+  splitItemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  splitBadge: {
+    backgroundColor: '#f6f6f6',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  splitBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  splitItemAccount: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+  },
+  splitItemAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+  },
+  // Split modal styles
+  splitModalContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  splitItemInfo: {
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  splitItemInfoName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 8,
+  },
+  splitItemInfoTotal: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 4,
+  },
+  splitItemInfoAccount: {
+    fontSize: 13,
+    color: '#888888',
+  },
+  splitInputContainer: {
+    marginBottom: 24,
+  },
+  splitInputRow: {
+    marginBottom: 16,
+  },
+  splitInputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 8,
+  },
+  splitInput: {
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    color: GRAYSCALE_PRIMARY,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  splitSummary: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#f6f6f6',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  splitSummaryText: {
+    fontSize: 13,
+    color: GRAYSCALE_PRIMARY,
+    textAlign: 'center',
+  },
+  splitErrorContainer: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ffc107',
+  },
+  splitErrorText: {
+    fontSize: 13,
+    color: '#856404',
+    textAlign: 'center',
+  },
+  splitActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  splitCancelButton: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dcdcdc',
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitCancelButtonText: {
+    color: GRAYSCALE_PRIMARY,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  splitSaveButton: {
+    flex: 1,
+    backgroundColor: GRAYSCALE_PRIMARY,
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitSaveButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  splitButtonDisabled: {
+    opacity: 0.6,
+  },
+  // General Expense Warning Banner Styles
+  warningBanner: {
+    backgroundColor: '#f6f6f6',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+  },
+  warningBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  warningIcon: {
+    marginRight: 12,
+    marginTop: 2,
+  },
+  warningTextContainer: {
+    flex: 1,
+  },
+  warningTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 6,
+  },
+  warningDescription: {
+    fontSize: 13,
+    color: GRAYSCALE_PRIMARY,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  warningBullets: {
+    marginLeft: 8,
+  },
+  warningBullet: {
+    fontSize: 12,
+    color: GRAYSCALE_PRIMARY,
+    lineHeight: 18,
+    marginBottom: 2,
+  },
+  warningCloseButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  // Editable Item Amount Input Styles
+  itemAmountInput: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    backgroundColor: '#f6f6f6',
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 80,
+    textAlign: 'right',
+  },
+  splitItemAmountInput: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    backgroundColor: '#f6f6f6',
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 70,
+    textAlign: 'right',
   },
 })
 

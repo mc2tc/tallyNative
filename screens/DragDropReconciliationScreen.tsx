@@ -542,7 +542,7 @@ export default function DragDropReconciliationScreen({
           <TouchableOpacity onPress={onClose} style={styles.backButton} activeOpacity={0.7}>
             <MaterialIcons name="arrow-back" size={24} color={GRAYSCALE_PRIMARY} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Needs Reconciliation</Text>
+          <Text style={styles.headerTitle}>NEEDS RECONCILIATION</Text>
         </View>
 
         {loading ? (

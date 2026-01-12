@@ -1,5 +1,5 @@
 // View all screen for scaffold pipeline sections
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
@@ -11,6 +11,7 @@ import type { TransactionsStackParamList } from '../navigation/TransactionsNavig
 import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import DragDropReconciliationScreen from './DragDropReconciliationScreen'
 import { AppBarLayout } from '../components/AppBarLayout'
+import { formatAmount, getCurrencySymbol } from '../lib/utils/currency'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -22,6 +23,9 @@ type TransactionStub = {
   title: string
   amount: string
   subtitle?: string
+  // Optional sales-lead specific fields (for Sales Pipeline View All)
+  projectTitle?: string
+  stage?: 'lead' | 'conversation' | 'proposal' | 'won' | 'lost'
   verificationItems?: Array<{ label: string; confirmed?: boolean }>
   originalTransaction?: Transaction
   isCredit?: boolean // True if this is a credit to the account (money coming in)
@@ -67,6 +71,89 @@ function isUnreconciled(tx: Transaction): boolean {
   return metadata?.reconciliation?.status === 'unreconciled'
 }
 
+type TransactionGroup = {
+  date: string
+  dateLabel: string
+  items: TransactionStub[]
+  totalAmount: number
+  currency: string
+}
+
+// Helper function to group transactions by date
+function groupTransactionsByDate(items: TransactionStub[]): TransactionGroup[] {
+  const dateMap = new Map<string, TransactionStub[]>()
+  
+  items.forEach((item) => {
+    const tx = item.originalTransaction
+    if (!tx) return
+    
+    const date = new Date(tx.summary.transactionDate)
+    const dateKey = date.toDateString()
+    
+    if (!dateMap.has(dateKey)) {
+      dateMap.set(dateKey, [])
+    }
+    dateMap.get(dateKey)!.push(item)
+  })
+  
+  // Convert to array and format date labels
+  const groups: TransactionGroup[] = []
+  dateMap.forEach((txs, dateKey) => {
+    const date = new Date(dateKey)
+    const dateLabel = date.toLocaleDateString('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    })
+    
+    // Calculate total for this date group (using default currency for now)
+    // Group by currency if needed in the future
+    let totalAmount = 0
+    let currency = 'GBP' // Default currency
+    const currencyTotals = new Map<string, number>()
+    
+    txs.forEach((item) => {
+      const tx = item.originalTransaction
+      if (tx) {
+        const txCurrency = tx.summary.currency || 'GBP'
+        const amount = Math.abs(tx.summary.totalAmount) // Use absolute value
+        const currentTotal = currencyTotals.get(txCurrency) || 0
+        currencyTotals.set(txCurrency, currentTotal + amount)
+        
+        // Use the most common currency or default to GBP
+        if (currencyTotals.get(txCurrency)! > (currencyTotals.get(currency) || 0)) {
+          currency = txCurrency
+        }
+        totalAmount += amount
+      }
+    })
+    
+    // Use the most common currency for the group
+    let maxTotal = 0
+    currencyTotals.forEach((total, curr) => {
+      if (total > maxTotal) {
+        maxTotal = total
+        currency = curr
+      }
+    })
+    
+    groups.push({
+      date: dateKey,
+      dateLabel,
+      items: txs.sort((a, b) => {
+        const aDate = a.originalTransaction?.summary.transactionDate || 0
+        const bDate = b.originalTransaction?.summary.transactionDate || 0
+        return bDate - aDate // Most recent first within group
+      }),
+      totalAmount: currencyTotals.get(currency) || totalAmount,
+      currency,
+    })
+  })
+  
+  // Sort groups by date (most recent first)
+  return groups.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+}
+
 export default function ScaffoldViewAllScreen() {
   const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
   const route = useRoute<ScaffoldViewAllRouteProp>()
@@ -82,6 +169,7 @@ export default function ScaffoldViewAllScreen() {
   // Determine if this is bank or cards section based on pipelineSection (more reliable than title)
   const isBankSection = pipelineSection === 'bank' || title.toLowerCase().includes('bank')
   const isCardsSection = pipelineSection === 'cards' || title.toLowerCase().includes('card') || title.toLowerCase().includes('credit')
+  const isSalesSection = pipelineSection === 'sales'
   const isReportingSection = section === 'reporting' || title.toLowerCase().includes('reporting ready')
   const [showDragDrop, setShowDragDrop] = useState(false)
 
@@ -120,10 +208,40 @@ export default function ScaffoldViewAllScreen() {
 
   // Handler for clicking on a transaction item
   const handleItemPress = useCallback((item: TransactionStub) => {
+    // For transaction-based pipelines, go to TransactionDetail
     if (item.originalTransaction) {
       navigation.navigate('TransactionDetail', { transaction: item.originalTransaction })
+      return
     }
-  }, [navigation])
+
+    // For Sales Pipeline leads (no originalTransaction), go to LeadDetail
+    if (isSalesSection) {
+      navigation.navigate('LeadDetail', {
+        lead: {
+          id: item.id,
+          title: item.title,
+          projectTitle: item.projectTitle,
+          subtitle: item.subtitle,
+          amount: item.amount || '',
+          stage: item.stage || 'lead',
+        },
+      })
+    }
+  }, [navigation, isSalesSection])
+
+  // Detect if we have underlying transactions (with dates) to group by
+  const hasOriginalTransactions = useMemo(
+    () => items.some((item: TransactionStub) => !!item.originalTransaction),
+    [items],
+  )
+
+  // Group transactions by date when we have originalTransaction data
+  const groupedTransactions = useMemo(() => {
+    if (!hasOriginalTransactions) {
+      return []
+    }
+    return groupTransactionsByDate(items)
+  }, [items, hasOriginalTransactions])
 
   return (
     <AppBarLayout title={title} onBackPress={handleGoBack}>
@@ -132,58 +250,103 @@ export default function ScaffoldViewAllScreen() {
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No items to display</Text>
           </View>
+        ) : hasOriginalTransactions ? (
+          <View style={styles.listContainer}>
+            {groupedTransactions.map((group) => (
+              <View key={group.date} style={styles.dateGroup}>
+                <View style={styles.dateHeader}>
+                  <Text style={styles.dateLabel}>{group.dateLabel}</Text>
+                  <Text style={styles.dateTotal}>
+                    {formatAmount(group.totalAmount, group.currency, group.currency === 'GBP')}
+                  </Text>
+                </View>
+                {group.items.map((item: TransactionStub) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.listItem}
+                    onPress={() => handleItemPress(item)}
+                    activeOpacity={0.7}
+                    disabled={!item.originalTransaction}
+                  >
+                    <View style={styles.itemTextGroup}>
+                      <View style={styles.itemTitleRow}>
+                        <View style={styles.auditIconContainer}>
+                          {item.originalTransaction && isAuditReady(item.originalTransaction) && (
+                            <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
+                          )}
+                          {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
+                            <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
+                          )}
+                        </View>
+                        <Text style={styles.itemTitle}>{item.title}</Text>
+                      </View>
+                      {item.verificationItems ? (
+                        <View style={styles.verificationItems}>
+                          {item.verificationItems.map((verification: { label: string; confirmed?: boolean }, idx: number) => (
+                            <View key={idx} style={styles.verificationItem}>
+                              <Text style={styles.verificationBullet}>•</Text>
+                              <Text style={styles.verificationLabel}>{verification.label}</Text>
+                              <MaterialIcons
+                                name="check"
+                                size={14}
+                                color={verification.confirmed ? GRAYSCALE_PRIMARY : '#d0d0d0'}
+                                style={styles.verificationCheck}
+                              />
+                            </View>
+                          ))}
+                        </View>
+                      ) : item.subtitle ? (
+                        <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
+                      ) : null}
+                      {item.originalTransaction && item.originalTransaction.summary.currency !== group.currency && (
+                        <Text style={styles.foreignCurrency}>
+                          {formatAmount(
+                            Math.abs(item.originalTransaction.summary.totalAmount),
+                            item.originalTransaction.summary.currency,
+                            false
+                          )}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.itemAmountContainer}>
+                      {isReportingSection && (
+                        <Text style={[
+                          styles.inputOutputIndicator,
+                          item.isCredit ? styles.inputIndicator : styles.outputIndicator,
+                        ]}>
+                          {item.isCredit ? '+' : '-'}
+                        </Text>
+                      )}
+                      <Text style={styles.itemAmount}>{item.amount}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ))}
+          </View>
         ) : (
+          // Fallback flat list for pipelines without underlying transactions (e.g. Sales Pipeline leads)
           <View style={styles.listContainer}>
             {items.map((item: TransactionStub) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.listItem}
-                onPress={() => handleItemPress(item)}
                 activeOpacity={0.7}
-                disabled={!item.originalTransaction}
+                onPress={() => handleItemPress(item)}
+                // Only clickable for sales leads; other flat lists (if any) remain informational
+                disabled={!isSalesSection}
               >
                 <View style={styles.itemTextGroup}>
-                  <View style={styles.itemTitleRow}>
-                    <View style={styles.auditIconContainer}>
-                      {item.originalTransaction && isAuditReady(item.originalTransaction) && (
-                        <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
-                      )}
-                      {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
-                        <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
-                      )}
-                    </View>
-                    <Text style={styles.itemTitle}>{item.title}</Text>
-                  </View>
-                  {item.verificationItems ? (
-                    <View style={styles.verificationItems}>
-                      {item.verificationItems.map((verification: { label: string; confirmed?: boolean }, idx: number) => (
-                        <View key={idx} style={styles.verificationItem}>
-                          <Text style={styles.verificationBullet}>•</Text>
-                          <Text style={styles.verificationLabel}>{verification.label}</Text>
-                          <MaterialIcons
-                            name="check"
-                            size={14}
-                            color={verification.confirmed ? GRAYSCALE_PRIMARY : '#d0d0d0'}
-                            style={styles.verificationCheck}
-                          />
-                        </View>
-                      ))}
-                    </View>
-                  ) : item.subtitle ? (
+                  <Text style={styles.itemTitle}>{item.title}</Text>
+                  {item.subtitle ? (
                     <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
                   ) : null}
                 </View>
-                <View style={styles.itemAmountContainer}>
-                  {isReportingSection && (
-                    <Text style={[
-                      styles.inputOutputIndicator,
-                      item.isCredit ? styles.inputIndicator : styles.outputIndicator
-                    ]}>
-                      {item.isCredit ? '+' : '-'}
-                    </Text>
-                  )}
-                  <Text style={styles.itemAmount}>{item.amount}</Text>
-                </View>
+                {item.amount ? (
+                  <View style={styles.itemAmountContainer}>
+                    <Text style={styles.itemAmount}>{item.amount}</Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             ))}
           </View>
@@ -348,6 +511,32 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: GRAYSCALE_SECONDARY,
+  },
+  dateGroup: {
+    marginBottom: 20,
+  },
+  dateHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  dateLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_SECONDARY,
+  },
+  dateTotal: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_SECONDARY,
+  },
+  foreignCurrency: {
+    fontSize: 12,
+    color: GRAYSCALE_SECONDARY,
+    marginTop: 2,
   },
   bottomActions: {
     flexDirection: 'row',
