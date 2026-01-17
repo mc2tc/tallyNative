@@ -4,7 +4,6 @@ import React from 'react'
 import { View, StyleSheet, ScrollView, Text, TouchableOpacity } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 
 type Props = NativeStackScreenProps<AppDrawerParamList, 'InvoiceFinancing'>
@@ -49,7 +48,6 @@ export default function InvoiceFinancingScreen({}: Props) {
             </TouchableOpacity>
           </View>
         </ScrollView>
-        <BottomNavBar />
       </AppBarLayout>
     </View>
   )

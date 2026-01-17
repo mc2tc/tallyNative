@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import type { ReportsStackParamList } from '../navigation/ReportsNavigator'
 import {
   chartAccountsApi,
@@ -16,6 +16,8 @@ import { useAuth } from '../lib/auth/AuthContext'
 import { formatAmount } from '../lib/utils/currency'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useModuleTracking } from '../lib/hooks/useModuleTracking'
+
+const GRAYSCALE_PRIMARY = '#4a4a4a'
 
 type SimpleReportRoute = Exclude<
   keyof ReportsStackParamList,
@@ -52,12 +54,12 @@ const reportCards: ReportCardConfig[] = [
 
 export default function ReportsScreen() {
   useModuleTracking('tax_compliance')
-  const navigation = useNavigation<StackNavigationProp<ReportsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<ReportsStackParamList>>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
   const [data, setData] = useState<ChartAccountsResponse | null>(null)
   const [cashflowData, setCashflowData] = useState<CashflowStatementResponse | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchCashflowData = useCallback(async () => {
@@ -170,6 +172,7 @@ export default function ReportsScreen() {
     if (!businessId) {
       setData(null)
       setCashflowData(null)
+      setLoading(false)
       return
     }
 
@@ -317,18 +320,17 @@ export default function ReportsScreen() {
 
   return (
     <AppBarLayout title="REPORTS">
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {loading && (
-          <View style={styles.loader}>
-            <ActivityIndicator color="#444" size="small" />
-            <Text style={styles.loadingText}>Loading reports...</Text>
-          </View>
-        )}
-        <View style={styles.cardsGrid}>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
+          <View style={styles.cardsGrid}>
           {reportCards.map((card) => (
             <TouchableOpacity
               key={card.key}
@@ -413,6 +415,7 @@ export default function ReportsScreen() {
           ))}
         </View>
       </ScrollView>
+      )}
     </AppBarLayout>
   )
 }
@@ -487,16 +490,10 @@ const styles = StyleSheet.create({
     color: '#333333',
     fontWeight: '600',
   },
-  loader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#666666',
+    alignItems: 'center',
   },
 })
 

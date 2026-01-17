@@ -5,9 +5,11 @@ import { View, StyleSheet, TouchableOpacity, Text } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { AntDesign } from '@expo/vector-icons'
-import { useNavigation, useRoute } from '@react-navigation/native'
+import { useNavigation, useRoute, useNavigationState } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
+import type { MainTabParamList } from '../navigation/MainTabNavigator'
 
 const GRAYSCALE_PRIMARY = '#000000'
 const GRAYSCALE_SECONDARY = '#999999'
@@ -18,7 +20,8 @@ type TabItem = {
   label: string
   icon: string
   iconType: 'material' | 'antdesign'
-  route: 'InventoryManagement' | 'ProductionManagement' | 'PointOfSale'
+  drawerRoute: 'InventoryManagement' | 'ProductionManagement' | 'PointOfSale'
+  tabRoute: 'Inventory' | 'Production' | 'PointOfSale'
 }
 
 const tabs: TabItem[] = [
@@ -27,32 +30,48 @@ const tabs: TabItem[] = [
     label: 'Inventory', 
     icon: 'package-variant', 
     iconType: 'material',
-    route: 'InventoryManagement' 
+    drawerRoute: 'InventoryManagement',
+    tabRoute: 'Inventory'
   },
   { 
     name: 'Production', 
     label: 'Production', 
     icon: 'product', 
     iconType: 'antdesign',
-    route: 'ProductionManagement' 
+    drawerRoute: 'ProductionManagement',
+    tabRoute: 'Production'
   },
   { 
     name: 'PointOfSale', 
     label: 'Point of Sale', 
     icon: 'cash-register', 
     iconType: 'material',
-    route: 'PointOfSale' 
+    drawerRoute: 'PointOfSale',
+    tabRoute: 'PointOfSale'
   },
 ]
 
 export function OperationsBottomNav() {
-  const navigation = useNavigation<DrawerNavigationProp<AppDrawerParamList>>()
+  const navigation = useNavigation<DrawerNavigationProp<AppDrawerParamList> | BottomTabNavigationProp<MainTabParamList>>()
   const route = useRoute()
+  const navigationState = useNavigationState((state) => state)
   const currentRouteName = route.name
 
+  // Check if we're in a tab navigator context by checking if current route name matches tab route names
+  // Tab routes: 'Inventory', 'Production', 'PointOfSale'
+  // Drawer routes: 'InventoryManagement', 'ProductionManagement', 'PointOfSale'
+  const tabRouteNames = ['Inventory', 'Production', 'PointOfSale']
+  const isInTabNavigator = tabRouteNames.includes(currentRouteName)
+  
+  // If we're in tab navigator, don't render this component as tabs handle navigation
+  if (isInTabNavigator) {
+    return null
+  }
+
   const handleTabPress = (tab: TabItem) => {
-    if (tab.route !== currentRouteName) {
-      navigation.navigate(tab.route)
+    const targetRoute = tab.drawerRoute
+    if (targetRoute !== currentRouteName) {
+      navigation.navigate(targetRoute as any)
     }
   }
 
@@ -60,7 +79,7 @@ export function OperationsBottomNav() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         {tabs.map((tab) => {
-          const isActive = currentRouteName === tab.route
+          const isActive = currentRouteName === tab.drawerRoute
           return (
             <TouchableOpacity
               key={tab.name}

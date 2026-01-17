@@ -1,17 +1,19 @@
 // Home screen
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { StyleSheet, Text, View, ScrollView, ActivityIndicator, RefreshControl } from 'react-native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { MetricsCard } from '../components/MetricsCard'
 import { MotivationalCard } from '../components/MotivationalCard'
 import { KPIDetailCard } from '../components/KPIDetailCard'
 import { useAuth } from '../lib/auth/AuthContext'
-import { useNavigation } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import { useNavigation, useFocusEffect } from '@react-navigation/native'
+import type { NavigationProp } from '@react-navigation/native'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import { healthScoreApi } from '../lib/api/transactions2'
 import type { HealthScoreResponse } from '../lib/api/transactions2'
+
+const GRAYSCALE_PRIMARY = '#4a4a4a'
 
 // Helper function to extract and format business name from business ID
 // Business ID format: {BusinessName}_{RandomSuffix}
@@ -45,12 +47,14 @@ function getBusinessNameFromId(businessId: string | undefined): string {
 export default function HomeScreen() {
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
-  const navigation = useNavigation<StackNavigationProp<HomeStackParamList>>()
+  const navigation = useNavigation<NavigationProp<HomeStackParamList>>()
   const [healthScore, setHealthScore] = useState<HealthScoreResponse['data']['healthScore'] | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'quarter'>('week')
+  // Use ref to track if we have cached data without adding to dependencies
+  const hasCachedDataRef = useRef(false)
 
   const fetchHealthScore = useCallback(async (isRefresh = false) => {
     if (!businessId) {
@@ -59,17 +63,25 @@ export default function HomeScreen() {
     }
 
     try {
+      // For manual refresh, show refresh indicator
       if (isRefresh) {
         setRefreshing(true)
       } else {
-        setLoading(true)
+        // For automatic refresh on focus, only show loading if we don't have cached data
+        // This implements stale-while-revalidate: show cached data immediately, fetch in background
+        if (!hasCachedDataRef.current) {
+          setLoading(true)
+        }
       }
+      
       setError(null)
       const response = await healthScoreApi.getHealthScore(businessId, timeframe)
       if (response.success && response.data?.healthScore) {
         setHealthScore(response.data.healthScore)
+        hasCachedDataRef.current = true
       } else {
         setError('Failed to fetch health score')
+        hasCachedDataRef.current = false
       }
     } catch (err) {
       console.error(`[HomeScreen] Failed to fetch health score for businessId=${businessId}:`, err)
@@ -83,9 +95,15 @@ export default function HomeScreen() {
     }
   }, [businessId, timeframe])
 
-  useEffect(() => {
-    fetchHealthScore()
-  }, [fetchHealthScore])
+  // Fetch health score when screen comes into focus - always fetches fresh data
+  // Uses stale-while-revalidate pattern: shows cached data immediately, updates in background
+  useFocusEffect(
+    useCallback(() => {
+      if (businessId) {
+        fetchHealthScore(false)
+      }
+    }, [businessId, fetchHealthScore])
+  )
 
   const onRefresh = useCallback(() => {
     fetchHealthScore(true)
@@ -117,24 +135,24 @@ export default function HomeScreen() {
 
   return (
     <AppBarLayout title={businessName}>
-      <ScrollView 
-        style={styles.container} 
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#333333"
-            colors={['#333333']}
-          />
-        }
-      >
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#333333" />
-            <Text style={styles.loadingText}>Loading health scores...</Text>
-          </View>
-        ) : error ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+        </View>
+      ) : (
+        <ScrollView 
+          style={styles.container} 
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#333333"
+              colors={['#333333']}
+            />
+          }
+        >
+          {error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
           </View>
@@ -233,8 +251,9 @@ export default function HomeScreen() {
               onPress={() => healthScore && navigation.navigate('CurrentRatio', { healthScore })}
             />
           </>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      )}
     </AppBarLayout>
   )
 }
@@ -248,14 +267,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   loadingContainer: {
-    padding: 24,
-    alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#666666',
+    alignItems: 'center',
   },
   errorContainer: {
     padding: 24,

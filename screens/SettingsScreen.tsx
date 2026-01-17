@@ -23,7 +23,7 @@ import { creditCardsApi, type CreditCard } from '../lib/api/creditCards'
 import { businessContextApi } from '../lib/api/businessContext'
 import { plansApi, type Plan } from '../lib/api/plans'
 import type { VatStatus, BusinessContextPayload } from '../lib/types/api'
-import type { StackScreenProps } from '@react-navigation/stack'
+import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { SettingsStackParamList } from '../navigation/SettingsNavigator'
 import {
   SUPPLY_TYPE_OPTIONS,
@@ -34,7 +34,7 @@ import { MaterialIcons } from '@expo/vector-icons'
 
 const GRAYSCALE_PRIMARY = '#333333'
 
-type Props = StackScreenProps<SettingsStackParamList, 'SettingsMain'>
+type Props = NativeStackScreenProps<SettingsStackParamList, 'SettingsMain'>
 
 const formatPrice = (pence: number): string => {
   if (pence === 0) return 'Free'

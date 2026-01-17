@@ -1,12 +1,12 @@
 import React, { useCallback } from 'react'
 import { StyleSheet, Text, View, ScrollView } from 'react-native'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 
 export default function ControlComplianceScreen() {
-  const navigation = useNavigation<StackNavigationProp<HomeStackParamList>>()
+  const navigation = useNavigation<NavigationProp<HomeStackParamList>>()
   const route = useRoute<RouteProp<HomeStackParamList, 'ControlCompliance'>>()
   const healthScore = route.params?.healthScore
 

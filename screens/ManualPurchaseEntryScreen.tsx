@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import { transactions2Api } from '../lib/api/transactions2'
@@ -56,7 +56,7 @@ type PaymentMethod = {
 
 export default function ManualPurchaseEntryScreen() {
   useModuleTracking('purchasing')
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
 
   // Choose businessId

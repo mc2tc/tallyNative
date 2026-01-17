@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { StyleSheet, Text, View, ScrollView, ActivityIndicator } from 'react-native'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import Svg, { Rect } from 'react-native-svg'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import { useAuth } from '../lib/auth/AuthContext'
 import { healthScoreApi } from '../lib/api/transactions2'
+
+const GRAYSCALE_PRIMARY = '#4a4a4a'
 
 type PeriodData = {
   label: string
@@ -16,7 +18,7 @@ type PeriodData = {
 }
 
 export default function CurrentRatioScreen() {
-  const navigation = useNavigation<StackNavigationProp<HomeStackParamList>>()
+  const navigation = useNavigation<NavigationProp<HomeStackParamList>>()
   const route = useRoute<RouteProp<HomeStackParamList, 'CurrentRatio'>>()
   const healthScore = route.params?.healthScore
   const { businessUser } = useAuth()
@@ -91,13 +93,13 @@ export default function CurrentRatioScreen() {
 
   return (
     <AppBarLayout title="Current Ratio" onBackPress={handleGoBack}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#333333" />
-            <Text style={styles.loadingText}>Loading ratio data...</Text>
-          </View>
-        ) : error ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+        </View>
+      ) : (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          {error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
           </View>
@@ -155,8 +157,9 @@ export default function CurrentRatioScreen() {
               )}
             </View>
           </>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      )}
     </AppBarLayout>
   )
 }
@@ -284,14 +287,9 @@ const styles = StyleSheet.create({
     width: 50,
   },
   loadingContainer: {
-    padding: 24,
-    alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#666666',
+    alignItems: 'center',
   },
   errorContainer: {
     padding: 24,

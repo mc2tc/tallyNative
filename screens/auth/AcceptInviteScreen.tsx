@@ -14,7 +14,7 @@ import {
 } from 'react-native'
 import { useNavigation, useRoute } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { useAuth } from '../../lib/auth/AuthContext'
 import { ApiError } from '../../lib/api/client'
 import type { AuthStackParamList } from '../../navigation/AuthNavigator'
@@ -22,7 +22,7 @@ import type { AuthStackParamList } from '../../navigation/AuthNavigator'
 type Props = NativeStackScreenProps<AuthStackParamList, 'AcceptInvite'>
 
 export default function AcceptInviteScreen({}: Props) {
-  const navigation = useNavigation<StackNavigationProp<AuthStackParamList>>()
+  const navigation = useNavigation<NavigationProp<AuthStackParamList>>()
   const route = useRoute()
   const { inviteToken } = (route.params as { inviteToken?: string }) || {}
   const [firstName, setFirstName] = useState('')

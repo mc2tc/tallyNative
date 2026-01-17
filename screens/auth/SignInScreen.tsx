@@ -14,7 +14,7 @@ import {
 } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { useAuth } from '../../lib/auth/AuthContext'
 import { ApiError } from '../../lib/api/client'
 import type { AuthStackParamList } from '../../navigation/AuthNavigator'
@@ -22,7 +22,7 @@ import type { AuthStackParamList } from '../../navigation/AuthNavigator'
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignIn'>
 
 export default function SignInScreen({}: Props) {
-  const navigation = useNavigation<StackNavigationProp<AuthStackParamList>>()
+  const navigation = useNavigation<NavigationProp<AuthStackParamList>>()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)

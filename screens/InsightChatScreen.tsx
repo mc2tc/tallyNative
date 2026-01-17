@@ -18,7 +18,7 @@ export default function InsightChatScreen() {
   return (
     <AppBarLayout title="Operations & Performance" onBackPress={handleGoBack}>
       <View style={styles.container}>
-        <ChatbotCard title="Operations & Performance Assistant" />
+        <ChatbotCard title="Operations & Performance" />
       </View>
     </AppBarLayout>
   )

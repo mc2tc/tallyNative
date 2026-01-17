@@ -2,14 +2,14 @@
 
 import React, { useState, useCallback, useEffect } from 'react'
 import { View, StyleSheet, ScrollView, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native'
-import type { StackScreenProps } from '@react-navigation/stack'
+import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import { plansApi, type Plan } from '../lib/api/plans'
 import { useFocusEffect } from '@react-navigation/native'
 import type { SettingsStackParamList } from '../navigation/SettingsNavigator'
 
-type Props = StackScreenProps<SettingsStackParamList, 'PlansSelection'>
+type Props = NativeStackScreenProps<SettingsStackParamList, 'PlansSelection'>
 
 // Available plans (excluding trial which is auto-assigned)
 const AVAILABLE_PLANS = [

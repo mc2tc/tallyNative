@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../lib/auth/AuthContext'
 import { creditCardRulesApi } from '../lib/api/creditCardRules'
 import { chartAccountsApi } from '../lib/api/chartAccounts'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
@@ -14,10 +14,10 @@ const GRAYSCALE_SECONDARY = '#6d6d6d'
 const CARD_BACKGROUND = '#ffffff'
 const SURFACE_BACKGROUND = '#f6f6f6'
 
-type NavigationProp = StackNavigationProp<TransactionsStackParamList, 'CreditCardRuleCreate'>
+type CreditCardRuleCreateNavigationProp = NavigationProp<TransactionsStackParamList, 'CreditCardRuleCreate'>
 
 export default function CreditCardRuleCreateScreen() {
-  const navigation = useNavigation<NavigationProp>()
+  const navigation = useNavigation<CreditCardRuleCreateNavigationProp>()
   const { businessUser, memberships } = useAuth()
 
   const membershipIds = Object.keys(memberships ?? {})

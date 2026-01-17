@@ -43,7 +43,7 @@ export function ChatbotCard({ title = 'Performance Insights', initialMessages }:
     },
     {
       id: '2',
-      text: "I have just notied that we have 3 payments outstading from Birds Café. I'll send an email now with your agreement. Also, worth reminding you of the benefits of invoice financing which Tally can organise on our behalf. Typically would cost 2.5% but we'd be able to collect immediately.",
+      text: "I have just notied that we have 3 payments outstading from Birds Café. I'll send an email now with your agreement. Also, worth reminding you of the benefits of invoice financing which Tally can organise on our behalf. Typically would cost 2.5% but we'd be able to collect payment immediately.",
       isUser: false,
       showButtons: true,
       learnMoreOnly: true,

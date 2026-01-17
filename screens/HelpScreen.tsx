@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react'
 import { StyleSheet, ScrollView, RefreshControl, View, Text } from 'react-native'
-import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { AppBarLayout } from '../components/AppBarLayout'
@@ -61,7 +60,7 @@ export default function HelpScreen() {
   }
 
   return (
-    <AppBarLayout title="Assistant">
+    <AppBarLayout title="Operations Centre">
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -77,13 +76,10 @@ export default function HelpScreen() {
       >
         <View style={styles.introCard}>
           <View style={styles.introContent}>
-            <View style={styles.introIconContainer}>
-              <MaterialIcons name="face-retouching-natural" size={32} color={GRAYSCALE_PRIMARY} />
-            </View>
             <View style={styles.introTextContainer}>
-              <Text style={styles.introTitle}>Your Business Assistant</Text>
+              <Text style={styles.introTitle}>Operations Centre</Text>
               <Text style={styles.introBody}>
-                Your assistant is your "right hand", providing both help with security protection and operations to help you run your business with confidence.
+                Monitor your business operations, security, and performance in one place. Get real-time alerts and actionable insights to help you run your business with confidence.
               </Text>
             </View>
           </View>
@@ -93,7 +89,7 @@ export default function HelpScreen() {
           description="Monitors your business data to detect fraud, theft, and security risks. Alerts you to suspicious activity and potential threats."
           icon="shield"
           unreadCount={oversightUnreadCount}
-          actionText="View alerts"
+          actionText="Control Room"
           onPress={() => navigation.navigate('OversightChat')}
         />
         <AssistantInfoCard
@@ -101,7 +97,7 @@ export default function HelpScreen() {
           description="Analyzes your operations to provide actionable recommendations that help optimize your business performance."
           icon="trending-up"
           unreadCount={insightUnreadCount}
-          actionText="Get insights"
+          actionText="Control Room"
           onPress={() => navigation.navigate('InsightChat')}
         />
       </ScrollView>
@@ -128,11 +124,7 @@ const styles = StyleSheet.create({
     borderColor: '#e6e6e6',
   },
   introContent: {
-    flexDirection: 'row',
     alignItems: 'flex-start',
-  },
-  introIconContainer: {
-    marginRight: 12,
   },
   introTextContainer: {
     flex: 1,

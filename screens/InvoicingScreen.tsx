@@ -4,20 +4,19 @@ import React from 'react'
 import { View, StyleSheet, ScrollView, Text, TouchableOpacity } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { useModuleTracking } from '../lib/hooks/useModuleTracking'
 import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 import type { CompositeNavigationProp } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 
 type Props = NativeStackScreenProps<AppDrawerParamList, 'Invoicing'>
 
-type NavigationProp = CompositeNavigationProp<
+type InvoicingNavigationProp = CompositeNavigationProp<
   DrawerNavigationProp<AppDrawerParamList, 'Invoicing'>,
-  StackNavigationProp<TransactionsStackParamList>
+  NavigationProp<TransactionsStackParamList>
 >
 
 export default function InvoicingScreen({ navigation }: Props) {
@@ -64,7 +63,6 @@ export default function InvoicingScreen({ navigation }: Props) {
             <Text style={styles.infoBullet}>• Payment tracking</Text>
           </View>
         </ScrollView>
-        <BottomNavBar />
       </AppBarLayout>
     </View>
   )

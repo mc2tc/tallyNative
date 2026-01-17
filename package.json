@@ -10,7 +10,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "type-check": "tsc --noEmit",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "distribute:firebase": "./scripts/distribute-firebase.sh"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

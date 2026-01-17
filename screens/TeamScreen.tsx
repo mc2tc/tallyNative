@@ -4,7 +4,6 @@ import React from 'react'
 import { View, StyleSheet, ScrollView, Text } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { useModuleTracking } from '../lib/hooks/useModuleTracking'
 
@@ -18,7 +17,6 @@ export default function TeamScreen({}: Props) {
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           <Text style={styles.wipText}>Work in progress</Text>
         </ScrollView>
-        <BottomNavBar />
       </AppBarLayout>
     </View>
   )

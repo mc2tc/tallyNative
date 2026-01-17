@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import {
   chartAccountsApi,
   type ChartAccount,
@@ -19,12 +19,14 @@ import { formatAmount } from '../lib/utils/currency'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { ReportsStackParamList } from '../navigation/ReportsNavigator'
 
+const GRAYSCALE_PRIMARY = '#4a4a4a'
+
 export default function BalanceSheetReportScreen() {
-  const navigation = useNavigation<StackNavigationProp<ReportsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<ReportsStackParamList>>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
   const [data, setData] = useState<ChartAccountsResponse | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const handleGoBack = useCallback(() => {
@@ -37,6 +39,7 @@ export default function BalanceSheetReportScreen() {
     if (!businessId) {
       setData(null)
       setError('Select a business to view chart accounts.')
+      setLoading(false)
       return
     }
 
@@ -169,19 +172,18 @@ export default function BalanceSheetReportScreen() {
 
   return (
     <AppBarLayout title="Reports" onBackPress={handleGoBack}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {!businessId && (
-          <Text style={styles.statusText}>No business context found for this account.</Text>
-        )}
-        {businessId && loading && (
-          <View style={styles.loader}>
-            <ActivityIndicator color="#444" />
-            <Text style={styles.statusText}>Loading chart accounts…</Text>
-          </View>
-        )}
-        {businessId && !loading && error && <Text style={styles.errorText}>{error}</Text>}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+        </View>
+      ) : (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          {!businessId && (
+            <Text style={styles.statusText}>No business context found for this account.</Text>
+          )}
+          {error && <Text style={styles.errorText}>{error}</Text>}
 
-        {businessId && !loading && !error && (
+          {!error && (
           <>
             {!hasAccounts && (
               <Text style={styles.statusText}>
@@ -340,8 +342,9 @@ export default function BalanceSheetReportScreen() {
               </View>
             )}
           </>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      )}
     </AppBarLayout>
   )
 }
@@ -360,12 +363,10 @@ const styles = StyleSheet.create({
     color: '#555555',
     marginTop: 12,
   },
-  loader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
-    gap: 12,
-    paddingVertical: 24,
+    alignItems: 'center',
   },
   errorText: {
     color: '#b00020',

@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
@@ -35,7 +35,7 @@ type SalesPipelineRouteProp = RouteProp<TransactionsStackParamList, 'SalesPipeli
 export default function SalesPipelineScreen() {
   useModuleTracking('customers')
   useModuleGroupTracking('sales_marketing')
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const route = useRoute<SalesPipelineRouteProp>()
   const { businessUser, memberships } = useAuth()
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -255,7 +255,7 @@ function SalesCardList({
   navigation,
 }: {
   items: SalesLead[]
-  navigation?: StackNavigationProp<TransactionsStackParamList>
+  navigation?: NavigationProp<TransactionsStackParamList>
 }) {
   const getStageColor = (stage: SalesLead['stage']): string => {
     switch (stage) {

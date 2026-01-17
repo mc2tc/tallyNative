@@ -1,5 +1,5 @@
-import React from 'react'
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import React, { useRef, useEffect } from 'react'
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 
 interface AssistantInfoCardProps {
@@ -28,6 +28,33 @@ export function AssistantInfoCard({
   onPress,
   actionText,
 }: AssistantInfoCardProps) {
+  const progressAnim = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    // Create a looping animation that fills from left to right
+    const animate = () => {
+      // Reset to 0
+      progressAnim.setValue(0)
+      // Animate to 1 (100%)
+      Animated.timing(progressAnim, {
+        toValue: 1,
+        duration: 4000, // 4 seconds to fill
+        useNativeDriver: false, // width animation requires layout props
+      }).start(() => {
+        // Wait 2 seconds before starting again
+        setTimeout(() => {
+          animate()
+        }, 2000)
+      })
+    }
+    animate()
+  }, [progressAnim])
+
+  const progressWidth = progressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  })
+
   return (
     <TouchableOpacity
       style={styles.card}
@@ -44,7 +71,16 @@ export function AssistantInfoCard({
               </View>
             )}
           </View>
-          <View style={styles.separator} />
+          <View style={styles.progressBarContainer}>
+            <Animated.View
+              style={[
+                styles.progressBar,
+                {
+                  width: progressWidth,
+                },
+              ]}
+            />
+          </View>
           <Text style={styles.body}>{description}</Text>
         </View>
       </View>
@@ -91,10 +127,15 @@ const styles = StyleSheet.create({
     color: CARD_TEXT_PRIMARY,
     flex: 1,
   },
-  separator: {
-    height: 1,
+  progressBarContainer: {
+    height: 2,
     backgroundColor: '#d0d0d0',
     marginVertical: 8,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: GRAYSCALE_PRIMARY,
   },
   body: {
     fontSize: 13,

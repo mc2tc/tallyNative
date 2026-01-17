@@ -3,7 +3,7 @@ import React, { useCallback, useState } from 'react'
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Animated, Linking, Platform, Image } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons'
 import * as FileSystem from 'expo-file-system/legacy'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
@@ -65,11 +65,15 @@ type TransactionAccounting = {
     amount?: number
   }>
   hasGeneralExpenseFallback?: boolean
+  charges?: Array<{
+    name?: string
+    amount?: number
+  }>
 }
 
 
 export default function TransactionDetailScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList | ScaffoldStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList | ScaffoldStackParamList>>()
   const route = useRoute<TransactionDetailRouteProp>()
   const { transaction: initialTransaction } = route.params
 
@@ -172,6 +176,14 @@ export default function TransactionDetailScreen() {
   
   // Check if transaction has accounting entries (to determine if it needs reconciliation)
   const accounting = transaction?.accounting as TransactionAccounting | undefined
+  
+  // Calculate total VAT from accounting.charges array
+  const totalVAT = React.useMemo(() => {
+    if (!accounting?.charges) return 0
+    return accounting.charges
+      .filter((charge) => charge.name?.toUpperCase() === 'VAT')
+      .reduce((sum, charge) => sum + (charge.amount || 0), 0)
+  }, [accounting?.charges])
   
   // Detect General Expense fallback warning
   // Check both the flag and if any debit entry uses "General Expense"
@@ -799,7 +811,7 @@ export default function TransactionDetailScreen() {
 
   // Warn user when navigating away with unsaved changes
   React.useEffect(() => {
-    const beforeRemove = navigation.addListener('beforeRemove', (e) => {
+      const beforeRemove = navigation.addListener('beforeRemove', (e: any) => {
       if (!hasUnsavedChanges || confirmingVerification) {
         // No staged edits or we're already saving - allow navigation
         return
@@ -1499,6 +1511,11 @@ export default function TransactionDetailScreen() {
             <>
               <Text style={styles.thirdPartyName}>{transaction?.summary?.description || thirdPartyName}</Text>
               <Text style={styles.amount}>{amountWithSymbol}</Text>
+              {totalVAT > 0 && (
+                <Text style={styles.vatAmount}>
+                  VAT: {currencySymbol}{formatItemAmount(totalVAT)}
+                </Text>
+              )}
               <Text style={styles.transactionType}>
                 {isCredit === true ? 'Credit' : isCredit === false ? 'Debit' : 'Unknown'}
               </Text>
@@ -1507,6 +1524,11 @@ export default function TransactionDetailScreen() {
             <>
               <Text style={styles.thirdPartyName}>{dateTimeString}</Text>
               <Text style={styles.amount}>{amountWithSymbol}</Text>
+              {totalVAT > 0 && (
+                <Text style={styles.vatAmount}>
+                  VAT: {currencySymbol}{formatItemAmount(totalVAT)}
+                </Text>
+              )}
             </>
           )}
           {chartName && !isTransactions3 && (
@@ -2608,6 +2630,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
+    marginBottom: 2,
+  },
+  vatAmount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#888888',
+    marginTop: 4,
     marginBottom: 2,
   },
   transactionType: {

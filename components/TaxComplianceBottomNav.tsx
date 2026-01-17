@@ -39,6 +39,17 @@ export function TaxComplianceBottomNav() {
   const route = useRoute()
   const currentRouteName = route.name
 
+  // Check if we're in a tab navigator context
+  // Note: TaxCompliance uses 'TaxesCompliance' as tab route, but drawer routes are 'VAT', 'YearEndReporting'
+  // So this component should only render when accessed via drawer routes
+  const drawerRouteNames = ['VAT', 'YearEndReporting']
+  const isInTabNavigator = !drawerRouteNames.includes(currentRouteName)
+  
+  // If we're in tab navigator, don't render this component as tabs handle navigation
+  if (isInTabNavigator) {
+    return null
+  }
+
   const handleTabPress = (tab: TabItem) => {
     if (tab.route !== currentRouteName) {
       navigation.navigate(tab.route)

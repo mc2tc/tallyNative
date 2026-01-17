@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import { transactions2Api, type Transaction } from '../lib/api/transactions2'
@@ -20,7 +20,7 @@ type TransactionGroup = {
 }
 
 export default function TransactionListScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const { businessUser, memberships } = useAuth()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)

@@ -17,7 +17,7 @@ import {
 import Autocomplete from 'react-native-autocomplete-input'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -31,7 +31,7 @@ const GRAYSCALE_SECONDARY = '#6d6d6d'
 type AddCustomerRouteProp = RouteProp<TransactionsStackParamList, 'AddCustomer'>
 
 export default function AddCustomerScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const route = useRoute<AddCustomerRouteProp>()
   const { businessUser } = useAuth()
   const insets = useSafeAreaInsets()

@@ -20,7 +20,7 @@ const tabs: TabItem[] = [
   { name: 'Transactions', label: 'Transactions', icon: 'view-list', route: 'MainTabs' },
   { name: 'Reports', label: 'Reports', icon: 'assessment', route: 'MainTabs' },
   { name: 'Settings', label: 'Settings', icon: 'settings', route: 'MainTabs' },
-  { name: 'Help', label: 'Assistant', icon: 'help-outline', route: 'MainTabs' },
+  { name: 'Help', label: 'Ops. Centre', icon: 'monitor-heart', route: 'MainTabs' },
 ]
 
 export function BottomNavBar() {

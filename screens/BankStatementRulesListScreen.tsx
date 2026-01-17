@@ -5,7 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../lib/auth/AuthContext'
 import { bankStatementRulesApi, type BankStatementRule } from '../lib/api/bankStatementRules'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
@@ -13,10 +13,10 @@ const GRAYSCALE_SECONDARY = '#6d6d6d'
 const CARD_BACKGROUND = '#ffffff'
 const SURFACE_BACKGROUND = '#f6f6f6'
 
-type NavigationProp = StackNavigationProp<TransactionsStackParamList, 'BankStatementRules'>
+type BankStatementRulesNavigationProp = NavigationProp<TransactionsStackParamList, 'BankStatementRules'>
 
 export default function BankStatementRulesListScreen() {
-  const navigation = useNavigation<NavigationProp>()
+  const navigation = useNavigation<BankStatementRulesNavigationProp>()
   const { businessUser, memberships } = useAuth()
   const [rules, setRules] = useState<BankStatementRule[]>([])
   const [loading, setLoading] = useState(true)

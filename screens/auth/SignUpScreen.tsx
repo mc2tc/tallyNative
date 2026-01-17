@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import type { StackScreenProps } from '@react-navigation/stack'
+import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { useAuth } from '../../lib/auth/AuthContext'
 import { ApiError } from '../../lib/api/client'
@@ -30,7 +30,7 @@ import {
 } from '../../lib/constants/businessContext'
 import type { BusinessContextPayload } from '../../lib/types/api'
 
-type Props = StackScreenProps<AuthStackParamList, 'SignUp'>
+type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>
 
 type SupplyTypeId = (typeof SUPPLY_TYPE_OPTIONS)[number]['id']
 type VatSchemeId = NonNullable<BusinessContextPayload['context']['vatScheme']>

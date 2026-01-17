@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal } from 'react-native'
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { Searchbar } from 'react-native-paper'
 import { AppBarLayout } from '../components/AppBarLayout'
@@ -453,7 +453,7 @@ function getLastFour(number: string): string {
 }
 
 export default function TransactionsScaffoldScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const route = useRoute<RouteProp<TransactionsStackParamList, 'TransactionsHome'>>()
   const { businessUser, memberships } = useAuth()
   const [activeSection, setActiveSection] = useState<SectionKey>(
@@ -2911,7 +2911,7 @@ export default function TransactionsScaffoldScreen() {
 
 function renderSection(
   section: SectionKey,
-  navigation: StackNavigationProp<TransactionsStackParamList>,
+  navigation: NavigationProp<TransactionsStackParamList>,
   bankColumns: PipelineColumn[],
   cardsColumns: PipelineColumn[],
   salesColumns: PipelineColumn[],
@@ -2975,7 +2975,7 @@ function PipelineRow({
   pipelineSection,
 }: {
   columns: PipelineColumn[]
-  navigation: StackNavigationProp<TransactionsStackParamList>
+  navigation: NavigationProp<TransactionsStackParamList>
   handleReconcileClick?: () => void
   reconciling?: boolean
   getFullTransactions?: (columnTitle: string) => Array<TransactionStub & { originalTransaction?: Transaction }>
@@ -3281,7 +3281,7 @@ function ReportingReadyList({
   navigation,
 }: {
   allTransactions: Array<TransactionStub & { originalTransaction: Transaction }>
-  navigation: StackNavigationProp<TransactionsStackParamList>
+  navigation: NavigationProp<TransactionsStackParamList>
 }) {
   const [reportingInfoCardDismissed, setReportingInfoCardDismissed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -3425,7 +3425,7 @@ function CardList({
   showInputOutputIndicator = false,
 }: {
   items: Array<TransactionStub & { originalTransaction?: Transaction }>
-  navigation?: StackNavigationProp<TransactionsStackParamList>
+  navigation?: NavigationProp<TransactionsStackParamList>
   showInputOutputIndicator?: boolean
 }) {
   const handleCardPress = (item: TransactionStub & { originalTransaction?: Transaction }) => {
@@ -3484,7 +3484,7 @@ function SalesCardList({
   navigation,
 }: {
   items: SalesLead[]
-  navigation?: StackNavigationProp<TransactionsStackParamList>
+  navigation?: NavigationProp<TransactionsStackParamList>
 }) {
   const getStageColor = (stage: SalesLead['stage']): string => {
     switch (stage) {
@@ -3546,7 +3546,7 @@ function RulesList({
   ruleType,
 }: {
   rules: BankStatementRule[] | CreditCardRule[]
-  navigation: StackNavigationProp<TransactionsStackParamList>
+  navigation: NavigationProp<TransactionsStackParamList>
   ruleType?: 'bank' | 'creditCard'
 }) {
   const handleRulePress = (rule: BankStatementRule | CreditCardRule) => {

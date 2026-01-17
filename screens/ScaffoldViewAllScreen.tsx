@@ -2,7 +2,7 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { api } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -155,7 +155,7 @@ function groupTransactionsByDate(items: TransactionStub[]): TransactionGroup[] {
 }
 
 export default function ScaffoldViewAllScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const route = useRoute<ScaffoldViewAllRouteProp>()
   const { businessUser, memberships } = useAuth()
   const { title, items, showReconcileButton, section, pipelineSection } = route.params || { 

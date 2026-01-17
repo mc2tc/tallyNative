@@ -13,13 +13,13 @@ import {
   Platform,
   Alert,
 } from 'react-native'
-import type { StackScreenProps } from '@react-navigation/stack'
+import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { SettingsStackParamList } from '../navigation/SettingsNavigator'
 import { plansApi } from '../lib/api/plans'
 import { useAuth } from '../lib/auth/AuthContext'
 
-type Props = StackScreenProps<SettingsStackParamList, 'Payment'>
+type Props = NativeStackScreenProps<SettingsStackParamList, 'Payment'>
 
 const GRAYSCALE_PRIMARY = '#333333'
 

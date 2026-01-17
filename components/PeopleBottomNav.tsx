@@ -50,6 +50,17 @@ export function PeopleBottomNav() {
   const route = useRoute()
   const currentRouteName = route.name
 
+  // Check if we're in a tab navigator context by checking if current route name matches tab route names
+  // Tab routes: 'Payroll', 'Team', 'Talent'
+  // Drawer routes: 'Payroll', 'Team', 'Talent' (same names)
+  const tabRouteNames = ['Payroll', 'Team', 'Talent']
+  const isInTabNavigator = tabRouteNames.includes(currentRouteName)
+  
+  // If we're in tab navigator, don't render this component as tabs handle navigation
+  if (isInTabNavigator) {
+    return null
+  }
+
   const handleTabPress = (tab: TabItem) => {
     if (tab.route !== currentRouteName) {
       navigation.navigate(tab.route as 'Payroll' | 'Team' | 'Talent')

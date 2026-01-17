@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import { transactions2Api, type Transaction } from '../lib/api/transactions2'
@@ -41,7 +41,7 @@ type LedgerEntry = {
 type AccountLedgerRouteProp = RouteProp<ReportsStackParamList, 'AccountLedger'>
 
 export default function AccountLedgerScreen() {
-  const navigation = useNavigation<StackNavigationProp<ReportsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<ReportsStackParamList>>()
   const route = useRoute<AccountLedgerRouteProp>()
   const { accountName, accountType, accountValue, period } = route.params
   const { businessUser } = useAuth()

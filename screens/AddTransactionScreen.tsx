@@ -13,7 +13,7 @@ import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image
 import * as DocumentPicker from 'expo-document-picker'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../lib/auth/AuthContext'
 import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
@@ -23,8 +23,8 @@ import { transactions2Api } from '../lib/api/transactions2'
 import { AppBarLayout } from '../components/AppBarLayout'
 
 type AddTransactionNavigationProp =
-  | StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>
-  | StackNavigationProp<ScaffoldStackParamList, 'AddTransaction'>
+  | NavigationProp<TransactionsStackParamList, 'AddTransaction'>
+  | NavigationProp<ScaffoldStackParamList, 'AddTransaction'>
 
 type AddTransactionRouteProp =
   | RouteProp<TransactionsStackParamList, 'AddTransaction'>
@@ -98,7 +98,7 @@ export default function AddTransactionScreen() {
       const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
       
       // Navigate to UploadProcessingScreen for all OCR uploads
-      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
+      ;(navigation as NavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
         pdfFileName: isPdf ? (asset.fileName || 'document.pdf') : undefined,
         pdfUri: isPdf ? asset.uri : undefined,
         imageUri: !isPdf ? asset.uri : undefined,
@@ -206,7 +206,7 @@ export default function AddTransactionScreen() {
       const transactionType = getTransactionType()
       const inputMethod = isPdf ? 'ocr_pdf' : 'ocr_image'
       
-      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
+      ;(navigation as NavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('UploadProcessing', {
         pdfFileName: isPdf ? (file.name || 'document.pdf') : undefined,
         pdfUri: isPdf ? file.uri : undefined,
         imageUri: !isPdf ? file.uri : undefined,
@@ -233,13 +233,13 @@ export default function AddTransactionScreen() {
     
     // For purchase transactions, navigate to manual entry screen
     if (transactionType === 'purchase') {
-      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('ManualPurchaseEntry')
+      ;(navigation as NavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('ManualPurchaseEntry')
       return
     }
     
     // For sale transactions, navigate to sales pipeline screen
     if (transactionType === 'sale') {
-      ;(navigation as StackNavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('SalesPipeline')
+      ;(navigation as NavigationProp<TransactionsStackParamList, 'AddTransaction'>).navigate('SalesPipeline')
       return
     }
     

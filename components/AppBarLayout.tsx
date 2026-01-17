@@ -53,10 +53,6 @@ export function AppBarLayout({
     drawerNavigation.navigate('MainTabs', { screen: 'Profile' })
   }
 
-  const handleFitnessPress = () => {
-    drawerNavigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'HomeMain' } })
-  }
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={[styles.appbar, { borderColor }]}>
@@ -74,30 +70,17 @@ export function AppBarLayout({
               />
             </TouchableOpacity>
           ) : (
-            <>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                style={[styles.circleButton, { borderColor }]}
-                onPress={handleFitnessPress}
-              >
-                <MaterialIcons
-                  name="home"
-                  size={24}
-                  color="#000000"
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                style={[styles.circleButton, { borderColor, marginLeft: 4 }]}
-                onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-              >
-                <MaterialIcons
-                  name="view-module"
-                  size={24}
-                  color="#000000"
-                />
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.circleButton, { borderColor }]}
+              onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+            >
+              <MaterialIcons
+                name="more-vert"
+                size={24}
+                color="#000000"
+              />
+            </TouchableOpacity>
           )}
         </View>
         <View style={[styles.titleContainer, { borderColor }]}>

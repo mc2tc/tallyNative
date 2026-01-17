@@ -2,7 +2,7 @@ import React from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 
@@ -23,7 +23,7 @@ type SalesLead = {
 type LeadDetailRouteProp = RouteProp<TransactionsStackParamList, 'LeadDetail'>
 
 export default function LeadDetailScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const route = useRoute<LeadDetailRouteProp>()
   const { lead } = route.params
 

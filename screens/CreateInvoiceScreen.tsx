@@ -15,7 +15,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import * as FileSystem from 'expo-file-system/legacy'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -70,7 +70,7 @@ type InvoiceItem = {
 type CreateInvoiceRouteProp = RouteProp<TransactionsStackParamList, 'CreateInvoice'>
 
 export default function CreateInvoiceScreen() {
-  const navigation = useNavigation<StackNavigationProp<TransactionsStackParamList>>()
+  const navigation = useNavigation<NavigationProp<TransactionsStackParamList>>()
   const route = useRoute<CreateInvoiceRouteProp>()
   const { businessUser, memberships } = useAuth()
   

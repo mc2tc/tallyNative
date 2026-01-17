@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { StyleSheet, Text, View, ScrollView, ActivityIndicator } from 'react-native'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import { insightsApi } from '../lib/api/transactions2'
@@ -9,9 +9,11 @@ import type { InsightsResponse } from '../lib/api/transactions2'
 import { useAuth } from '../lib/auth/AuthContext'
 import { useModuleTracking } from '../lib/hooks/useModuleTracking'
 
+const GRAYSCALE_PRIMARY = '#4a4a4a'
+
 export default function InsightsScreen() {
   useModuleTracking('performance')
-  const navigation = useNavigation<StackNavigationProp<HomeStackParamList>>()
+  const navigation = useNavigation<NavigationProp<HomeStackParamList>>()
   const route = useRoute<RouteProp<HomeStackParamList, 'Insights'>>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
@@ -62,13 +64,13 @@ export default function InsightsScreen() {
 
   return (
     <AppBarLayout title="Business Insights" onBackPress={handleGoBack}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#333333" />
-            <Text style={styles.loadingText}>Loading insights...</Text>
-          </View>
-        ) : error ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+        </View>
+      ) : (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          {error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
           </View>
@@ -140,8 +142,9 @@ export default function InsightsScreen() {
               </View>
             )}
           </>
-        ) : null}
-      </ScrollView>
+          ) : null}
+        </ScrollView>
+      )}
     </AppBarLayout>
   )
 }
@@ -246,14 +249,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   loadingContainer: {
-    padding: 24,
-    alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#666666',
+    alignItems: 'center',
   },
   errorContainer: {
     padding: 24,

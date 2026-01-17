@@ -49,6 +49,17 @@ export function MarketingBottomNav() {
   const route = useRoute()
   const currentRouteName = route.name
 
+  // Check if we're in a tab navigator context by checking if current route name matches tab route names
+  // Tab routes: 'Web', 'Email', 'Social'
+  // Drawer routes: 'OnlineSales', 'OnlineBooking', 'Email'
+  const tabRouteNames = ['Web', 'Email', 'Social']
+  const isInTabNavigator = tabRouteNames.includes(currentRouteName)
+  
+  // If we're in tab navigator, don't render this component as tabs handle navigation
+  if (isInTabNavigator) {
+    return null
+  }
+
   const handleTabPress = (tab: TabItem) => {
     if (tab.route && tab.route !== currentRouteName) {
       navigation.navigate(tab.route)

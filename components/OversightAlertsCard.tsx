@@ -8,6 +8,7 @@ import { useAssistant } from '../lib/context/OversightAlertsContext'
 
 interface OversightAlertsCardProps {
   businessId: string
+  onAlertsSummaryChange?: (info: { hasAlerts: boolean; statusMessage?: string | null }) => void
 }
 
 export interface OversightAlertsCardRef {
@@ -15,7 +16,7 @@ export interface OversightAlertsCardRef {
 }
 
 export const OversightAlertsCard = forwardRef<OversightAlertsCardRef, OversightAlertsCardProps>(
-  ({ businessId }, ref) => {
+  ({ businessId, onAlertsSummaryChange }, ref) => {
   const insets = useSafeAreaInsets()
   // Tab bar height - set to 0 since this component may be used outside tab navigator
   // When used in HelpScreen (tab navigator), the spacing is handled by the ScrollView
@@ -69,13 +70,30 @@ export const OversightAlertsCard = forwardRef<OversightAlertsCardRef, OversightA
       setUnreadCount(response.unreadCount)
       // Update global unread count for tab badge
       setOversightUnreadCount(response.unreadCount)
+      const combinedStatusMessage = response.message || checkResponse?.message || null
       // Use the message from alerts response if available, otherwise use check message
-      setStatusMessage(response.message || checkResponse?.message || null)
+      setStatusMessage(combinedStatusMessage)
+
+      // Inform parent about current alerts summary so other UI (e.g. chat) can align messaging
+      if (onAlertsSummaryChange) {
+        onAlertsSummaryChange({
+          hasAlerts: response.alerts.length > 0,
+          statusMessage: combinedStatusMessage,
+        })
+      }
     } catch (err) {
       console.error('Failed to load oversight alerts:', err)
       setError(err instanceof Error ? err.message : 'Failed to load alerts')
       setStatusMessage(null)
       setCheckMessage(null)
+
+      // On error, let parent know we couldn't determine alerts state
+      if (onAlertsSummaryChange) {
+        onAlertsSummaryChange({
+          hasAlerts: false,
+          statusMessage: null,
+        })
+      }
     } finally {
       setLoading(false)
       setRefreshing(false)

@@ -5,6 +5,7 @@ import { MD3LightTheme } from 'react-native-paper'
 import { DropProvider } from 'react-native-reanimated-dnd'
 import { AuthProvider } from './lib/auth/AuthContext'
 import { OversightAlertsProvider } from './lib/context/OversightAlertsContext'
+import { DrawerCategoryProvider } from './lib/context/DrawerCategoryContext'
 import { RootNavigator } from './navigation/RootNavigator'
 
 const customTheme = {
@@ -25,7 +26,9 @@ export default function App() {
       <DropProvider>
         <AuthProvider>
           <OversightAlertsProvider>
-            <RootNavigator />
+            <DrawerCategoryProvider>
+              <RootNavigator />
+            </DrawerCategoryProvider>
           </OversightAlertsProvider>
         </AuthProvider>
       </DropProvider>

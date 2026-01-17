@@ -4,7 +4,6 @@ import React from 'react'
 import { View, StyleSheet, ScrollView, Text } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
-import { BottomNavBar } from '../components/BottomNavBar'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 
 type Props = NativeStackScreenProps<AppDrawerParamList, 'TallyNetwork'>
@@ -16,7 +15,6 @@ export default function TallyNetworkScreen({}: Props) {
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           <Text style={styles.wipText}>Work in progress</Text>
         </ScrollView>
-        <BottomNavBar />
       </AppBarLayout>
     </View>
   )

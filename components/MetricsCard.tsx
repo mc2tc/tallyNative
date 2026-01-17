@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Animated, PanResponder, Dimensions } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import Svg, { Path } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
@@ -288,7 +288,7 @@ export function MetricsCard({
   const DISMISS_OFFSET = SCREEN_HEIGHT // pushed completely off-screen
 
   const insets = useSafeAreaInsets()
-  const navigation = useNavigation<StackNavigationProp<HomeStackParamList>>()
+  const navigation = useNavigation<NavigationProp<HomeStackParamList>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [isFullSheet, setIsFullSheet] = useState(false)
   const slideAnim = useRef(new Animated.Value(DISMISS_OFFSET)).current // Start off-screen below

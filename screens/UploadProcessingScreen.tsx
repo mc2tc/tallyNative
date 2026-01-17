@@ -11,15 +11,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
-import type { StackNavigationProp } from '@react-navigation/stack'
+import type { NavigationProp } from '@react-navigation/native'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
 import { transactions2Api } from '../lib/api/transactions2'
 
 type UploadProcessingNavigationProp =
-  | StackNavigationProp<TransactionsStackParamList, 'UploadProcessing'>
-  | StackNavigationProp<ScaffoldStackParamList, 'UploadProcessing'>
+  | NavigationProp<TransactionsStackParamList, 'UploadProcessing'>
+  | NavigationProp<ScaffoldStackParamList, 'UploadProcessing'>
 
 type UploadProcessingRouteProp =
   | RouteProp<TransactionsStackParamList, 'UploadProcessing'>
@@ -330,12 +330,12 @@ export default function UploadProcessingScreen() {
                 try {
                   // Try TransactionsHome first
                   console.log('UploadProcessing: Navigating to TransactionsHome with activeSection:', activeSection)
-                  ;(navigation as StackNavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
+                  ;(navigation as NavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
                 } catch (e1) {
                   try {
                     // Try ScaffoldHome
                     console.log('UploadProcessing: Navigating to ScaffoldHome with activeSection:', activeSection)
-                    ;(navigation as StackNavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
+                    ;(navigation as NavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
                   } catch (e2) {
                     console.error('UploadProcessing: Failed to navigate with activeSection:', e2)
                     // Last resort: try to set params on the current route
@@ -357,10 +357,10 @@ export default function UploadProcessingScreen() {
           if (!activeSection) return
           
           try {
-            ;(navigation as StackNavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
+            ;(navigation as NavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
           } catch (e1) {
             try {
-              ;(navigation as StackNavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
+              ;(navigation as NavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
             } catch (e2) {
               console.error('UploadProcessing: Failed to navigate:', e2)
             }

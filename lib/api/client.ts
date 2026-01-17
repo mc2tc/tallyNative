@@ -86,6 +86,12 @@ async function apiRequest<T>(
     console.error(`[API] Error type:`, error instanceof Error ? error.constructor.name : typeof error)
     console.error(`[API] Error name:`, error instanceof Error ? error.name : 'N/A')
     console.error(`[API] Error message:`, error instanceof Error ? error.message : String(error))
+    console.error(`[API] Request details:`, {
+      url,
+      method: options.method || 'GET',
+      headers: headers,
+      hasToken: !!token,
+    })
     
     // Check if it's a network error
     if (error instanceof TypeError) {
@@ -103,28 +109,37 @@ async function apiRequest<T>(
   }
 
   let data: unknown
+  let responseText: string = ''
   try {
-    const text = await response.text()
-    if (text) {
+    responseText = await response.text()
+    if (responseText) {
       try {
-        data = JSON.parse(text)
+        data = JSON.parse(responseText)
       } catch (parseError) {
         // If JSON parsing fails, use the text as the error message
         if (response.ok) {
+          console.error(`[API] Invalid JSON response from ${url}:`, responseText)
           throw new ApiError('Invalid JSON response from server', response.status)
         }
+        // Log the actual response for debugging
+        console.error(`[API] Error response from ${url} (${response.status}):`, responseText)
         throw new ApiError(
-          text || `Request failed (${response.status}). Unable to parse error details.`,
+          responseText || `Request failed (${response.status}). Unable to parse error details.`,
           response.status,
         )
       }
+    } else {
+      // Empty response body
+      console.error(`[API] Empty response body from ${url} (${response.status})`)
     }
   } catch (parseError) {
     if (response.ok) {
+      console.error(`[API] Failed to parse response from ${url}:`, parseError)
       throw new ApiError('Invalid JSON response from server', response.status)
     }
+    console.error(`[API] Error parsing response from ${url} (${response.status}):`, parseError, 'Response:', responseText)
     throw new ApiError(
-      `Request failed (${response.status}). Unable to parse error details.`,
+      `Request failed (${response.status}). ${responseText || 'Unable to parse error details.'}`,
       response.status,
     )
   }
@@ -134,7 +149,8 @@ async function apiRequest<T>(
     const message =
       typeof errorData?.error === 'string'
         ? errorData.error
-        : `Request failed (${response.status})`
+        : `Request failed (${response.status})${responseText ? `: ${responseText.substring(0, 200)}` : ''}`
+    console.error(`[API] Request failed for ${url}:`, message, errorData)
     throw new ApiError(message, response.status, errorData)
   }
 
