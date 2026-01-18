@@ -13,7 +13,7 @@ export default function TeamScreen({}: Props) {
   useModuleTracking('team')
   return (
     <View style={styles.wrapper}>
-      <AppBarLayout title="Team">
+      <AppBarLayout>
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           <Text style={styles.wipText}>Work in progress</Text>
         </ScrollView>

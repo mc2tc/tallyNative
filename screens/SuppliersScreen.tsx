@@ -17,7 +17,7 @@ export default function SuppliersScreen({ navigation }: Props) {
 
   return (
     <View style={styles.wrapper}>
-      <AppBarLayout title="Suppliers">
+      <AppBarLayout>
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           <Text style={styles.wipText}>Work in progress</Text>
         </ScrollView>

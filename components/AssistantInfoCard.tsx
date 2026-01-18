@@ -9,6 +9,8 @@ interface AssistantInfoCardProps {
   unreadCount: number
   onPress: () => void
   actionText?: string // Optional custom action text
+  progressBarColor?: string // Color for the moving bit
+  animationDelay?: number // Delay in ms before starting animation
 }
 
 // Match the style from "Understanding your Purchases pipeline" info card
@@ -27,19 +29,25 @@ export function AssistantInfoCard({
   unreadCount,
   onPress,
   actionText,
+  progressBarColor = GRAYSCALE_PRIMARY,
+  animationDelay = 0,
 }: AssistantInfoCardProps) {
-  const progressAnim = useRef(new Animated.Value(0)).current
+  const progressAnim = useRef(new Animated.Value(-50)).current
+  const containerWidth = useRef(0)
+  const animationLoopRef = useRef<(() => void) | null>(null)
 
-  useEffect(() => {
-    // Create a looping animation that fills from left to right
+  // Create the animation loop function
+  const startAnimation = () => {
+    if (containerWidth.current <= 0) return
+
     const animate = () => {
-      // Reset to 0
-      progressAnim.setValue(0)
-      // Animate to 1 (100%)
+      // Reset to left (negative to start off-screen)
+      progressAnim.setValue(-50) // Start off-screen to the left
+      // Animate to right (container width + bit width to end off-screen)
       Animated.timing(progressAnim, {
-        toValue: 1,
-        duration: 4000, // 4 seconds to fill
-        useNativeDriver: false, // width animation requires layout props
+        toValue: containerWidth.current + 50, // End off-screen to the right
+        duration: 4000, // 4 seconds to cross
+        useNativeDriver: true, // translateX can use native driver
       }).start(() => {
         // Wait 2 seconds before starting again
         setTimeout(() => {
@@ -47,13 +55,19 @@ export function AssistantInfoCard({
         }, 2000)
       })
     }
-    animate()
-  }, [progressAnim])
+    animationLoopRef.current = animate
+    
+    // Apply delay before starting animation
+    if (animationDelay > 0) {
+      setTimeout(() => {
+        animate()
+      }, animationDelay)
+    } else {
+      animate()
+    }
+  }
 
-  const progressWidth = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  })
+  const progressTranslateX = progressAnim
 
   return (
     <TouchableOpacity
@@ -71,12 +85,25 @@ export function AssistantInfoCard({
               </View>
             )}
           </View>
-          <View style={styles.progressBarContainer}>
+          <View
+            style={styles.progressBarContainer}
+            onLayout={(event) => {
+              const width = event.nativeEvent.layout.width
+              if (width > 0 && containerWidth.current !== width) {
+                containerWidth.current = width
+                // Start animation if not already running
+                if (!animationLoopRef.current) {
+                  startAnimation()
+                }
+              }
+            }}
+          >
             <Animated.View
               style={[
                 styles.progressBar,
                 {
-                  width: progressWidth,
+                  transform: [{ translateX: progressTranslateX }],
+                  backgroundColor: progressBarColor,
                 },
               ]}
             />
@@ -135,7 +162,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: '100%',
-    backgroundColor: GRAYSCALE_PRIMARY,
+    width: 50, // Fixed width for the moving bit
   },
   body: {
     fontSize: 13,

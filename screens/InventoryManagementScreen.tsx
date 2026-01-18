@@ -393,7 +393,7 @@ export default function InventoryManagementScreen({}: Props) {
   if (loading) {
     return (
       <View style={styles.wrapper}>
-        <AppBarLayout title="Inventory">
+        <AppBarLayout>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
             <Text style={styles.loadingText}>Loading inventory items...</Text>
@@ -406,7 +406,7 @@ export default function InventoryManagementScreen({}: Props) {
   if (error) {
     return (
       <View style={styles.wrapper}>
-        <AppBarLayout title="Inventory">
+        <AppBarLayout>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
           </View>

@@ -13,13 +13,15 @@ import {
   Platform,
   Alert,
 } from 'react-native'
-import type { NativeStackScreenProps } from '@react-navigation/native-stack'
+import { useRoute, useNavigation, type RouteProp } from '@react-navigation/native'
+import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { AppBarLayout } from '../components/AppBarLayout'
-import type { SettingsStackParamList } from '../navigation/SettingsNavigator'
+import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import { plansApi } from '../lib/api/plans'
 import { useAuth } from '../lib/auth/AuthContext'
 
-type Props = NativeStackScreenProps<SettingsStackParamList, 'Payment'>
+type NavigationProp = DrawerNavigationProp<AppDrawerParamList, 'Payment'>
+type PaymentRouteProp = RouteProp<AppDrawerParamList, 'Payment'>
 
 const GRAYSCALE_PRIMARY = '#333333'
 
@@ -55,7 +57,9 @@ const formatCVC = (text: string) => {
   return text.replace(/\D/g, '').slice(0, 4)
 }
 
-export default function PaymentScreen({ route, navigation }: Props) {
+export default function PaymentScreen() {
+  const route = useRoute<PaymentRouteProp>()
+  const navigation = useNavigation<NavigationProp>()
   const { planId, planName, price } = route.params
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
@@ -93,8 +97,8 @@ export default function PaymentScreen({ route, navigation }: Props) {
           {
             text: 'OK',
             onPress: () => {
-              // Navigate back to Settings screen
-              navigation.navigate('SettingsMain')
+              // Navigate back to Plans Selection screen
+              navigation.navigate('PlansSelection')
             },
           },
         ])

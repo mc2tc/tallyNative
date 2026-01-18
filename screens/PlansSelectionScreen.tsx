@@ -2,14 +2,15 @@
 
 import React, { useState, useCallback, useEffect } from 'react'
 import { View, StyleSheet, ScrollView, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native'
-import type { NativeStackScreenProps } from '@react-navigation/native-stack'
+import { useNavigation } from '@react-navigation/native'
+import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
 import { plansApi, type Plan } from '../lib/api/plans'
 import { useFocusEffect } from '@react-navigation/native'
-import type { SettingsStackParamList } from '../navigation/SettingsNavigator'
+import type { AppDrawerParamList } from '../navigation/AppNavigator'
 
-type Props = NativeStackScreenProps<SettingsStackParamList, 'PlansSelection'>
+type NavigationProp = DrawerNavigationProp<AppDrawerParamList, 'PlansSelection'>
 
 // Available plans (excluding trial which is auto-assigned)
 const AVAILABLE_PLANS = [
@@ -88,7 +89,8 @@ const formatLimit = (value: number | null, unit: string = ''): string => {
   return `${value}${unit ? ` ${unit}` : ''}`
 }
 
-export default function PlansSelectionScreen({ navigation }: Props) {
+export default function PlansSelectionScreen() {
+  const navigation = useNavigation<NavigationProp>()
   const { businessUser } = useAuth()
   const businessId = businessUser?.businessId
   const [currentPlan, setCurrentPlan] = useState<Plan | null>(null)

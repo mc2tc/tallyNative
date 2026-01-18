@@ -52,7 +52,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [timeframe, setTimeframe] = useState<'week' | 'month' | 'quarter'>('week')
+  const [timeframe, setTimeframe] = useState<'week' | 'month' | 'quarter'>('quarter')
   // Use ref to track if we have cached data without adding to dependencies
   const hasCachedDataRef = useRef(false)
 

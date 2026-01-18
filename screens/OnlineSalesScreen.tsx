@@ -16,7 +16,7 @@ export default function OnlineSalesScreen({}: Props) {
   useModuleGroupTracking('sales_marketing')
   return (
     <View style={styles.wrapper}>
-      <AppBarLayout title="Web">
+      <AppBarLayout>
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           <Text style={styles.wipText}>Work in progress</Text>
         </ScrollView>

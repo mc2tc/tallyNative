@@ -6,7 +6,7 @@ import { AppBarLayout } from '../components/AppBarLayout'
 
 export default function EmailScreen() {
   return (
-    <AppBarLayout title="Email">
+    <AppBarLayout>
       <View style={styles.container}>
         <Text style={styles.text}>Email marketing features coming soon</Text>
       </View>

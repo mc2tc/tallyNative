@@ -31,13 +31,13 @@ export default function TaxesComplianceScreen() {
   ]
 
   return (
-    <AppBarLayout title="Taxes & Compliance">
+    <AppBarLayout>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         {menuItems.map((item) => (
           <TouchableOpacity
             key={item.id}
             style={styles.menuItem}
-            onPress={() => navigation.navigate(item.route)}
+            onPress={() => navigation.navigate(item.route as any)}
             activeOpacity={0.7}
           >
             <View style={styles.menuItemIcon}>

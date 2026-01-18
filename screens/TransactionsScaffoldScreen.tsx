@@ -2738,7 +2738,6 @@ export default function TransactionsScaffoldScreen() {
 
   return (
     <AppBarLayout
-      title="TRANSACTIONS"
       rightIconName={activeSection !== 'reporting' ? 'add-circle-sharp' : undefined}
       onRightIconPress={activeSection !== 'reporting' ? handleAddClick : undefined}
     >

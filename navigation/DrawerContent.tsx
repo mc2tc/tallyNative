@@ -5,13 +5,39 @@ import { View, StyleSheet, Text, TouchableOpacity } from 'react-native'
 import { Drawer } from 'react-native-paper'
 import { DrawerContentScrollView } from '@react-navigation/drawer'
 import type { DrawerContentComponentProps } from '@react-navigation/drawer'
+import { MaterialIcons } from '@expo/vector-icons'
 import { useDrawerCategory, type DrawerCategory } from '../lib/context/DrawerCategoryContext'
 import { useAuth } from '../lib/auth/AuthContext'
+import { getFirstTabForCategory } from '../lib/utils/navigation'
+
+// Helper function to extract and format business name from business ID
+function getBusinessNameFromId(businessId: string | undefined): string {
+  if (!businessId) return 'Company'
+  
+  const lastUnderscoreIndex = businessId.lastIndexOf('_')
+  if (lastUnderscoreIndex === -1) {
+    return businessId.replace(/([A-Z])/g, ' $1').trim() || 'Company'
+  }
+  
+  const businessNamePart = businessId.substring(0, lastUnderscoreIndex)
+  const formatted = businessNamePart
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+  
+  return formatted
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ') || 'Company'
+}
 
 export function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { selectedCategory, setSelectedCategory } = useDrawerCategory()
-  const { signOut } = useAuth()
+  const { signOut, businessUser } = useAuth()
   const pendingNavigationRef = useRef<{ category: DrawerCategory; firstTab: string } | null>(null)
+
+  const businessName = getBusinessNameFromId(businessUser?.businessId)
 
   const categories: Array<{ label: string; value: DrawerCategory }> = [
     { label: 'Finance', value: 'Finance' },
@@ -22,24 +48,6 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
     { label: 'Settings', value: 'Settings' },
   ]
 
-  const getFirstTabForCategory = (category: DrawerCategory): string => {
-    switch (category) {
-      case 'Finance':
-        return 'Health'
-      case 'Operations':
-        return 'Inventory'
-      case 'Marketing':
-        return 'Web'
-      case 'People':
-        return 'Payroll'
-      case 'TallyNetwork':
-        return 'Suppliers'
-      case 'Settings':
-        return 'SettingsPlan'
-      default:
-        return 'Health'
-    }
-  }
 
   // Handle navigation after category change
   useEffect(() => {
@@ -102,21 +110,34 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.drawerTitle}>Modules</Text>
+        <Text style={styles.drawerTitle}>{businessName}</Text>
+        <View style={styles.divider} />
         <Drawer.Section showDivider={false} style={styles.drawerSection}>
-          {categories.map((category) => (
-            <Drawer.Item
-              key={category.value}
-              label={category.label}
-              active={selectedCategory === category.value}
-              rippleColor="#e0e0e0"
-              style={[
-                styles.drawerItem,
-                selectedCategory === category.value ? { backgroundColor: 'transparent' } : undefined,
-              ]}
-              onPress={() => handleCategoryPress(category.value)}
-            />
-          ))}
+          {categories.map((category) => {
+            const showNotificationBadge = category.value === 'Operations'
+            return (
+              <View key={category.value} style={styles.drawerItemContainer}>
+                <Drawer.Item
+                  label={category.label.toUpperCase()}
+                  icon={({ size, color }) => (
+                    <MaterialIcons name="chevron-right" size={size} color={color} />
+                  )}
+                  active={selectedCategory === category.value}
+                  rippleColor="#e0e0e0"
+                  style={[
+                    styles.drawerItem,
+                    selectedCategory === category.value ? { backgroundColor: 'transparent' } : undefined,
+                  ]}
+                  onPress={() => handleCategoryPress(category.value)}
+                />
+                {showNotificationBadge && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>2</Text>
+                  </View>
+                )}
+              </View>
+            )
+          })}
         </Drawer.Section>
       </View>
       <View style={styles.footer}>
@@ -145,11 +166,20 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
   },
+  divider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
   drawerSection: {
     marginTop: 0,
     marginBottom: 0,
     paddingTop: 0,
     paddingBottom: 0,
+  },
+  drawerItemContainer: {
+    position: 'relative',
   },
   drawerItem: {
     paddingVertical: 0,
@@ -159,6 +189,23 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 0,
     height: 48,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    right: 16,
+    top: 12,
+    backgroundColor: '#d32f2f',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  notificationBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
   },
   footer: {
     paddingHorizontal: 16,

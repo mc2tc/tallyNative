@@ -8,11 +8,12 @@ import type { NavigationProp } from '@react-navigation/native'
 import type { DrawerNavigationProp } from '@react-navigation/drawer'
 import { MaterialIcons, Ionicons } from '@expo/vector-icons'
 import { useAuth } from '../lib/auth/AuthContext'
+import { useDrawerCategory } from '../lib/context/DrawerCategoryContext'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 
 interface AppBarLayoutProps {
   children: React.ReactNode
-  title?: string
+  title?: string // Optional override - if not provided, uses category name
   debugBorders?: boolean
   showProfileIcon?: boolean
   rightIconName?: keyof typeof Ionicons.glyphMap
@@ -32,7 +33,31 @@ export function AppBarLayout({
   const navigation = useNavigation<NavigationProp<any>>()
   const drawerNavigation = useNavigation<DrawerNavigationProp<AppDrawerParamList>>()
   const { user } = useAuth()
+  const { selectedCategory } = useDrawerCategory()
   const borderColor = debugBorders ? '#ff0000' : 'transparent'
+
+  // Get display name for category
+  const getCategoryDisplayName = (category: string): string => {
+    switch (category) {
+      case 'Finance':
+        return 'Finance'
+      case 'Operations':
+        return 'Operations'
+      case 'Marketing':
+        return 'Marketing'
+      case 'People':
+        return 'People'
+      case 'TallyNetwork':
+        return 'Tally Network'
+      case 'Settings':
+        return 'Settings'
+      default:
+        return 'Finance'
+    }
+  }
+
+  // Use provided title or fall back to category name
+  const displayTitle = title || getCategoryDisplayName(selectedCategory)
 
   // Get user initials from email or displayName
   const getUserInitials = () => {
@@ -84,9 +109,9 @@ export function AppBarLayout({
           )}
         </View>
         <View style={[styles.titleContainer, { borderColor }]}>
-          {title ? (
+          {displayTitle ? (
             <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
-              {(title.length > 24 ? title.substring(0, 24) + '...' : title).toUpperCase()}
+              {(displayTitle.length > 24 ? displayTitle.substring(0, 24) + '...' : displayTitle).toUpperCase()}
             </Text>
           ) : null}
         </View>

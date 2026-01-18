@@ -60,7 +60,7 @@ export default function HelpScreen() {
   }
 
   return (
-    <AppBarLayout title="Operations Centre">
+    <AppBarLayout>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -91,14 +91,18 @@ export default function HelpScreen() {
           unreadCount={oversightUnreadCount}
           actionText="Control Room"
           onPress={() => navigation.navigate('OversightChat')}
+          progressBarColor="#d4a5a5"
+          animationDelay={0}
         />
         <AssistantInfoCard
           title="Operations & Performance"
           description="Analyzes your operations to provide actionable recommendations that help optimize your business performance."
           icon="trending-up"
-          unreadCount={insightUnreadCount}
+          unreadCount={2}
           actionText="Control Room"
           onPress={() => navigation.navigate('InsightChat')}
+          progressBarColor="#a5d4a5"
+          animationDelay={2000}
         />
       </ScrollView>
     </AppBarLayout>

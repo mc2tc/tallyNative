@@ -44,6 +44,8 @@ import TalentScreen from '../screens/TalentScreen'
 import VATScreen from '../screens/VATScreen'
 import TaxesComplianceScreen from '../screens/TaxesComplianceScreen'
 import EmailScreen from '../screens/EmailScreen'
+import PlansSelectionScreen from '../screens/PlansSelectionScreen'
+import PaymentScreen from '../screens/PaymentScreen'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
@@ -277,6 +279,8 @@ export type AppDrawerParamList = {
   VAT: undefined
   TaxesCompliance: undefined
   Email: undefined
+  PlansSelection: undefined
+  Payment: { planId: string; planName: string; price: number }
 }
 
 const Drawer = createDrawerNavigator<AppDrawerParamList>()
@@ -340,6 +344,8 @@ export function AppNavigator() {
       <Drawer.Screen name="VAT" component={VATScreen} />
       <Drawer.Screen name="TaxesCompliance" component={TaxesComplianceScreen} />
       <Drawer.Screen name="Email" component={EmailScreen} />
+      <Drawer.Screen name="PlansSelection" component={PlansSelectionScreen} />
+      <Drawer.Screen name="Payment" component={PaymentScreen} />
     </Drawer.Navigator>
   )
 }

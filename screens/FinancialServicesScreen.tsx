@@ -34,7 +34,7 @@ export default function FinancialServicesScreen({ navigation }: Props) {
 
   return (
     <View style={styles.wrapper}>
-      <AppBarLayout title="Financial Services">
+      <AppBarLayout>
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           {financialServices.map((service, index) => (
             <TouchableOpacity

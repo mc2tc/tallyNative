@@ -71,7 +71,8 @@ export function OperationsBottomNav() {
   const handleTabPress = (tab: TabItem) => {
     const targetRoute = tab.drawerRoute
     if (targetRoute !== currentRouteName) {
-      navigation.navigate(targetRoute as any)
+      // Since we've already checked we're not in tab navigator, we can safely cast to drawer navigator
+      (navigation as DrawerNavigationProp<AppDrawerParamList>).navigate(targetRoute)
     }
   }
 

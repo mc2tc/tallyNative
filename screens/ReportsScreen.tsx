@@ -319,7 +319,7 @@ export default function ReportsScreen() {
   }
 
   return (
-    <AppBarLayout title="REPORTS">
+    <AppBarLayout>
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
