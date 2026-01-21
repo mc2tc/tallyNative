@@ -39,6 +39,8 @@ export default function UploadProcessingScreen() {
     isPdf, 
     success: initialSuccess, 
     pipelineSection,
+    bankAccountId,
+    cardId,
     businessId,
     localUri,
     fileNameHint,
@@ -146,7 +148,7 @@ export default function UploadProcessingScreen() {
           // Use transactions3 bank statement upload endpoint
           console.log('UploadProcessing: Using transactions3 bank statement upload endpoint')
           response = await transactions2Api.uploadBankStatement(businessId, downloadUrl, {
-            // TODO: Get bankName and accountNumber if available from context
+            accountNumber: bankAccountId,
             fileSize,
           })
           
@@ -176,7 +178,7 @@ export default function UploadProcessingScreen() {
           // Use transactions3 credit card statement upload endpoint
           console.log('UploadProcessing: Using transactions3 credit card statement upload endpoint')
           response = await transactions2Api.uploadCreditCardStatement(businessId, downloadUrl, {
-            // TODO: Get cardName and cardNumber if available from context
+            cardNumber: cardId,
             fileSize,
           })
           

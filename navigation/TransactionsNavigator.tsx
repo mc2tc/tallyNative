@@ -41,6 +41,8 @@ export type TransactionsStackParamList = {
     isPdf: boolean
     success: boolean
     pipelineSection?: string
+    bankAccountId?: string
+    cardId?: string
     businessId?: string
     localUri: string
     fileNameHint?: string

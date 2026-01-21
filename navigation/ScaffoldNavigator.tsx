@@ -35,6 +35,8 @@ export type ScaffoldStackParamList = {
     isPdf: boolean
     success: boolean
     pipelineSection?: string
+    bankAccountId?: string
+    cardId?: string
     businessId?: string
     localUri: string
     fileNameHint?: string

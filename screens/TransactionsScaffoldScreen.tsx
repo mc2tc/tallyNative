@@ -2436,8 +2436,16 @@ export default function TransactionsScaffoldScreen() {
 
       console.log(`Reconciliation completed: ${response.matched} transaction(s) matched`)
       
-      // Refresh transactions to show updated reconciliation statuses
+      // Show feedback to user
       if (response.matched > 0) {
+        const sectionName = activeSection === 'bank' ? 'bank' : 'credit card'
+        Alert.alert(
+          'Reconciliation Complete',
+          `${response.matched} ${response.matched === 1 ? 'transaction has' : 'transactions have'} been successfully matched.\n\nMatched ${sectionName} transactions have been archived, and corresponding purchase receipts are now marked as reconciled.`,
+          [{ text: 'OK' }]
+        )
+        
+        // Refresh transactions to show updated reconciliation statuses
         if (activeSection === 'bank') {
           // For Bank section, refresh transactions3 data
           // Matched bank transactions are archived (removed from "Needs reconciliation")
@@ -2481,6 +2489,12 @@ export default function TransactionsScaffoldScreen() {
           setTransactions3CardPending(pendingResponse.transactions || [])
           setTransactions3CardSourceOfTruth(verifiedResponse.transactions || [])
         }
+      } else {
+        Alert.alert(
+          'No Matches Found',
+          'No transactions were matched during reconciliation. This may happen if there are no purchase receipts available to match against.',
+          [{ text: 'OK' }]
+        )
       }
     } catch (error) {
       console.error('Failed to reconcile transactions:', error)
