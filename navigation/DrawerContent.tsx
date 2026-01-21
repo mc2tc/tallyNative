@@ -133,6 +133,26 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
       <View style={styles.header}>
         <Text style={styles.drawerTitle}>{businessName}</Text>
         <View style={styles.divider} />
+        {/* Primary Transactions entry */}
+        <TouchableOpacity
+          style={styles.primaryItem}
+          onPress={() => {
+            props.navigation.closeDrawer()
+            props.navigation.navigate('Transactions')
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={styles.drawerItemRow}>
+            <MaterialIcons
+              name="receipt-long"
+              size={24}
+              color="#333333"
+              style={styles.drawerItemIcon}
+            />
+            <Text style={styles.drawerItemLabel}>TRANSACTIONS</Text>
+          </View>
+        </TouchableOpacity>
+        <View style={styles.divider} />
         <Drawer.Section showDivider={false} style={styles.drawerSection}>
           {categories.map((category) => {
             const isActive = selectedCategory === category.value
@@ -210,6 +230,10 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   drawerItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  primaryItem: {
     paddingVertical: 10,
     paddingHorizontal: 16,
   },

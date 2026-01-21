@@ -28,6 +28,7 @@ import SettingsAccountsScreen from '../screens/SettingsAccountsScreen'
 import SettingsVATStatusScreen from '../screens/SettingsVATStatusScreen'
 import SettingsUnitsScreen from '../screens/SettingsUnitsScreen'
 import SettingsUsersScreen from '../screens/SettingsUsersScreen'
+import ReportingReadyScreen from '../screens/ReportingReadyScreen'
 
 export type MainTabParamList = {
   Home: undefined
@@ -139,9 +140,8 @@ export function MainTabNavigator() {
           createTabScreen('Health', HomeNavigator, { title: 'Health' }),
           createTabScreen(
             'Transactions',
-            TransactionsNavigator,
-            { title: 'Transactions' },
-            createTabResetListener('TransactionsHome')
+            ReportingReadyScreen,
+            { title: 'Reporting ready' },
           ),
           createTabScreen(
             'Reports',

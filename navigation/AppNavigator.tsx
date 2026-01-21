@@ -46,10 +46,12 @@ import TaxesComplianceScreen from '../screens/TaxesComplianceScreen'
 import EmailScreen from '../screens/EmailScreen'
 import PlansSelectionScreen from '../screens/PlansSelectionScreen'
 import PaymentScreen from '../screens/PaymentScreen'
+import { TransactionsNavigator } from './TransactionsNavigator'
 import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
   MainTabs: { screen?: string; params?: any }
+  Transactions: undefined
   Test: undefined
   FirestoreTest: undefined
   InventoryManagement: undefined
@@ -304,6 +306,7 @@ export function AppNavigator() {
       }}
     >
       <Drawer.Screen name="MainTabs" component={MainTabNavigator} />
+      <Drawer.Screen name="Transactions" component={TransactionsNavigator} />
       <Drawer.Screen name="Test" component={TestScreen} />
       <Drawer.Screen name="FirestoreTest" component={FirestoreTestScreen} />
       <Drawer.Screen name="InventoryManagement" component={InventoryManagementScreen} />
