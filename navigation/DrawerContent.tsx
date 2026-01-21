@@ -32,6 +32,27 @@ function getBusinessNameFromId(businessId: string | undefined): string {
     .join(' ') || 'Company'
 }
 
+const getCategoryIconName = (
+  category: DrawerCategory,
+): React.ComponentProps<typeof MaterialIcons>['name'] => {
+  switch (category) {
+    case 'Finance':
+      return 'account-balance-wallet'
+    case 'Operations':
+      return 'build'
+    case 'Marketing':
+      return 'campaign'
+    case 'People':
+      return 'group'
+    case 'TallyNetwork':
+      return 'hub'
+    case 'Settings':
+      return 'settings'
+    default:
+      return 'radio-button-unchecked'
+  }
+}
+
 export function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { selectedCategory, setSelectedCategory } = useDrawerCategory()
   const { signOut, businessUser } = useAuth()
@@ -114,28 +135,37 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
         <View style={styles.divider} />
         <Drawer.Section showDivider={false} style={styles.drawerSection}>
           {categories.map((category) => {
+            const isActive = selectedCategory === category.value
             const showNotificationBadge = category.value === 'Operations'
             return (
-              <View key={category.value} style={styles.drawerItemContainer}>
-                <Drawer.Item
-                  label={category.label.toUpperCase()}
-                  icon={({ size, color }) => (
-                    <MaterialIcons name="chevron-right" size={size} color={color} />
+              <TouchableOpacity
+                key={category.value}
+                style={[styles.drawerItem, isActive ? styles.drawerItemActive : undefined]}
+                onPress={() => handleCategoryPress(category.value)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.drawerItemRow}>
+                  <MaterialIcons
+                    name={getCategoryIconName(category.value)}
+                    size={24}
+                    color={isActive ? '#000000' : '#666666'}
+                    style={styles.drawerItemIcon}
+                  />
+                  <Text
+                    style={[
+                      styles.drawerItemLabel,
+                      isActive ? styles.drawerItemLabelActive : undefined,
+                    ]}
+                  >
+                    {category.label.toUpperCase()}
+                  </Text>
+                  {showNotificationBadge && (
+                    <View style={styles.notificationBadge}>
+                      <Text style={styles.notificationBadgeText}>2</Text>
+                    </View>
                   )}
-                  active={selectedCategory === category.value}
-                  rippleColor="#e0e0e0"
-                  style={[
-                    styles.drawerItem,
-                    selectedCategory === category.value ? { backgroundColor: 'transparent' } : undefined,
-                  ]}
-                  onPress={() => handleCategoryPress(category.value)}
-                />
-                {showNotificationBadge && (
-                  <View style={styles.notificationBadge}>
-                    <Text style={styles.notificationBadgeText}>2</Text>
-                  </View>
-                )}
-              </View>
+                </View>
+              </TouchableOpacity>
             )
           })}
         </Drawer.Section>
@@ -170,7 +200,8 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#e0e0e0',
     marginHorizontal: 16,
-    marginVertical: 8,
+    marginTop: 8,
+    marginBottom: 16,
   },
   drawerSection: {
     marginTop: 0,
@@ -178,33 +209,42 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 0,
   },
-  drawerItemContainer: {
-    position: 'relative',
-  },
   drawerItem: {
-    paddingVertical: 0,
-    minHeight: 48,
-    marginTop: 0,
-    marginBottom: 0,
-    paddingTop: 0,
-    paddingBottom: 0,
-    height: 48,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  drawerItemActive: {
+    backgroundColor: '#f0f0f0',
+  },
+  drawerItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  drawerItemIcon: {
+    marginRight: 12,
+  },
+  drawerItemLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  drawerItemLabelActive: {
+    color: '#000000',
   },
   notificationBadge: {
-    position: 'absolute',
-    right: 16,
-    top: 12,
     backgroundColor: '#d32f2f',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
+    marginLeft: 'auto',
+    marginTop: 1,
   },
   notificationBadgeText: {
     color: '#ffffff',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   footer: {
