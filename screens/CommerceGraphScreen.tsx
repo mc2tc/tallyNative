@@ -1,4 +1,4 @@
-// Tally Network screen - Work In Progress
+// Commerce Graph screen (Tally Network)
 
 import React from 'react'
 import { View, StyleSheet, ScrollView, Text } from 'react-native'
@@ -6,13 +6,18 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { TallyNetworkBottomNav } from '../components/TallyNetworkBottomNav'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
+import { useModuleTracking } from '../lib/hooks/useModuleTracking'
+import { useModuleGroupTracking } from '../lib/hooks/useModuleGroupTracking'
 
-type Props = NativeStackScreenProps<AppDrawerParamList, 'TallyNetwork'>
+type Props = NativeStackScreenProps<AppDrawerParamList, 'CommerceGraph'>
 
-export default function TallyNetworkScreen({}: Props) {
+export default function CommerceGraphScreen({ navigation }: Props) {
+  useModuleTracking('commerceGraph')
+  useModuleGroupTracking('tally_network')
+
   return (
     <View style={styles.wrapper}>
-      <AppBarLayout title="Tally Network">
+      <AppBarLayout>
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           <Text style={styles.wipText}>Work in progress</Text>
         </ScrollView>

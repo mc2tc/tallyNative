@@ -22,6 +22,7 @@ import TeamScreen from '../screens/TeamScreen'
 import TalentScreen from '../screens/TalentScreen'
 import SuppliersScreen from '../screens/SuppliersScreen'
 import FinancialServicesScreen from '../screens/FinancialServicesScreen'
+import CommerceGraphScreen from '../screens/CommerceGraphScreen'
 import TaxesComplianceScreen from '../screens/TaxesComplianceScreen'
 import SettingsPlanScreen from '../screens/SettingsPlanScreen'
 import SettingsAccountsScreen from '../screens/SettingsAccountsScreen'
@@ -48,6 +49,7 @@ export type MainTabParamList = {
   Talent: undefined
   Suppliers: undefined
   FinancialServices: undefined
+  CommerceGraph: undefined
   SettingsPlan: undefined
   SettingsAccounts: undefined
   SettingsVATStatus: undefined
@@ -92,6 +94,8 @@ const getTabIcon = (routeName: string, color: string, size: number) => {
       return <MaterialCommunityIcons name="truck-delivery" size={size} color={color} />
     case 'FinancialServices':
       return <MaterialIcons name="account-balance" size={size} color={color} />
+    case 'CommerceGraph':
+      return <MaterialCommunityIcons name="map-marker" size={size} color={color} />
     case 'SettingsPlan':
       return <MaterialIcons name="credit-card" size={size} color={color} />
     case 'SettingsAccounts':
@@ -193,6 +197,7 @@ export function MainTabNavigator() {
         return [
           createTabScreen('Suppliers', SuppliersScreen, { title: 'Suppliers' }),
           createTabScreen('FinancialServices', FinancialServicesScreen, { title: 'Financial Services' }),
+          createTabScreen('CommerceGraph', CommerceGraphScreen, { title: 'Commerce Graph' }),
         ]
 
       case 'Settings':

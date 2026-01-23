@@ -1,6 +1,6 @@
 import React from 'react'
 import { createStackNavigator } from '@react-navigation/stack'
-import TransactionsScaffoldScreen from '../screens/TransactionsScaffoldScreen'
+import { TransactionsBottomNavigator } from './TransactionsBottomNavigator'
 import AddTransactionScreen from '../screens/AddTransactionScreen'
 import TransactionListScreen from '../screens/TransactionListScreen'
 import TransactionDetailScreen from '../screens/TransactionDetailScreen'
@@ -92,7 +92,7 @@ const Stack = createStackNavigator<TransactionsStackParamList>()
 export function TransactionsNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="TransactionsHome" component={TransactionsScaffoldScreen} />
+      <Stack.Screen name="TransactionsHome" component={TransactionsBottomNavigator} />
       <Stack.Screen name="AddTransaction" component={AddTransactionScreen} />
       <Stack.Screen name="ManualPurchaseEntry" component={ManualPurchaseEntryScreen} />
       <Stack.Screen name="CreateInvoice" component={CreateInvoiceScreen} />

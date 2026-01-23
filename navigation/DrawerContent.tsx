@@ -60,6 +60,11 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
 
   const businessName = getBusinessNameFromId(businessUser?.businessId)
 
+  // Check if we're currently on the Transactions drawer route
+  const state = props.navigation.getState()
+  const currentRoute = state?.routes[state?.index || 0]
+  const isOnTransactionsRoute = currentRoute?.name === 'Transactions'
+
   const categories: Array<{ label: string; value: DrawerCategory }> = [
     { label: 'Finance', value: 'Finance' },
     { label: 'Operations', value: 'Operations' },
@@ -87,8 +92,13 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
   }, [selectedCategory, props.navigation])
 
   const handleCategoryPress = (category: DrawerCategory) => {
-    // Don't do anything if already on this category
-    if (selectedCategory === category) {
+    // Get current route state
+    const state = props.navigation.getState()
+    const currentRoute = state?.routes[state?.index || 0]
+    const isOnTransactionsRoute = currentRoute?.name === 'Transactions'
+    
+    // Don't do anything if already on this category and not on Transactions route
+    if (selectedCategory === category && !isOnTransactionsRoute) {
       props.navigation.closeDrawer()
       return
     }
@@ -101,17 +111,14 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
     // Store pending navigation info
     pendingNavigationRef.current = { category, firstTab }
     
-    // Ensure we're on MainTabs before changing category
-    const state = props.navigation.getState()
-    const currentRoute = state?.routes[state?.index || 0]
-    
+    // Always navigate to MainTabs first if not already there, then set category
     if (currentRoute?.name !== 'MainTabs') {
-      // If not on MainTabs, navigate there first, then set category
-      props.navigation.navigate('MainTabs')
-      // Use a small delay to ensure navigation completes before category change
+      // If not on MainTabs (e.g., on Transactions drawer route), navigate there first with the correct tab
+      props.navigation.navigate('MainTabs', { screen: firstTab })
+      // Use a delay to ensure navigation completes before category change
       setTimeout(() => {
         setSelectedCategory(category)
-      }, 50)
+      }, 150)
     } else {
       // Already on MainTabs, change category
       // The useEffect will handle navigation after remount
@@ -154,38 +161,45 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
         </TouchableOpacity>
         <View style={styles.divider} />
         <Drawer.Section showDivider={false} style={styles.drawerSection}>
-          {categories.map((category) => {
-            const isActive = selectedCategory === category.value
+          {categories.map((category, index) => {
+            // Don't show category as active if we're on Transactions route
+            const isActive = !isOnTransactionsRoute && selectedCategory === category.value
             const showNotificationBadge = category.value === 'Operations'
+            const isPeople = category.value === 'People'
+            const isTallyNetwork = category.value === 'TallyNetwork'
             return (
-              <TouchableOpacity
-                key={category.value}
-                style={[styles.drawerItem, isActive ? styles.drawerItemActive : undefined]}
-                onPress={() => handleCategoryPress(category.value)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.drawerItemRow}>
-                  <MaterialIcons
-                    name={getCategoryIconName(category.value)}
-                    size={24}
-                    color={isActive ? '#000000' : '#666666'}
-                    style={styles.drawerItemIcon}
-                  />
-                  <Text
-                    style={[
-                      styles.drawerItemLabel,
-                      isActive ? styles.drawerItemLabelActive : undefined,
-                    ]}
-                  >
-                    {category.label.toUpperCase()}
-                  </Text>
-                  {showNotificationBadge && (
-                    <View style={styles.notificationBadge}>
-                      <Text style={styles.notificationBadgeText}>2</Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
+              <React.Fragment key={category.value}>
+                <TouchableOpacity
+                  style={[styles.drawerItem, isActive ? styles.drawerItemActive : undefined]}
+                  onPress={() => handleCategoryPress(category.value)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.drawerItemRow}>
+                    <MaterialIcons
+                      name={getCategoryIconName(category.value)}
+                      size={24}
+                      color={isActive ? '#000000' : '#666666'}
+                      style={styles.drawerItemIcon}
+                    />
+                    <Text
+                      style={[
+                        styles.drawerItemLabel,
+                        isActive ? styles.drawerItemLabelActive : undefined,
+                      ]}
+                    >
+                      {category.label.toUpperCase()}
+                    </Text>
+                    {showNotificationBadge && (
+                      <View style={styles.notificationBadge}>
+                        <Text style={styles.notificationBadgeText}>2</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+                {(isPeople || isTallyNetwork) && (
+                  <View style={styles.divider} />
+                )}
+              </React.Fragment>
             )
           })}
         </Drawer.Section>
@@ -221,7 +235,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e0e0e0',
     marginHorizontal: 16,
     marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 24,
   },
   drawerSection: {
     marginTop: 0,

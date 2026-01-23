@@ -41,6 +41,7 @@ import ExpensesScreen from '../screens/ExpensesScreen'
 import TimeManagementScreen from '../screens/TimeManagementScreen'
 import SuppliersScreen from '../screens/SuppliersScreen'
 import TalentScreen from '../screens/TalentScreen'
+import CommerceGraphScreen from '../screens/CommerceGraphScreen'
 import VATScreen from '../screens/VATScreen'
 import TaxesComplianceScreen from '../screens/TaxesComplianceScreen'
 import EmailScreen from '../screens/EmailScreen'
@@ -278,6 +279,7 @@ export type AppDrawerParamList = {
   Team: undefined
   Suppliers: undefined
   Talent: undefined
+  CommerceGraph: undefined
   VAT: undefined
   TaxesCompliance: undefined
   Email: undefined
@@ -344,6 +346,7 @@ export function AppNavigator() {
       <Drawer.Screen name="Team" component={TeamScreen} />
       <Drawer.Screen name="Suppliers" component={SuppliersScreen} />
       <Drawer.Screen name="Talent" component={TalentScreen} />
+      <Drawer.Screen name="CommerceGraph" component={CommerceGraphScreen} />
       <Drawer.Screen name="VAT" component={VATScreen} />
       <Drawer.Screen name="TaxesCompliance" component={TaxesComplianceScreen} />
       <Drawer.Screen name="Email" component={EmailScreen} />

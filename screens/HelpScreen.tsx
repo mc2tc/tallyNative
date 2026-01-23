@@ -79,7 +79,7 @@ export default function HelpScreen() {
             <View style={styles.introTextContainer}>
               <Text style={styles.introTitle}>Operations Centre</Text>
               <Text style={styles.introBody}>
-                Monitor your business operations, security, and performance in one place. Get real-time alerts and actionable insights to help you run your business with confidence.
+               Tally monitors your business finances, operations and security, and provides real-time alerts and actionable insights to help you run your business with confidence.
               </Text>
             </View>
           </View>
@@ -91,8 +91,18 @@ export default function HelpScreen() {
           unreadCount={oversightUnreadCount}
           actionText="Control Room"
           onPress={() => navigation.navigate('OversightChat')}
-          progressBarColor="#d4a5a5"
+          progressBarColor="#ff4444"
           animationDelay={0}
+        />
+        <AssistantInfoCard
+          title="Finance"
+          description="To help you stay compliant and avoid an unexpected review from HMRC, Tally uses smart screening technology to check your data for common errors."
+          icon="account-balance"
+          unreadCount={0}
+          actionText="Control Room"
+          onPress={() => navigation.navigate('TaxesCompliance')}
+          progressBarColor="#ffaa00"
+          animationDelay={2000}
         />
         <AssistantInfoCard
           title="Operations & Performance"
@@ -101,8 +111,8 @@ export default function HelpScreen() {
           unreadCount={2}
           actionText="Control Room"
           onPress={() => navigation.navigate('InsightChat')}
-          progressBarColor="#a5d4a5"
-          animationDelay={2000}
+          progressBarColor="#44ff44"
+          animationDelay={4000}
         />
       </ScrollView>
     </AppBarLayout>

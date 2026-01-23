@@ -16,7 +16,7 @@ type TabItem = {
   name: string
   label: string
   icon: string
-  route: 'Suppliers' | 'FinancialServices'
+  route: 'Suppliers' | 'FinancialServices' | 'CommerceGraph'
 }
 
 const tabs: TabItem[] = [
@@ -32,6 +32,12 @@ const tabs: TabItem[] = [
     icon: 'bank', 
     route: 'FinancialServices' 
   },
+  { 
+    name: 'CommerceGraph', 
+    label: 'Commerce Graph', 
+    icon: 'map-marker', 
+    route: 'CommerceGraph' 
+  },
 ]
 
 export function TallyNetworkBottomNav() {
@@ -40,9 +46,9 @@ export function TallyNetworkBottomNav() {
   const currentRouteName = route.name
 
   // Check if we're in a tab navigator context by checking if current route name matches tab route names
-  // Tab routes: 'Suppliers', 'FinancialServices'
-  // Drawer routes: 'Suppliers', 'FinancialServices' (same names)
-  const tabRouteNames = ['Suppliers', 'FinancialServices']
+  // Tab routes: 'Suppliers', 'FinancialServices', 'CommerceGraph' (from MainTabNavigator)
+  // Drawer routes: 'Suppliers', 'FinancialServices', 'CommerceGraph', 'TallyNetwork'
+  const tabRouteNames = ['Suppliers', 'FinancialServices', 'CommerceGraph']
   const isInTabNavigator = tabRouteNames.includes(currentRouteName)
   
   // If we're in tab navigator, don't render this component as tabs handle navigation
@@ -73,7 +79,11 @@ export function TallyNetworkBottomNav() {
                 size={24} 
                 color={isActive ? GRAYSCALE_PRIMARY : GRAYSCALE_SECONDARY} 
               />
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+              <Text 
+                style={[styles.tabLabel, isActive && styles.tabLabelActive]}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+              >
                 {tab.label}
               </Text>
             </TouchableOpacity>
