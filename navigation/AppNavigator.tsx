@@ -52,7 +52,7 @@ import { MainTabNavigator } from './MainTabNavigator'
 
 export type AppDrawerParamList = {
   MainTabs: { screen?: string; params?: any }
-  Transactions: undefined
+  Transactions: { screen?: string; params?: any }
   Test: undefined
   FirestoreTest: undefined
   InventoryManagement: undefined

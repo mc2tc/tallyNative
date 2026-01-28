@@ -138,14 +138,19 @@ export default function BalanceSheetReportScreen() {
 
     const totalAssets = assets.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
     const totalLiabilities = liabilities.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
+    // Exclude "Retained Earnings" from equity accounts to avoid double counting,
+    // since retained earnings is always calculated from net profit
+    const equityAccountsExcludingRetained = equity.filter(
+      (acc) => !acc.name.toLowerCase().includes('retained earnings'),
+    )
     // Include net profit in total equity (as retained earnings)
-    const totalEquity = equity.reduce((sum, acc) => sum + (acc.value ?? 0), 0) + netProfit
+    const totalEquity = equityAccountsExcludingRetained.reduce((sum, acc) => sum + (acc.value ?? 0), 0) + netProfit
     const balance = totalAssets - (totalLiabilities + totalEquity)
 
     return {
       assetAccounts: assets,
       liabilityAccounts: liabilities,
-      equityAccounts: equity,
+      equityAccounts: equityAccountsExcludingRetained,
       totalAssets,
       totalLiabilities,
       totalEquity,

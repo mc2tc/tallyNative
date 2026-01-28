@@ -169,8 +169,6 @@ export default function TransactionDetailScreen() {
   
   // Check if this is a bank transaction (statement_entry) vs purchase receipt
   const isBankTransaction = classification?.kind === 'statement_entry'
-  // Check if classification kind is "purchase"
-  const isPurchase = classification?.kind === 'purchase'
   // Check if this is a sale transaction (invoice)
   const isSale = classification?.kind === 'sale'
   
@@ -240,7 +238,7 @@ export default function TransactionDetailScreen() {
 
   // Fetch payment methods on mount to get proper labels for display
   React.useEffect(() => {
-    if (businessId && (isTransactions3 || isPurchase)) {
+    if (businessId && isTransactions3) {
       paymentMethodsApi.getPaymentMethods(businessId)
         .then((methods) => {
           const methodsArray = Array.isArray(methods) ? methods : []
@@ -267,7 +265,7 @@ export default function TransactionDetailScreen() {
           }])
         })
     }
-  }, [businessId, isTransactions3, isPurchase])
+  }, [businessId, isTransactions3])
 
   // Safely access transaction properties with fallbacks (moved before callbacks that use them)
   const transactionSummary = transaction?.summary
@@ -791,7 +789,7 @@ export default function TransactionDetailScreen() {
 
   const handleSelectPaymentMethod = useCallback(
     async (method: PaymentMethodOption) => {
-      // For all transactions (transactions3 and transactions2): store locally, persist on Confirm and save
+      // Store locally, persist on Confirm and save
       setSelectedPaymentMethod(method.value)
       handleClosePaymentMethodPicker()
     },
@@ -1392,11 +1390,6 @@ export default function TransactionDetailScreen() {
     return grouped
   }, [itemList])
 
-  // Check if classification kind is "purchase" and get chart name (for transactions2)
-  // Note: accounting is already extracted above for hasAccountingEntries check
-  const transactionAccounting = transaction?.accounting as TransactionAccounting | undefined
-  const chartName = isPurchase && !isTransactions3 ? transactionAccounting?.credits?.[0]?.chartName : undefined
-
   // For transactions3: get payment method from accounting.paymentBreakdown or use selected one
   const currentPaymentBreakdown = accounting?.paymentBreakdown || []
   const currentPaymentMethodType = currentPaymentBreakdown.length > 0 
@@ -1431,9 +1424,7 @@ export default function TransactionDetailScreen() {
     : null
   // Check if payment method is invalid (for validation)
   const isPaymentMethodInvalid = isTransactions3 && !isBankTransaction && (!displayPaymentMethod || paymentMethodLabel?.toLowerCase() === 'unknown')
-  const paymentMethodNeedsAttention = 
-    isPaymentMethodInvalid ||
-    (chartName && !isTransactions3 && chartName.toLowerCase() === 'unknown')
+  const paymentMethodNeedsAttention = isPaymentMethodInvalid
 
   // Trigger wiggle animation when payment method needs attention
   React.useEffect(() => {
@@ -1530,19 +1521,6 @@ export default function TransactionDetailScreen() {
                 </Text>
               )}
             </>
-          )}
-          {chartName && !isTransactions3 && (
-            <View style={styles.chartNameRow}>
-              <Text style={styles.paidByLabel}>Paid by:</Text>
-              <Text style={styles.chartName}>{chartName}</Text>
-              <TouchableOpacity
-                style={styles.chartNameEditButton}
-                onPress={handleEditPaymentMethod}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.chartNameEditButtonText}>Edit</Text>
-              </TouchableOpacity>
-            </View>
           )}
           {isTransactions3 && !isBankTransaction && (
             <View style={styles.chartNameRow}>
@@ -2167,15 +2145,8 @@ export default function TransactionDetailScreen() {
                     ) : (
                       methods.map((method, idx) => {
                         // Get current payment method value from transaction or local state
-                        let currentPaymentMethodValue: string | undefined
-                        if (isTransactions3) {
-                          // For transactions3: check local state first, then transaction
-                          currentPaymentMethodValue = selectedPaymentMethod || currentPaymentMethodType
-                        } else {
-                          // For transactions2: check accounting credits
-                          const credits = accounting?.credits
-                          currentPaymentMethodValue = credits && credits.length > 0 ? credits[0]?.paymentMethod : undefined
-                        }
+                        // Check local state first, then transaction
+                        const currentPaymentMethodValue = selectedPaymentMethod || currentPaymentMethodType
                         const isSelected = currentPaymentMethodValue === method.value
                         return (
                           <TouchableOpacity

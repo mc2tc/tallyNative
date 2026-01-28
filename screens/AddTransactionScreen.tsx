@@ -280,19 +280,23 @@ export default function AddTransactionScreen() {
           </Text>
 
           <View style={styles.buttonGrid}>
-            <TouchableOpacity
-              onPress={() => {
-                // No action currently
-              }}
-              style={[styles.button, styles.bankConnectButton]}
-              activeOpacity={0.7}
-            >
-              <View style={styles.buttonContent}>
-                <MaterialIcons name="account-balance" size={18} color="#4a4a4a" />
-                <Text style={styles.bankConnectText}>Connect to Bank</Text>
-              </View>
-            </TouchableOpacity>
-            <View style={styles.buttonSeparator} />
+            {isBankContext && (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    // No action currently
+                  }}
+                  style={[styles.button, styles.bankConnectButton]}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.buttonContent}>
+                    <MaterialIcons name="account-balance" size={18} color="#4a4a4a" />
+                    <Text style={styles.bankConnectText}>Connect to Bank</Text>
+                  </View>
+                </TouchableOpacity>
+                <View style={styles.buttonSeparator} />
+              </>
+            )}
             {isSalesContext && (
               <>
                 <TouchableOpacity

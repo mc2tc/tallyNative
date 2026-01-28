@@ -243,8 +243,13 @@ export default function ReportsScreen() {
     const liabilityAccounts = accounts.filter((acc) => acc.type === 'liability')
     const totalLiabilities = liabilityAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
     const equityAccounts = accounts.filter((acc) => acc.type === 'equity')
-    // Include net profit in equity (retained earnings)
-    const baseEquity = equityAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
+    // Exclude "Retained Earnings" from base equity to avoid double counting,
+    // since retained earnings is always calculated from net profit
+    const baseEquityAccounts = equityAccounts.filter(
+      (acc) => !acc.name.toLowerCase().includes('retained earnings'),
+    )
+    const baseEquity = baseEquityAccounts.reduce((sum, acc) => sum + (acc.value ?? 0), 0)
+    // Always add net profit as retained earnings
     const totalEquity = baseEquity + netProfit
 
     console.log('[ReportsScreen] Final calculated metrics:', {

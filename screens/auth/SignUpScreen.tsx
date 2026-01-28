@@ -221,6 +221,7 @@ export default function SignUpScreen({ navigation }: Props) {
           ? [
               {
                 businessName: businessName.trim(),
+                businessEntity: businessType || undefined,
               },
             ]
           : undefined,

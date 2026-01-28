@@ -167,6 +167,9 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
             const showNotificationBadge = category.value === 'Operations'
             const isPeople = category.value === 'People'
             const isTallyNetwork = category.value === 'TallyNetwork'
+            const isOperations = category.value === 'Operations'
+            const isMarketing = category.value === 'Marketing'
+            
             return (
               <React.Fragment key={category.value}>
                 <TouchableOpacity
@@ -196,6 +199,27 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
                     )}
                   </View>
                 </TouchableOpacity>
+                {/* Insert Sales item between Operations and Marketing */}
+                {isOperations && (
+                  <TouchableOpacity
+                    style={styles.drawerItem}
+                    onPress={() => {
+                      props.navigation.closeDrawer()
+                      props.navigation.navigate('Transactions', { screen: 'SalesPipeline' })
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.drawerItemRow}>
+                      <MaterialIcons
+                        name="trending-up"
+                        size={24}
+                        color="#666666"
+                        style={styles.drawerItemIcon}
+                      />
+                      <Text style={styles.drawerItemLabel}>SALES</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
                 {(isPeople || isTallyNetwork) && (
                   <View style={styles.divider} />
                 )}

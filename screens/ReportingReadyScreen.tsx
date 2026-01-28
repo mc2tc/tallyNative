@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import { Searchbar } from 'react-native-paper'
 import { AppBarLayout } from '../components/AppBarLayout'
@@ -290,133 +290,144 @@ export default function ReportingReadyScreen() {
 
   return (
     <AppBarLayout>
-      <View style={styles.container}>
-        <View style={styles.infoCard}>
-          <View style={styles.infoContent}>
-            <View style={styles.infoTextContainer}>
-              <Text style={styles.infoTitle}>
-                Reporting Ready transactions
-              </Text>
-              <Text style={styles.infoBody}>
-                Verified transactions from all sources (purchases, sales, bank,
-                and credit cards) that appear in your financial reports.
-              </Text>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollViewContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.container}>
+          <View style={styles.infoCard}>
+            <View style={styles.infoContent}>
+              <View style={styles.infoTextContainer}>
+                <Text style={styles.infoTitle}>
+                  Reporting Ready transactions
+                </Text>
+                <Text style={styles.infoBody}>
+                  Verified transactions from all sources (purchases, sales, bank,
+                  and credit cards) that appear in your financial reports.
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        <View style={styles.searchBarContainer}>
-          <Searchbar
-            placeholder="Search transactions..."
-            onChangeText={setSearchQuery}
-            value={searchQuery}
-            style={styles.searchBar}
-            inputStyle={styles.searchBarInput}
-            iconColor={GRAYSCALE_SECONDARY}
-          />
-        </View>
+          <View style={styles.searchBarContainer}>
+            <Searchbar
+              placeholder="Search transactions..."
+              onChangeText={setSearchQuery}
+              value={searchQuery}
+              style={styles.searchBar}
+              inputStyle={styles.searchBarInput}
+              iconColor={GRAYSCALE_SECONDARY}
+            />
+          </View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
-          </View>
-        ) : filteredTransactions.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              {searchQuery.trim()
-                ? 'No transactions found'
-                : 'No reporting ready transactions'}
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.reportingList}>
-            {groupedTransactions.map((group) => (
-              <View key={group.date} style={styles.dateGroup}>
-                <View style={styles.dateHeader}>
-                  <Text style={styles.dateLabel}>{group.dateLabel}</Text>
-                  <Text style={styles.dateTotal}>
-                    {formatAmount(
-                      group.totalAmount,
-                      group.currency,
-                      group.currency === 'GBP',
-                    )}
-                  </Text>
-                </View>
-                {group.items.map((item) => (
-                  <View key={item.id} style={styles.reportingListItem}>
-                    <View style={styles.reportingItemTextGroup}>
-                      <View style={styles.reportingItemTitleRow}>
-                        {(isAuditReady(item.originalTransaction) ||
-                          isUnreconciled(item.originalTransaction)) && (
-                          <View style={styles.auditIconContainer}>
-                            {isAuditReady(item.originalTransaction) && (
-                              <Ionicons
-                                name="shield"
-                                size={16}
-                                color={GRAYSCALE_SECONDARY}
-                              />
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+            </View>
+          ) : filteredTransactions.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                {searchQuery.trim()
+                  ? 'No transactions found'
+                  : 'No reporting ready transactions'}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.reportingListContainer}>
+              {groupedTransactions.map((group) => (
+                <View key={group.date} style={styles.dateGroupCard}>
+                  <View style={styles.dateHeader}>
+                    <Text style={styles.dateLabel}>{group.dateLabel}</Text>
+                    <Text style={styles.dateTotal}>
+                      {formatAmount(
+                        group.totalAmount,
+                        group.currency,
+                        group.currency === 'GBP',
+                      )}
+                    </Text>
+                  </View>
+                  {group.items.map((item) => (
+                    <View key={item.id} style={styles.reportingListItem}>
+                      <View style={styles.reportingItemTextGroup}>
+                        <View style={styles.reportingItemTitleRow}>
+                          {(isAuditReady(item.originalTransaction) ||
+                            isUnreconciled(item.originalTransaction)) && (
+                            <View style={styles.auditIconContainer}>
+                              {isAuditReady(item.originalTransaction) && (
+                                <Ionicons
+                                  name="shield"
+                                  size={16}
+                                  color={GRAYSCALE_SECONDARY}
+                                />
+                              )}
+                              {isUnreconciled(item.originalTransaction) && (
+                                <MaterialCommunityIcons
+                                  name="shield-off"
+                                  size={16}
+                                  color={GRAYSCALE_SECONDARY}
+                                />
+                              )}
+                            </View>
+                          )}
+                          <Text style={styles.reportingItemTitle}>
+                            {item.title}
+                          </Text>
+                        </View>
+                        {item.originalTransaction.summary.currency !==
+                          group.currency && (
+                          <Text style={styles.foreignCurrency}>
+                            {formatAmount(
+                              Math.abs(
+                                item.originalTransaction.summary.totalAmount,
+                              ),
+                              item.originalTransaction.summary.currency,
+                              false,
                             )}
-                            {isUnreconciled(item.originalTransaction) && (
-                              <MaterialCommunityIcons
-                                name="shield-off"
-                                size={16}
-                                color={GRAYSCALE_SECONDARY}
-                              />
-                            )}
-                          </View>
+                          </Text>
                         )}
-                        <Text style={styles.reportingItemTitle}>
-                          {item.title}
+                      </View>
+                      <View style={styles.reportingItemAmountContainer}>
+                        <Text
+                          style={[
+                            styles.reportingInputOutputIndicator,
+                            item.isCredit
+                              ? styles.inputIndicator
+                              : styles.outputIndicator,
+                          ]}
+                        >
+                          {item.isCredit ? '+' : '-'}
+                        </Text>
+                        <Text style={styles.reportingItemAmount}>
+                          {item.amount}
                         </Text>
                       </View>
-                      {item.originalTransaction.summary.currency !==
-                        group.currency && (
-                        <Text style={styles.foreignCurrency}>
-                          {formatAmount(
-                            Math.abs(
-                              item.originalTransaction.summary.totalAmount,
-                            ),
-                            item.originalTransaction.summary.currency,
-                            false,
-                          )}
-                        </Text>
-                      )}
                     </View>
-                    <View style={styles.reportingItemAmountContainer}>
-                      <Text
-                        style={[
-                          styles.reportingInputOutputIndicator,
-                          item.isCredit
-                            ? styles.inputIndicator
-                            : styles.outputIndicator,
-                        ]}
-                      >
-                        {item.isCredit ? '+' : '-'}
-                      </Text>
-                      <Text style={styles.reportingItemAmount}>
-                        {item.amount}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
+                  ))}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </AppBarLayout>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scrollView: {
     flex: 1,
+  },
+  scrollViewContent: {
+    flexGrow: 1,
+  },
+  container: {
     paddingHorizontal: 20,
     paddingBottom: 24,
     paddingTop: 24,
   },
   loadingContainer: {
-    flex: 1,
+    minHeight: 200,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -460,15 +471,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: GRAYSCALE_PRIMARY,
   },
-  reportingList: {
+  reportingListContainer: {
+    gap: 16,
+  },
+  dateGroupCard: {
     backgroundColor: CARD_BACKGROUND,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#efefef',
     overflow: 'hidden',
-  },
-  dateGroup: {
-    marginBottom: 20,
   },
   dateHeader: {
     flexDirection: 'row',
@@ -479,14 +490,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   dateLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: GRAYSCALE_SECONDARY,
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#9a9a9a',
   },
   dateTotal: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: GRAYSCALE_SECONDARY,
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#9a9a9a',
   },
   reportingListItem: {
     flexDirection: 'row',
