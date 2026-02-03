@@ -20,6 +20,7 @@ import {
   isUnreconciled,
   type TransactionStub,
 } from '../lib/utils/transactionHelpers'
+import { semanticColors } from '../lib/utils/semanticColors'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -415,6 +416,31 @@ export default function TransactionsPurchasesScreen() {
     }
   }
 
+  /**
+   * Get subtle background color for pipeline card based on transaction state
+   * - Needs verification → Subtle red tint
+   * - Reporting Ready (Unpaid purchases, Awaiting matches) → Subtle yellow tint
+   * - Audit Ready (All done) → Subtle green tint
+   */
+  const getCardBackgroundColor = (cardTitle: string): string => {
+    // Needs verification state - subtle red tint
+    if (cardTitle === 'Needs verification') {
+      return '#fdf0f0' // Medium-light red/pink
+    }
+    // Reporting Ready state (verified but not yet audit ready) - subtle yellow tint
+    if (cardTitle === 'Unpaid purchases' || 
+        cardTitle === 'Awaiting bank match' || 
+        cardTitle === 'Awaiting card match') {
+      return '#fffbf0' // Medium-light yellow
+    }
+    // Audit Ready state - subtle green tint
+    if (cardTitle === 'All done') {
+      return '#f0f9f0' // Medium-light green
+    }
+    // Default background color
+    return CARD_BACKGROUND
+  }
+
   return (
     <AppBarLayout
       title="Transactions"
@@ -432,8 +458,8 @@ export default function TransactionsPurchasesScreen() {
               <View style={styles.infoTextContainer}>
                 <Text style={styles.infoTitle}>Understanding your Purchases pipeline</Text>
                 <Text style={styles.infoBody}>
-                  Purchase transactions follow a path from 'Needs verification' to 'Audit ready'. Verify the transaction by confirming payment method and item categorization. If an item is not a business expense categorise it as 'Drawings'.
-                  Certain transactions will get staged before they can be confirmed as 'Audit ready', but all verified transactions will appear in your financial reports.
+                  Verify transactions by selecting and confirming payment method and item categorization. If an item is not a business expense-- swipe left to charge it to your personal account.
+                  Transactions requiring reconcilation will be staged, but note that all verified transactions will appear in your financial reports.
                 </Text>
               </View>
               <TouchableOpacity
@@ -444,30 +470,39 @@ export default function TransactionsPurchasesScreen() {
                 <Text style={styles.dismissIcon}>×</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={styles.infoLearnMoreButton}
+              onPress={() => {
+                // TODO: Add learn more functionality
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.infoLearnMoreText}>Learn more</Text>
+            </TouchableOpacity>
           </View>
         )}
 
-        <View style={styles.reportingReadySeparator}>
-          <View style={styles.reportingReadyLine} />
-          <Text style={styles.reportingReadyLabel}>Reporting ready</Text>
-          <View style={styles.reportingReadyLine} />
-        </View>
-
         {purchasesColumns.map((column, index) => (
           <React.Fragment key={column.title}>
+            {column.title === 'Needs verification' && (
+              <View style={styles.reportingReadySeparator}>
+                <View style={[styles.reportingReadyLine, { borderColor: semanticColors.veryPoor }]} />
+                <Text style={[styles.reportingReadyLabel, { color: semanticColors.veryPoor }]}>Verify</Text>
+                <View style={[styles.reportingReadyLine, { borderColor: semanticColors.veryPoor }]} />
+              </View>
+            )}
             {column.title === 'All done' && (
               <View style={styles.reportingReadySeparator}>
-                <View style={styles.reportingReadyLine} />
-                <Text style={styles.reportingReadyLabel}>Audit Ready</Text>
-                <View style={styles.reportingReadyLine} />
+                <View style={[styles.reportingReadyLine, { borderColor: semanticColors.veryGood }]} />
+                <Text style={[styles.reportingReadyLabel, { color: semanticColors.veryGood }]}>Verified & Reconciled</Text>
+                <View style={[styles.reportingReadyLine, { borderColor: semanticColors.veryGood }]} />
               </View>
             )}
             <View style={styles.pipelineCard}>
               <View style={styles.pipelineTitleRow}>
-                <Text style={styles.pipelineTitle}>{column.title}</Text>
-                <TouchableOpacity activeOpacity={0.6} style={styles.learnMoreButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={styles.learnMoreText}>Learn more</Text>
-                </TouchableOpacity>
+                <Text style={styles.pipelineTitle}>
+                  {column.title.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')}
+                </Text>
               </View>
               <View style={styles.cardList}>
                 {(column.transactions || []).map((item) => (
@@ -526,6 +561,13 @@ export default function TransactionsPurchasesScreen() {
                 </View>
               )}
             </View>
+            {column.title === 'Needs verification' && (
+              <View style={styles.reportingReadySeparator}>
+                <View style={[styles.reportingReadyLine, { borderColor: semanticColors.average }]} />
+                <Text style={[styles.reportingReadyLabel, { color: semanticColors.average }]}>Reconcile</Text>
+                <View style={[styles.reportingReadyLine, { borderColor: semanticColors.average }]} />
+              </View>
+            )}
           </React.Fragment>
         ))}
       </ScrollView>
@@ -546,9 +588,11 @@ const styles = StyleSheet.create({
     backgroundColor: SURFACE_BACKGROUND,
     borderRadius: 12,
     padding: 16,
+    paddingBottom: 48, // Add extra padding at bottom for Learn more button
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#e6e6e6',
+    position: 'relative',
   },
   infoContent: {
     flexDirection: 'row',
@@ -584,6 +628,18 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     lineHeight: 20,
   },
+  infoLearnMoreButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  infoLearnMoreText: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    fontWeight: '500',
+  },
   reportingReadySeparator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -592,8 +648,8 @@ const styles = StyleSheet.create({
   },
   reportingReadyLine: {
     flex: 1,
-    borderBottomWidth: 1,
-    borderStyle: 'dashed',
+    borderBottomWidth: 0.5,
+    borderStyle: 'solid',
     borderColor: '#d0d0d0',
   },
   reportingReadyLabel: {
@@ -624,25 +680,16 @@ const styles = StyleSheet.create({
     color: GRAYSCALE_PRIMARY,
     flex: 1,
   },
-  learnMoreButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  learnMoreText: {
-    fontSize: 12,
-    color: GRAYSCALE_SECONDARY,
-    fontWeight: '400',
-  },
   cardList: {
-    gap: 8,
+    gap: 2,
   },
   cardListItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 2,
+    paddingLeft: 0,
+    paddingRight: 12,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e6e6e6',
-    backgroundColor: '#fbfbfb',
+    borderWidth: 0,
+    backgroundColor: 'transparent',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -664,13 +711,13 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#000000',
+    color: GRAYSCALE_PRIMARY,
     flex: 1,
   },
   cardAmount: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000000',
+    color: GRAYSCALE_PRIMARY,
   },
   pipelineActions: {
     marginTop: 12,

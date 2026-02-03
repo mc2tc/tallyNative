@@ -8,7 +8,7 @@ import { api } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
 import type { Transaction } from '../lib/api/transactions2'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
-import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
+import type { ScaffoldStackParamList } from '../navigation/types/ScaffoldTypes'
 import DragDropReconciliationScreen from './DragDropReconciliationScreen'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { formatAmount, getCurrencySymbol } from '../lib/utils/currency'
@@ -251,7 +251,7 @@ export default function ScaffoldViewAllScreen() {
             <Text style={styles.emptyText}>No items to display</Text>
           </View>
         ) : hasOriginalTransactions ? (
-          <View style={styles.listContainer}>
+          <View>
             {groupedTransactions.map((group) => (
               <View key={group.date} style={styles.dateGroup}>
                 <View style={styles.dateHeader}>
@@ -260,24 +260,29 @@ export default function ScaffoldViewAllScreen() {
                     {formatAmount(group.totalAmount, group.currency, group.currency === 'GBP')}
                   </Text>
                 </View>
-                {group.items.map((item: TransactionStub) => (
+                {group.items.map((item: TransactionStub, itemIndex: number) => (
                   <TouchableOpacity
                     key={item.id}
-                    style={styles.listItem}
+                    style={[
+                      styles.listItem,
+                      itemIndex === group.items.length - 1 && styles.listItemLast
+                    ]}
                     onPress={() => handleItemPress(item)}
                     activeOpacity={0.7}
                     disabled={!item.originalTransaction}
                   >
                     <View style={styles.itemTextGroup}>
                       <View style={styles.itemTitleRow}>
-                        <View style={styles.auditIconContainer}>
-                          {item.originalTransaction && isAuditReady(item.originalTransaction) && (
-                            <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
-                          )}
-                          {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
-                            <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
-                          )}
-                        </View>
+                        {(item.originalTransaction && (isAuditReady(item.originalTransaction) || isUnreconciled(item.originalTransaction))) && (
+                          <View style={styles.auditIconContainer}>
+                            {item.originalTransaction && isAuditReady(item.originalTransaction) && (
+                              <Ionicons name="shield" size={16} color={GRAYSCALE_SECONDARY} />
+                            )}
+                            {item.originalTransaction && isUnreconciled(item.originalTransaction) && (
+                              <MaterialCommunityIcons name="shield-off" size={16} color={GRAYSCALE_SECONDARY} />
+                            )}
+                          </View>
+                        )}
                         <Text style={styles.itemTitle}>{item.title}</Text>
                       </View>
                       {item.verificationItems ? (
@@ -429,9 +434,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingLeft: 16,
+    paddingRight: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  listItemLast: {
+    borderBottomWidth: 0,
   },
   itemTextGroup: {
     flex: 1,
@@ -513,6 +522,11 @@ const styles = StyleSheet.create({
     color: GRAYSCALE_SECONDARY,
   },
   dateGroup: {
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#efefef',
+    overflow: 'hidden',
     marginBottom: 20,
   },
   dateHeader: {
@@ -521,17 +535,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: -8,
   },
   dateLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: GRAYSCALE_SECONDARY,
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#9a9a9a',
   },
   dateTotal: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: GRAYSCALE_SECONDARY,
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#9a9a9a',
   },
   foreignCurrency: {
     fontSize: 12,

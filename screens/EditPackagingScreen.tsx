@@ -15,7 +15,7 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
 import { MaterialIcons } from '@expo/vector-icons'
 import type { AppDrawerParamList } from '../navigation/AppNavigator'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
-import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
+import type { ScaffoldStackParamList } from '../navigation/types/ScaffoldTypes'
 import { AppBarLayout } from '../components/AppBarLayout'
 import type { PrimaryPackaging, SecondaryPackaging } from '../lib/api/packaging'
 

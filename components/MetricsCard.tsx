@@ -6,6 +6,8 @@ import Svg, { Path } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { HomeStackParamList } from '../navigation/HomeNavigator'
 import type { HealthScoreResponse } from '../lib/api/transactions2'
+import { getHealthScoreColor } from '../lib/utils/semanticColors'
+import { transactions2Api } from '../lib/api/transactions2'
 
 interface CircularMetricProps {
   value: number | string
@@ -15,7 +17,7 @@ interface CircularMetricProps {
   subtitle?: string
   onSubtitlePress?: () => void
   onPress?: () => void
-  controlCompliance?: number // For large circles: control/compliance score to adjust the display
+  controlCompliance?: number // For large circles: control score to adjust the display
 }
 
 export function CircularMetric({ value, label, progress = 0, size = 'small', subtitle, onSubtitlePress, onPress, controlCompliance }: CircularMetricProps) {
@@ -29,10 +31,15 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
   const radius = (circleSize - strokeWidth) / 2
   const center = circleSize / 2
   
-  // Calculate reduced score based on control/compliance (only for large circles)
+  // Calculate reduced score based on control (only for large circles)
   const performanceScore = typeof progress === 'number' ? progress : (typeof value === 'number' ? value : 0)
   const controlScore = controlCompliance ?? 100
   const reducedScore = isLarge && controlCompliance ? Math.round(performanceScore * (controlScore / 100)) : performanceScore
+  
+  // Get semantic colors based on scores
+  const reducedScoreColor = getHealthScoreColor(reducedScore)
+  const controlScoreColor = getHealthScoreColor(controlScore)
+  const progressColor = getHealthScoreColor(progress)
 
   // Arc spans from 7:30 (225°) to 4:30 (135°)
   // Total arc is 270° (going clockwise: 225° -> 360° -> 135°)
@@ -80,6 +87,11 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
   const reducedProgressAngle = (reducedProgressPercent / 100) * totalArcDegrees
   const reducedCurrentAngle = startAngle + reducedProgressAngle
 
+  // Calculate angles for control score (inner arc)
+  const controlProgressPercent = Math.min(100, Math.max(0, controlScore))
+  const controlProgressAngle = (controlProgressPercent / 100) * totalArcDegrees
+  const controlCurrentAngle = startAngle + controlProgressAngle
+
   // Background arc paths - each circle has its own 0-100 scale
   const outerBackgroundArcPath = isLarge && controlCompliance 
     ? createArcPath(startAngle, endAngle, outerRadius)
@@ -89,13 +101,13 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
     : ''
   
   // Progress arc paths
-  // Outer arc: reduced score (after control/compliance adjustment)
+  // Outer arc: reduced score (after control adjustment)
   const reducedArcPath = isLarge && controlCompliance && reducedScore > 0 
     ? createArcPath(startAngle, reducedCurrentAngle, outerRadius) 
     : ''
-  // Inner arc: performance score (original)
-  const performanceArcPath = isLarge && controlCompliance && performanceScore > 0
-    ? createArcPath(startAngle, currentAngle, innerRadius)
+  // Inner arc: control score
+  const controlArcPath = isLarge && controlCompliance && controlScore > 0
+    ? createArcPath(startAngle, controlCurrentAngle, innerRadius)
     : progress > 0 
       ? createArcPath(startAngle, currentAngle, radius)
       : ''
@@ -104,7 +116,7 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
     <View style={[styles.circleWrapper, { width: circleSize, height: circleSize }]}>
       {/* SVG for circular progress */}
       <Svg width={circleSize} height={circleSize} style={styles.svgContainer}>
-        {/* For large circles with control/compliance: show two separate concentric circles */}
+        {/* For large circles with control: show two separate concentric circles */}
         {isLarge && controlCompliance ? (
           <>
             {/* Outer circle: Reduced score */}
@@ -120,14 +132,14 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
             {reducedScore > 0 && (
               <Path
                 d={reducedArcPath}
-                stroke="#555555"
+                stroke={reducedScoreColor}
                 strokeWidth={strokeWidth}
                 strokeLinecap="round"
                 fill="transparent"
               />
             )}
             
-            {/* Inner circle: Performance score - clearly separated */}
+            {/* Inner circle: Control score - clearly separated */}
             {/* Background arc - shows 0-100 scale for inner circle */}
             <Path
               d={innerBackgroundArcPath}
@@ -136,11 +148,11 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
               strokeLinecap="round"
               fill="transparent"
             />
-            {/* Progress arc - shows performance score */}
-            {performanceScore > 0 && (
+            {/* Progress arc - shows control score */}
+            {controlScore > 0 && (
               <Path
-                d={performanceArcPath}
-                stroke="#666666"
+                d={controlArcPath}
+                stroke={controlScoreColor}
                 strokeWidth={innerStrokeWidth}
                 strokeLinecap="round"
                 fill="transparent"
@@ -148,7 +160,7 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
             )}
           </>
         ) : (
-          /* Regular single circle for small circles or large without control/compliance */
+          /* Regular single circle for small circles or large without control */
           <>
             <Path
               d={outerBackgroundArcPath}
@@ -159,8 +171,8 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
             />
             {progress > 0 && (
               <Path
-                d={performanceArcPath}
-                stroke="#555555"
+                d={controlArcPath}
+                stroke={progressColor}
                 strokeWidth={strokeWidth}
                 strokeLinecap="round"
                 fill="transparent"
@@ -171,21 +183,30 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
       </Svg>
       {/* Center content */}
       <View style={styles.circleContent}>
-        {/* For large circles with control/compliance: show both scores */}
+        {/* For large circles with control: show reduced score */}
         {isLarge && controlCompliance ? (
           <>
             <Text style={[styles.valueText, isLarge && styles.valueTextLarge]}>
               {reducedScore}
             </Text>
-            <Text style={[styles.valueTextSecondary, isLarge && styles.valueTextSecondaryLarge]}>
-              {performanceScore}
-            </Text>
+            {isLarge && (
+              <Text style={[styles.scoreDenominator, isLarge && styles.scoreDenominatorLarge]}>
+                /100
+              </Text>
+            )}
           </>
         ) : (
-          /* Regular display for small circles or large without control/compliance */
-          <Text style={[styles.valueText, isLarge && styles.valueTextLarge]}>
-            {typeof value === 'number' ? value.toLocaleString() : value}
-          </Text>
+          /* Regular display for small circles or large without control */
+          <>
+            <Text style={[styles.valueText, isLarge && styles.valueTextLarge]}>
+              {typeof value === 'number' ? value.toLocaleString() : value}
+            </Text>
+            {isLarge && (
+              <Text style={[styles.scoreDenominator, isLarge && styles.scoreDenominatorLarge]}>
+                /100
+              </Text>
+            )}
+          </>
         )}
         {subtitle && isLarge && (
           <TouchableOpacity onPress={onSubtitlePress} activeOpacity={0.7}>
@@ -229,7 +250,7 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
     const largeCircleContent = (
       <View style={styles.largeMetricWrapper}>
         {content}
-        <Text style={styles.largeMetricLabel}>{label}</Text>
+        {label ? <Text style={styles.largeMetricLabel}>{label}</Text> : null}
       </View>
     )
 
@@ -259,10 +280,11 @@ interface MetricsCardProps {
     progress?: number
   }>
   currentRatio?: number
-  controlCompliance?: number // Score out of 100 for control/compliance
+  controlCompliance?: number // Score out of 100 for control
   healthScore?: HealthScoreResponse['data']['healthScore']
   timeframe?: 'week' | 'month' | 'quarter'
   onTimeframeChange?: (timeframe: 'week' | 'month' | 'quarter') => void
+  businessId?: string
 }
 
 export function MetricsCard({ 
@@ -273,6 +295,7 @@ export function MetricsCard({
   healthScore,
   timeframe = 'week',
   onTimeframeChange,
+  businessId,
 }: MetricsCardProps) {
   // Calculate controlCompliance from healthScore if available
   // controlCompliance represents the percentage that overall is of preUnreconciled
@@ -281,6 +304,10 @@ export function MetricsCard({
     ? Math.round((healthScore.overall / healthScore.preUnreconciled) * 100)
     : controlCompliance
   const SCREEN_HEIGHT = Dimensions.get('window').height
+  
+  // State for transaction count
+  const [transactionCount, setTransactionCount] = useState<number | null>(null)
+  const [loadingTransactionCount, setLoadingTransactionCount] = useState(false)
   // TranslateY offsets relative to a full-height container (top: 0, bottom: 0)
   // Keep FULL_SHEET_OFFSET slightly below the very top so the drag handle stays reachable
   const FULL_SHEET_OFFSET = 40 // almost full-screen, avoids OS edge gestures at the very top
@@ -428,6 +455,76 @@ export function MetricsCard({
     })
   ).current
 
+  // Calculate date range based on timeframe
+  const getDateRange = (timeframe: 'week' | 'month' | 'quarter') => {
+    const now = Date.now()
+    let daysBack = 7 // week
+    if (timeframe === 'month') {
+      daysBack = 30
+    } else if (timeframe === 'quarter') {
+      daysBack = 90
+    }
+    const startDate = now - (daysBack * 24 * 60 * 60 * 1000)
+    return { startDate, endDate: now }
+  }
+
+  // Fetch transaction count from transactions3
+  useEffect(() => {
+    const fetchTransactionCount = async () => {
+      if (!businessId) {
+        setTransactionCount(null)
+        return
+      }
+
+      setLoadingTransactionCount(true)
+      try {
+        const { startDate, endDate } = getDateRange(timeframe)
+        
+        // Fetch from both pending and source_of_truth collections
+        const [pendingResponse, sourceOfTruthResponse] = await Promise.all([
+          transactions2Api.getTransactions3(businessId, 'pending', {
+            page: 1,
+            limit: 1000, // Large limit to get all transactions
+          }),
+          transactions2Api.getTransactions3(businessId, 'source_of_truth', {
+            page: 1,
+            limit: 1000, // Large limit to get all transactions
+          }),
+        ])
+
+        // Combine all transactions
+        const allTransactions = [
+          ...(pendingResponse.transactions || []),
+          ...(sourceOfTruthResponse.transactions || []),
+        ]
+
+        // Filter by date range
+        const filteredTransactions = allTransactions.filter((tx) => {
+          const txDate = tx.summary.transactionDate
+          return txDate >= startDate && txDate <= endDate
+        })
+
+        // Count unique transactions (deduplicate by ID)
+        const uniqueIds = new Set<string>()
+        filteredTransactions.forEach((tx) => {
+          const id = tx.id || (tx.metadata as any)?.id
+          if (id) {
+            uniqueIds.add(id)
+          }
+        })
+
+        setTransactionCount(uniqueIds.size)
+      } catch (error) {
+        console.error('[MetricsCard] Failed to fetch transaction count:', error)
+        setTransactionCount(null)
+      } finally {
+        setLoadingTransactionCount(false)
+      }
+    }
+
+    fetchTransactionCount()
+  }, [businessId, timeframe])
+
   const timeframes: Array<'week' | 'month' | 'quarter'> = ['week', 'month', 'quarter']
   const timeframeLabels = {
     week: 'Week',
@@ -463,17 +560,32 @@ export function MetricsCard({
         </View>
       )}
       
-      {/* Layout: Business Health circle on top, KPI circles in a row below */}
+      {/* Layout: Business Health label on top, circle below, Transaction Count below circle, KPI circles in a row below */}
       <View style={styles.metricsContainer}>
         <View style={styles.metricsLayout}>
+          {/* Business Health label above circle */}
+          <Text style={styles.businessHealthLabel}>{largeMetric.label}</Text>
+          
           {/* Business Health circle */}
           <CircularMetric
             value={largeMetric.value}
-            label={largeMetric.label}
+            label="" // Empty label since we're showing it above
             progress={largeMetric.progress}
             size="large"
             controlCompliance={calculatedControlCompliance}
           />
+          
+          {/* Transaction Count below circle */}
+          <View style={styles.transactionCountContainer}>
+            <Text style={styles.transactionCountText}>Transaction Count: </Text>
+            {loadingTransactionCount ? (
+              <Text style={styles.transactionCountText}>...</Text>
+            ) : (
+              <Text style={styles.transactionCountText}>
+                {transactionCount !== null ? transactionCount.toLocaleString() : '—'}
+              </Text>
+            )}
+          </View>
           
           {/* Row of KPI circles below */}
           <View style={styles.kpiRow}>
@@ -555,7 +667,7 @@ export function MetricsCard({
                 </Text>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
-                  <Text style={styles.bulletText}>Control/Compliance: How many of your transactions are validated and authentic?</Text>
+                  <Text style={styles.bulletText}>Control: How many of your transactions are validated and authentic?</Text>
                 </View>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
@@ -621,7 +733,7 @@ export function MetricsCard({
                 </Text>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
-                  <Text style={styles.bulletText}>Your control/compliance score (validated vs unreconciled transactions)</Text>
+                  <Text style={styles.bulletText}>Your control score (validated vs unreconciled transactions)</Text>
                 </View>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
@@ -647,7 +759,7 @@ export function MetricsCard({
                 </Text>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
-                  <Text style={styles.bulletText}>Low control/compliance score → review and reconcile pending transactions to improve validation.</Text>
+                  <Text style={styles.bulletText}>Low control score → review and reconcile pending transactions to improve validation.</Text>
                 </View>
                 <View style={styles.bulletRow}>
                   <Text style={styles.bulletChar}>•</Text>
@@ -746,6 +858,18 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '700',
   },
+  scoreDenominator: {
+    fontSize: 10,
+    fontWeight: '400',
+    color: '#999999',
+    marginTop: -2,
+  },
+  scoreDenominatorLarge: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#999999',
+    marginTop: -8,
+  },
   valueTextSecondary: {
     fontSize: 16,
     fontWeight: '500',
@@ -808,6 +932,25 @@ const styles = StyleSheet.create({
     color: '#666666',
     textAlign: 'center',
     marginTop: -12,
+    fontWeight: '500',
+  },
+  businessHealthLabel: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 16,
+    fontWeight: '500',
+  },
+  transactionCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  transactionCountText: {
+    fontSize: 14,
+    color: '#666666',
     fontWeight: '500',
   },
   learnMoreButton: {

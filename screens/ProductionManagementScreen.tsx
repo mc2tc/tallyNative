@@ -68,7 +68,7 @@ export default function ProductionManagementScreen({}: Props) {
   return (
     <View style={styles.wrapper}>
       <AppBarLayout 
-        title="Production"
+        title="Operations"
         rightIconName="add-circle-sharp"
         onRightIconPress={handleAddClick}
       >

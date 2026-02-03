@@ -39,6 +39,13 @@ module.exports = () => ({
     plugins: [
       'expo-web-browser',
     ],
+    fonts: [
+      './assets/fonts/TiemposText-Regular.otf',
+      './assets/fonts/TiemposText-Bold.otf',
+      './assets/fonts/TiemposText-Italic.otf',
+      './assets/fonts/TiemposText-BoldItalic.otf',
+      // Add other Tiempos variants as needed (e.g., TiemposHeadline variants)
+    ],
   },
 })
 

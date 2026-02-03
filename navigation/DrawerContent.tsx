@@ -5,9 +5,9 @@ import { View, StyleSheet, Text, TouchableOpacity } from 'react-native'
 import { Drawer } from 'react-native-paper'
 import { DrawerContentScrollView } from '@react-navigation/drawer'
 import type { DrawerContentComponentProps } from '@react-navigation/drawer'
-import { MaterialIcons } from '@expo/vector-icons'
 import { useDrawerCategory, type DrawerCategory } from '../lib/context/DrawerCategoryContext'
 import { useAuth } from '../lib/auth/AuthContext'
+import { useAssistant } from '../lib/context/OversightAlertsContext'
 import { getFirstTabForCategory } from '../lib/utils/navigation'
 
 // Helper function to extract and format business name from business ID
@@ -32,30 +32,10 @@ function getBusinessNameFromId(businessId: string | undefined): string {
     .join(' ') || 'Company'
 }
 
-const getCategoryIconName = (
-  category: DrawerCategory,
-): React.ComponentProps<typeof MaterialIcons>['name'] => {
-  switch (category) {
-    case 'Finance':
-      return 'account-balance-wallet'
-    case 'Operations':
-      return 'build'
-    case 'Marketing':
-      return 'campaign'
-    case 'People':
-      return 'group'
-    case 'TallyNetwork':
-      return 'hub'
-    case 'Settings':
-      return 'settings'
-    default:
-      return 'radio-button-unchecked'
-  }
-}
-
 export function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { selectedCategory, setSelectedCategory } = useDrawerCategory()
   const { signOut, businessUser } = useAuth()
+  const { totalControlRoomAlerts } = useAssistant()
   const pendingNavigationRef = useRef<{ category: DrawerCategory; firstTab: string } | null>(null)
 
   const businessName = getBusinessNameFromId(businessUser?.businessId)
@@ -71,7 +51,8 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
     { label: 'Marketing', value: 'Marketing' },
     { label: 'People', value: 'People' },
     { label: 'Tally Network', value: 'TallyNetwork' },
-    { label: 'Settings', value: 'Settings' },
+    // Display Administration as the item label, while the underlying category value remains 'Settings'
+    { label: 'Administration', value: 'Settings' },
   ]
 
 
@@ -140,6 +121,8 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
       <View style={styles.header}>
         <Text style={styles.drawerTitle}>{businessName}</Text>
         <View style={styles.divider} />
+        {/* Primary workflow */}
+        <Text style={styles.sectionTitle}>Primary workflow</Text>
         {/* Primary Transactions entry */}
         <TouchableOpacity
           style={styles.primaryItem}
@@ -149,56 +132,77 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
           }}
           activeOpacity={0.7}
         >
-          <View style={styles.drawerItemRow}>
-            <MaterialIcons
-              name="receipt-long"
-              size={24}
-              color="#333333"
-              style={styles.drawerItemIcon}
-            />
-            <Text style={styles.drawerItemLabel}>TRANSACTIONS</Text>
-          </View>
+          <Text style={styles.drawerItemLabel}>TRANSACTIONS</Text>
         </TouchableOpacity>
-        <View style={styles.divider} />
+        {/* Business functions */}
+        <Text style={styles.sectionTitle}>Business functions</Text>
         <Drawer.Section showDivider={false} style={styles.drawerSection}>
           {categories.map((category, index) => {
             // Don't show category as active if we're on Transactions route
             const isActive = !isOnTransactionsRoute && selectedCategory === category.value
-            const showNotificationBadge = category.value === 'Operations'
             const isPeople = category.value === 'People'
             const isTallyNetwork = category.value === 'TallyNetwork'
             const isOperations = category.value === 'Operations'
             const isMarketing = category.value === 'Marketing'
             
             return (
-              <React.Fragment key={category.value}>
+            <React.Fragment key={category.value}>
+                {/* Ecosystem section heading before Tally Network */}
+                {category.value === 'TallyNetwork' && (
+                  <Text style={styles.sectionTitle}>Ecosystem</Text>
+                )}
+                {/* Settings section heading before Settings category */}
+                {category.value === 'Settings' && (
+                  <Text style={styles.sectionTitle}>Settings</Text>
+                )}
                 <TouchableOpacity
                   style={[styles.drawerItem, isActive ? styles.drawerItemActive : undefined]}
                   onPress={() => handleCategoryPress(category.value)}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.drawerItemRow}>
-                    <MaterialIcons
-                      name={getCategoryIconName(category.value)}
-                      size={24}
-                      color={isActive ? '#000000' : '#666666'}
-                      style={styles.drawerItemIcon}
-                    />
-                    <Text
-                      style={[
-                        styles.drawerItemLabel,
-                        isActive ? styles.drawerItemLabelActive : undefined,
-                      ]}
-                    >
-                      {category.label.toUpperCase()}
-                    </Text>
-                    {showNotificationBadge && (
-                      <View style={styles.notificationBadge}>
-                        <Text style={styles.notificationBadgeText}>2</Text>
-                      </View>
-                    )}
-                  </View>
+                  <Text
+                    style={[
+                      styles.drawerItemLabel,
+                      isActive ? styles.drawerItemLabelActive : undefined,
+                    ]}
+                  >
+                    {category.label.toUpperCase()}
+                  </Text>
                 </TouchableOpacity>
+                {/* Operating Modules entry under Settings section */}
+                {category.value === 'Settings' && (
+                  <TouchableOpacity
+                    style={styles.drawerItem}
+                    onPress={() => {
+                      props.navigation.closeDrawer()
+                      props.navigation.navigate('Modules')
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.drawerItemLabel}>OPERATING MODULES</Text>
+                  </TouchableOpacity>
+                )}
+                {/* Oversight & monitoring section with Control Room below People */}
+                {category.value === 'People' && (
+                  <>
+                    <Text style={styles.sectionTitle}>Oversight & monitoring</Text>
+                    <TouchableOpacity
+                      style={styles.drawerItem}
+                      onPress={() => {
+                        props.navigation.closeDrawer()
+                        props.navigation.navigate('MainTabs', { screen: 'OpsCentre' })
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.controlRoomItemRow}>
+                        <Text style={styles.controlRoomItemLabel}>CONTROL ROOM</Text>
+                        <View style={styles.controlRoomBadge}>
+                          <Text style={styles.controlRoomBadgeText}>{totalControlRoomAlerts}</Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </>
+                )}
                 {/* Insert Sales item between Operations and Marketing */}
                 {isOperations && (
                   <TouchableOpacity
@@ -209,19 +213,8 @@ export function CustomDrawerContent(props: DrawerContentComponentProps) {
                     }}
                     activeOpacity={0.7}
                   >
-                    <View style={styles.drawerItemRow}>
-                      <MaterialIcons
-                        name="trending-up"
-                        size={24}
-                        color="#666666"
-                        style={styles.drawerItemIcon}
-                      />
-                      <Text style={styles.drawerItemLabel}>SALES</Text>
-                    </View>
+                    <Text style={styles.drawerItemLabel}>SALES</Text>
                   </TouchableOpacity>
-                )}
-                {(isPeople || isTallyNetwork) && (
-                  <View style={styles.divider} />
                 )}
               </React.Fragment>
             )
@@ -254,6 +247,14 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
   },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#888888',
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
   divider: {
     height: 1,
     backgroundColor: '#e0e0e0',
@@ -269,26 +270,46 @@ const styles = StyleSheet.create({
   },
   drawerItem: {
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingLeft: 24,
+    paddingRight: 16,
   },
   primaryItem: {
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingLeft: 24,
+    paddingRight: 16,
   },
   drawerItemActive: {
     backgroundColor: '#f0f0f0',
-  },
-  drawerItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  drawerItemIcon: {
-    marginRight: 12,
   },
   drawerItemLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333333',
+  },
+  controlRoomItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  controlRoomItemLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    flex: 1,
+    marginRight: 8,
+  },
+  controlRoomBadge: {
+    backgroundColor: '#d32f2f',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  controlRoomBadgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   drawerItemLabelActive: {
     color: '#000000',

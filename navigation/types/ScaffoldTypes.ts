@@ -1,13 +1,6 @@
-import React from 'react'
-import { createStackNavigator } from '@react-navigation/stack'
-import TransactionsScaffoldScreen from '../screens/TransactionsScaffoldScreen'
-import ScaffoldViewAllScreen from '../screens/ScaffoldViewAllScreen'
-import TransactionDetailScreen from '../screens/TransactionDetailScreen'
-import AddTransactionScreen from '../screens/AddTransactionScreen'
-import ManualPurchaseEntryScreen from '../screens/ManualPurchaseEntryScreen'
-import UploadProcessingScreen from '../screens/UploadProcessingScreen'
-import ManageStockScreen from '../screens/ManageStockScreen'
-import EditPackagingScreen from '../screens/EditPackagingScreen'
+// Shared types for scaffold-related navigation
+// Extracted from ScaffoldNavigator for use across multiple screens
+
 import type { Transaction } from '../lib/api/transactions2'
 import type { PrimaryPackaging, SecondaryPackaging } from '../lib/api/packaging'
 
@@ -61,22 +54,5 @@ export type ScaffoldStackParamList = {
     onDelete?: () => void
     manageStockParams?: { itemName: string; itemText: string; businessId: string; inventoryItemId?: string }
   }
-}
-
-const Stack = createStackNavigator<ScaffoldStackParamList>()
-
-export function ScaffoldNavigator() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ScaffoldHome" component={TransactionsScaffoldScreen} />
-      <Stack.Screen name="ScaffoldViewAll" component={ScaffoldViewAllScreen} />
-      <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
-      <Stack.Screen name="AddTransaction" component={AddTransactionScreen} />
-      <Stack.Screen name="UploadProcessing" component={UploadProcessingScreen} />
-      <Stack.Screen name="ManualPurchaseEntry" component={ManualPurchaseEntryScreen} />
-      <Stack.Screen name="ManageStock" component={ManageStockScreen} />
-      <Stack.Screen name="EditPackaging" component={EditPackagingScreen} />
-    </Stack.Navigator>
-  )
 }
 

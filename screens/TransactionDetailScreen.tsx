@@ -1,13 +1,21 @@
 // Transaction detail screen - displays full transaction summary information
 import React, { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Animated, Linking, Platform, Image } from 'react-native'
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, Animated, Linking, Platform, Image } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native'
 import type { NavigationProp } from '@react-navigation/native'
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons'
 import * as FileSystem from 'expo-file-system/legacy'
+import { GestureDetector, Gesture } from 'react-native-gesture-handler'
+import AnimatedReanimated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
-import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
+import type { ScaffoldStackParamList } from '../navigation/types/ScaffoldTypes'
 import type { Transaction } from '../lib/api/transactions2'
 import { transactions2Api } from '../lib/api/transactions2'
 import { chartAccountsApi } from '../lib/api/chartAccounts'
@@ -15,8 +23,11 @@ import { paymentMethodsApi, type PaymentMethodOption } from '../lib/api/paymentM
 import { formatAmount } from '../lib/utils/currency'
 import { ApiError } from '../lib/api/client'
 import { AppBarLayout } from '../components/AppBarLayout'
+import { businessContextApi } from '../lib/api/businessContext'
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
+const GRAYSCALE_SECONDARY = '#6d6d6d'
+const SURFACE_BACKGROUND = '#f6f6f6'
 const DEFAULT_CURRENCY = 'GBP'
 
 type TransactionDetailRouteProp =
@@ -93,6 +104,8 @@ export default function TransactionDetailScreen() {
   const [allPaymentMethods, setAllPaymentMethods] = useState<PaymentMethodOption[]>([])
   // For bank transactions: store edited debit accounts locally until verification
   const [editedItemDebitAccounts, setEditedItemDebitAccounts] = useState<Map<number, string>>(new Map())
+  // Track the account before it was set to Inventory (for "No" button revert)
+  const [preInventoryAccounts, setPreInventoryAccounts] = useState<Map<number, string>>(new Map())
   // For item actions: track which action is selected (edit_account or add_to_inventory)
   const [itemActionSelection, setItemActionSelection] = useState<Map<number, string>>(new Map())
   // For "No matching record" workflow
@@ -121,6 +134,11 @@ export default function TransactionDetailScreen() {
   // Store as strings to preserve decimal input while typing (e.g., "12." doesn't get converted to 12)
   const [editedItemAmounts, setEditedItemAmounts] = useState<Map<number, string>>(new Map())
   const [warningDismissed, setWarningDismissed] = useState(false)
+  // For explainer card: track dismissal and business entity
+  const [explainerCardDismissed, setExplainerCardDismissed] = useState(false)
+  const [businessEntity, setBusinessEntity] = useState<string | null>(null)
+  // For swipe to remove: track which items have been swiped away
+  const [removedItemIndices, setRemovedItemIndices] = useState<Set<number>>(new Set())
   const salesPaymentSlideAnim = React.useRef(new Animated.Value(0)).current
   const paymentMethodSlideAnim = React.useRef(new Animated.Value(0)).current
   const slideAnim = React.useRef(new Animated.Value(0)).current
@@ -267,6 +285,25 @@ export default function TransactionDetailScreen() {
     }
   }, [businessId, isTransactions3])
 
+  // Fetch business context to determine business entity type (for explainer card)
+  React.useEffect(() => {
+    if (businessId && isTransactions3Purchase) {
+      businessContextApi.getContext(businessId)
+        .then((response) => {
+          // businessEntity might be in the context object or we need to check the business document
+          // For now, we'll check if it's available in the response
+          const entity = (response.context as any)?.businessEntity
+          if (entity) {
+            setBusinessEntity(entity)
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to fetch business context:', error)
+          // Don't show error to user - explainer card will just not show the swipe instruction
+        })
+    }
+  }, [businessId, isTransactions3Purchase])
+
   // Safely access transaction properties with fallbacks (moved before callbacks that use them)
   const transactionSummary = transaction?.summary
   const transactionAmount = transactionSummary?.totalAmount || 0
@@ -313,12 +350,22 @@ export default function TransactionDetailScreen() {
         } = {}
 
       // Build updated itemList with staged debitAccount and amount changes
+      // Include ALL items - visible items with edits, and removed items with updated debitAccount
         const currentItemList = details?.itemList || []
         if (currentItemList.length > 0) {
+          // Determine the account for removed items based on business entity
+          const removedItemAccount = businessEntity === 'sole_trader' || businessEntity === 'partnership'
+            ? 'Drawings'
+            : "Director's Loan Account"
+          
           updateOptions.itemList = currentItemList.map((item, index) => {
-            const debitAccount = editedItemDebitAccounts.has(index)
-              ? editedItemDebitAccounts.get(index)!
-              : item.debitAccount || ''
+            // If item was removed (swiped away), update debitAccount to Drawings or Director's Loan Account
+            const isRemoved = removedItemIndices.has(index)
+            const debitAccount = isRemoved
+              ? removedItemAccount
+              : (editedItemDebitAccounts.has(index)
+                ? editedItemDebitAccounts.get(index)!
+                : item.debitAccount || '')
             
             // Use edited amount if available, otherwise use original
             // Convert string to number (handle empty string or invalid input)
@@ -347,7 +394,8 @@ export default function TransactionDetailScreen() {
               vatAmount,
               debitAccount,
               debitAccountConfirmed: true,
-              isBusinessExpense: item.isBusinessExpense,
+              // If item was removed (swiped), mark as not a business expense
+              isBusinessExpense: isRemoved ? false : item.isBusinessExpense,
               category: item.category,
             }
           })
@@ -532,7 +580,9 @@ export default function TransactionDetailScreen() {
               setSelectedPaymentMethod(null)
               setEditedItemDebitAccounts(new Map())
               setEditedItemAmounts(new Map())
+              setPreInventoryAccounts(new Map())
               setWarningDismissed(false)
+              setRemovedItemIndices(new Set()) // Clear removed items state
               // Navigate back immediately - parent screen will refresh and show transaction in correct collection
               if (navigation.canGoBack()) {
                 navigation.goBack()
@@ -549,7 +599,7 @@ export default function TransactionDetailScreen() {
       Alert.alert('Error', errorMessage)
       setConfirmingVerification(false)
     }
-  }, [transaction.id, transaction?.summary?.totalAmount, businessId, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, editedItemAmounts, transaction?.details, navigation])
+  }, [transaction.id, transaction?.summary?.totalAmount, businessId, isBankTransaction, selectedPaymentMethod, editedItemDebitAccounts, editedItemAmounts, transaction?.details, navigation, removedItemIndices, businessEntity, details])
 
   // Handler for confirming unreconcilable transaction
   const handleConfirmUnreconcilable = useCallback(async () => {
@@ -836,6 +886,7 @@ export default function TransactionDetailScreen() {
               // Clear staged state and proceed with the original navigation action
               setEditedItemDebitAccounts(new Map())
               setEditedItemAmounts(new Map())
+              setPreInventoryAccounts(new Map())
               setSelectedPaymentMethod(null)
               setSelectedSalesPaymentMethod(null)
               setItemActionSelection(new Map())
@@ -1263,16 +1314,33 @@ export default function TransactionDetailScreen() {
       const targetIndex = indexOverride ?? editingItemIndex
       if (targetIndex === null || targetIndex === undefined) return
 
+      // Get current account before updating
+      const currentItem = details?.itemList?.[targetIndex]
+      const currentAccount = editedItemDebitAccounts.has(targetIndex)
+        ? editedItemDebitAccounts.get(targetIndex)
+        : (currentItem?.debitAccount || '')
+
       // Store locally, persist on Confirm and save
         const newEditedAccounts = new Map(editedItemDebitAccounts)
         newEditedAccounts.set(targetIndex, account)
         setEditedItemDebitAccounts(newEditedAccounts)
+        
+        // If user manually updates account from Inventory, store the new account in preInventoryAccounts
+        // so "No" will revert to this account if they click "Yes" then "No"
+        if (currentAccount === 'Inventory' && account !== 'Inventory') {
+          const newPreInventory = new Map(preInventoryAccounts)
+          newPreInventory.set(targetIndex, account)
+          setPreInventoryAccounts(newPreInventory)
+        }
+        
         handleClosePicker()
     },
     [
       editingItemIndex,
       handleClosePicker,
       editedItemDebitAccounts,
+      preInventoryAccounts,
+      details?.itemList,
     ],
   )
 
@@ -1329,13 +1397,34 @@ export default function TransactionDetailScreen() {
   }, [])
 
 
+  // Handler for removing item on swipe left
+  const handleRemoveItem = useCallback((itemIndex: number) => {
+    if (itemIndex < 0 || itemIndex >= itemList.length) {
+      console.warn('Invalid item index for removal:', itemIndex, 'Item list length:', itemList.length)
+      return // Invalid index
+    }
+    setRemovedItemIndices((prev) => {
+      // Prevent duplicate removals
+      if (prev.has(itemIndex)) {
+        console.warn('Item already removed:', itemIndex)
+        return prev
+      }
+      const newSet = new Set(prev)
+      newSet.add(itemIndex)
+      console.log('Removing item at index:', itemIndex, 'Item name:', itemList[itemIndex]?.name, 'Removed indices:', Array.from(newSet))
+      return newSet
+    })
+  }, [itemList])
+
   // Filter out inactive items and group split items
   const visibleItems = React.useMemo(() => {
     // Create array with indices
     const itemsWithIndices = itemList.map((item, index) => ({ item, index }))
     
-    // Filter out inactive items (split originals)
-    const activeItems = itemsWithIndices.filter(({ item }) => item.isActive !== false)
+    // Filter out inactive items (split originals) and removed items
+    const activeItems = itemsWithIndices.filter(
+      ({ item, index }) => item.isActive !== false && !removedItemIndices.has(index)
+    )
 
     // Group split items together
     const processedIndices = new Set<number>()
@@ -1388,7 +1477,7 @@ export default function TransactionDetailScreen() {
     })
 
     return grouped
-  }, [itemList])
+  }, [itemList, removedItemIndices])
 
   // For transactions3: get payment method from accounting.paymentBreakdown or use selected one
   const currentPaymentBreakdown = accounting?.paymentBreakdown || []
@@ -1473,9 +1562,96 @@ export default function TransactionDetailScreen() {
     }
   }, [paymentMethodNeedsAttention, headerWiggleAnim])
 
+  // Determine the account name for swipe left action based on business entity
+  const swipeLeftAccount = businessEntity === 'sole_trader' || businessEntity === 'partnership'
+    ? 'Drawings'
+    : "Director's Loan Account"
+
+  // Swipeable Item Card Component (only for purchase transactions)
+  // Defined as a separate component to properly use hooks
+  const SwipeableItemCard = React.memo(({ 
+    children, 
+    itemIndex, 
+    onSwipeLeft,
+    enabled = true
+  }: { 
+    children: React.ReactNode
+    itemIndex: number
+    onSwipeLeft: (index: number) => void
+    enabled?: boolean
+  }) => {
+    const translateX = useSharedValue(0)
+    const opacity = useSharedValue(1)
+    const SWIPE_THRESHOLD = -100 // Minimum distance to trigger removal
+
+    const panGesture = Gesture.Pan()
+      .enabled(enabled)
+      .activeOffsetX([-10, 10]) // Only activate on horizontal movement
+      .failOffsetY([-15, 15]) // Fail if vertical movement is too large (to avoid conflicts with ScrollView)
+      .onUpdate((e) => {
+        // Only allow left swipe (negative translation)
+        if (e.translationX < 0) {
+          translateX.value = e.translationX
+          // Fade out as we swipe
+          opacity.value = Math.max(0, 1 + e.translationX / 200)
+        }
+      })
+      .onEnd((e) => {
+        if (e.translationX < SWIPE_THRESHOLD) {
+          // Swipe threshold reached - remove the item
+          translateX.value = withTiming(-1000, { duration: 300 })
+          opacity.value = withTiming(0, { duration: 300 }, () => {
+            runOnJS(onSwipeLeft)(itemIndex)
+          })
+        } else {
+          // Spring back to original position
+          translateX.value = withSpring(0)
+          opacity.value = withSpring(1)
+        }
+      })
+
+    const animatedStyle = useAnimatedStyle(() => ({
+      transform: [{ translateX: translateX.value }],
+      opacity: opacity.value,
+    }))
+
+    if (!enabled) {
+      return <View>{children}</View>
+    }
+
+    return (
+      <GestureDetector gesture={panGesture}>
+        <AnimatedReanimated.View style={animatedStyle}>
+          {children}
+        </AnimatedReanimated.View>
+      </GestureDetector>
+    )
+  })
+
   return (
     <AppBarLayout title={thirdPartyName} onBackPress={handleGoBack}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        {/* Explainer Card for Purchase Transactions */}
+        {isTransactions3Purchase && !explainerCardDismissed && (
+          <View style={styles.explainerCard}>
+            <View style={styles.explainerContent}>
+              <View style={styles.explainerTextContainer}>
+                <Text style={styles.explainerTitle}>Confirm Purchase Details</Text>
+                <Text style={styles.explainerBody}>
+                  Please confirm the purchase type and Account for each item. Swipe an item card left to move it to {swipeLeftAccount}.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.explainerDismissButton}
+                onPress={() => setExplainerCardDismissed(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.explainerDismissIcon}>×</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <Animated.View 
           style={[
             styles.header,
@@ -1573,8 +1749,29 @@ export default function TransactionDetailScreen() {
 
         {visibleItems.length > 0 && (
           <View style={styles.itemsContainer}>
-            {visibleItems.map((group, groupIndex) => (
-              <View key={groupIndex} style={styles.itemCard}>
+            {visibleItems.map((group, groupIndex) => {
+              // For regular items, use the first item's index for swipe
+              // For split items, we'll wrap each individually if needed
+              const firstItemIndex = group.items[0]?.index ?? -1
+              // Only enable swipe for purchase transactions
+              const swipeEnabled = isTransactions3Purchase
+              // Use a stable key based on the item indices to prevent React from re-rendering incorrectly
+              // Include a prefix to ensure uniqueness even if indices somehow overlap
+              const stableKey = `item-${group.items.map(({ index }) => index).join('-')}`
+              
+              // Skip rendering if the item is already removed (defensive check)
+              if (firstItemIndex >= 0 && removedItemIndices.has(firstItemIndex)) {
+                return null
+              }
+              
+              return (
+                <SwipeableItemCard
+                  key={stableKey}
+                  itemIndex={firstItemIndex}
+                  onSwipeLeft={handleRemoveItem}
+                  enabled={swipeEnabled}
+                >
+                  <View style={styles.itemCard}>
                 {group.isSplit ? (
                   // Split items display
                   <>
@@ -1608,9 +1805,20 @@ export default function TransactionDetailScreen() {
                                 {isBusiness ? 'Business' : 'Personal'}
                               </Text>
                             </View>
-                            <Text style={styles.splitItemAccount}>
-                              {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount || 'Unknown'}
-                            </Text>
+                            <View style={styles.splitAccountRow}>
+                              <Text style={styles.splitAccountLabelText}>Account:</Text>
+                              <Text style={styles.splitItemAccount}>
+                                {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount || 'Unknown'}
+                              </Text>
+                            </View>
+                            {item.vatAmount !== undefined && item.vatAmount > 0 && (
+                              <View style={styles.splitVatRow}>
+                                <Text style={styles.splitVatLabel}>VAT:</Text>
+                                <Text style={styles.splitVatAmount}>
+                                  {currencySymbol}{formatItemAmount(item.vatAmount)}
+                                </Text>
+                              </View>
+                            )}
                           </View>
                           {hasGeneralExpenseWarning ? (
                             <TextInput
@@ -1655,14 +1863,13 @@ export default function TransactionDetailScreen() {
                         <View style={styles.itemRow}>
                           <View style={styles.itemLeft}>
                             <Text style={styles.itemName}>{item.name}</Text>
-                            {(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) && (
-                              <>
-                                <View style={styles.accountRow}>
-                                  <Text style={styles.accountLabel}>
-                                    {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount}
-                                  </Text>
-                                </View>
-                              </>
+                            {item.vatAmount !== undefined && item.vatAmount > 0 && (
+                              <View style={styles.vatRow}>
+                                <Text style={styles.vatLabel}>VAT:</Text>
+                                <Text style={styles.vatAmount}>
+                                  {currencySymbol}{formatItemAmount(item.vatAmount)}
+                                </Text>
+                              </View>
                             )}
                           </View>
                           {hasGeneralExpenseWarning ? (
@@ -1699,70 +1906,101 @@ export default function TransactionDetailScreen() {
                         </View>
 
                         {(isUnverified || item.debitAccount) && (
-                          <View style={styles.segmentedButtonsContainer}>
-                            <Text style={styles.segmentedButtonsLabel}>Update Account</Text>
-                            <View style={styles.segmentedButtonsWrapper}>
-                              <TouchableOpacity
-                                style={[
-                                  styles.segmentedButton,
-                                  itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonActive,
-                                  { borderTopLeftRadius: 8, borderBottomLeftRadius: 8, borderRightWidth: 0.5 },
-                                ]}
-                                onPress={async () => {
-                                  const newSelection = new Map(itemActionSelection)
-                                  newSelection.set(index, 'inventory')
-                                  setItemActionSelection(newSelection)
+                          <View style={styles.actionsContainer}>
+                            <View style={styles.isStockToggleContainer}>
+                              <Text style={styles.isStockLabel}>Is Stock</Text>
+                              <Switch
+                                value={(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) === 'Inventory'}
+                                onValueChange={async (value) => {
+                                  if (value) {
+                                    // Switch turned ON - set account to Inventory
+                                    const newSelection = new Map(itemActionSelection)
+                                    newSelection.set(index, 'inventory')
+                                    setItemActionSelection(newSelection)
 
-                                  await handleSelectAccount('Inventory', index)
+                                    // Store the current account before setting to Inventory
+                                    const currentAccount = editedItemDebitAccounts.has(index) 
+                                      ? editedItemDebitAccounts.get(index) 
+                                      : (item.debitAccount || '')
+                                    
+                                    // Only store if it's not already Inventory
+                                    if (currentAccount !== 'Inventory') {
+                                      const newPreInventory = new Map(preInventoryAccounts)
+                                      newPreInventory.set(index, currentAccount)
+                                      setPreInventoryAccounts(newPreInventory)
+                                    }
 
-                                  setTimeout(() => {
-                                    const resetSelection = new Map(itemActionSelection)
-                                    resetSelection.delete(index)
-                                    setItemActionSelection(resetSelection)
-                                  }, 100)
+                                    // Set account to Inventory
+                                    await handleSelectAccount('Inventory', index)
+
+                                    setTimeout(() => {
+                                      const resetSelection = new Map(itemActionSelection)
+                                      resetSelection.delete(index)
+                                      setItemActionSelection(resetSelection)
+                                    }, 100)
+                                  } else {
+                                    // Switch turned OFF - revert to the account before it was set to Inventory
+                                    const newEditedAccounts = new Map(editedItemDebitAccounts)
+                                    
+                                    if (preInventoryAccounts.has(index)) {
+                                      // Restore the account that was set before Inventory
+                                      const previousAccount = preInventoryAccounts.get(index)!
+                                      if (previousAccount) {
+                                        newEditedAccounts.set(index, previousAccount)
+                                      } else {
+                                        // If previous account was empty, remove from edited accounts to use original
+                                        newEditedAccounts.delete(index)
+                                      }
+                                      // Remove from preInventoryAccounts since we've restored it
+                                      const newPreInventory = new Map(preInventoryAccounts)
+                                      newPreInventory.delete(index)
+                                      setPreInventoryAccounts(newPreInventory)
+                                    } else {
+                                      // No previous account stored, revert to original by removing edited account
+                                      newEditedAccounts.delete(index)
+                                    }
+                                    
+                                    setEditedItemDebitAccounts(newEditedAccounts)
+                                  }
                                 }}
-                                activeOpacity={0.7}
-                              >
-                                <Text
-                                  style={[
-                                    styles.segmentedButtonText,
-                                    itemActionSelection.get(index) === 'inventory' && styles.segmentedButtonTextActive,
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  Inventory
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[
-                                  styles.segmentedButton,
-                                  itemActionSelection.get(index) === 'other' && styles.segmentedButtonActive,
-                                  { borderTopRightRadius: 8, borderBottomRightRadius: 8, borderLeftWidth: 0.5 },
-                                ]}
-                                onPress={() => {
-                                  const newSelection = new Map(itemActionSelection)
-                                  newSelection.set(index, 'other')
-                                  setItemActionSelection(newSelection)
-                                  handleEditAccount(index)
-                                  setTimeout(() => {
-                                    const resetSelection = new Map(itemActionSelection)
-                                    resetSelection.delete(index)
-                                    setItemActionSelection(resetSelection)
-                                  }, 100)
-                                }}
-                                activeOpacity={0.7}
-                              >
-                                <Text
-                                  style={[
-                                    styles.segmentedButtonText,
-                                    itemActionSelection.get(index) === 'other' && styles.segmentedButtonTextActive,
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  Other
-                                </Text>
-                              </TouchableOpacity>
+                                trackColor={{ false: '#e0e0e0', true: GRAYSCALE_PRIMARY }}
+                                thumbColor="#ffffff"
+                              />
                             </View>
+                            {(editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount) && (
+                              <View style={styles.accountRow}>
+                                <Text style={styles.accountLabelText}>Account:</Text>
+                                <View style={styles.accountValueContainer}>
+                                  <Text style={styles.accountLabel}>
+                                    {editedItemDebitAccounts.has(index) ? editedItemDebitAccounts.get(index) : item.debitAccount}
+                                  </Text>
+                                  <TouchableOpacity
+                                    style={styles.accountEditIcon}
+                                    onPress={() => {
+                                      const newSelection = new Map(itemActionSelection)
+                                      newSelection.set(index, 'other')
+                                      setItemActionSelection(newSelection)
+                                      handleEditAccount(index)
+                                      setTimeout(() => {
+                                        const resetSelection = new Map(itemActionSelection)
+                                        resetSelection.delete(index)
+                                        setItemActionSelection(resetSelection)
+                                      }, 100)
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <MaterialIcons name="edit" size={18} color={GRAYSCALE_PRIMARY} />
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            )}
+                            {isTransactions3Purchase && (
+                              <View style={styles.swipeInstructionRow}>
+                                <Text style={styles.swipeInstructionText}>
+                                  Swipe left to move to {swipeLeftAccount}
+                                </Text>
+                              </View>
+                            )}
                             {shouldShowSplitButton(item) && (
                               <TouchableOpacity
                                 style={styles.splitButton}
@@ -1779,8 +2017,10 @@ export default function TransactionDetailScreen() {
                     ))}
                   </>
                 )}
-              </View>
-            ))}
+                  </View>
+                </SwipeableItemCard>
+              )
+            })}
           </View>
         )}
 
@@ -2688,57 +2928,94 @@ const styles = StyleSheet.create({
   accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 8,
+    marginBottom: 12,
+  },
+  accountLabelText: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+  },
+  accountValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-end',
+    gap: 8,
   },
   accountLabel: {
     fontSize: 13,
     color: '#888888',
     fontWeight: '500',
+    textAlign: 'right',
   },
-  segmentedButtonsContainer: {
+  accountEditIcon: {
+    padding: 4,
+  },
+  swipeInstructionRow: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  swipeInstructionText: {
+    fontSize: 12,
+    color: '#888888',
+    fontStyle: 'italic',
+  },
+  vatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  vatLabel: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+  },
+  vatAmount: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+  },
+  actionsContainer: {
     marginTop: 8,
     width: '100%',
     alignSelf: 'stretch',
   },
-  segmentedButtonsLabel: {
+  isStockToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  isStockLabel: {
     fontSize: 13,
     color: GRAYSCALE_PRIMARY,
     fontWeight: '500',
-    marginBottom: 8,
   },
-  segmentedButtonsWrapper: {
-    flexDirection: 'row',
-    backgroundColor: '#f6f6f6',
-    borderRadius: 8,
+  updateAccountButton: {
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    overflow: 'hidden',
-    width: '100%',
-    alignSelf: 'stretch',
-  },
-  segmentedButton: {
-    flex: 1,
+    borderColor: '#dcdcdc',
+    borderRadius: 8,
     paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    borderColor: '#e0e0e0',
-    minWidth: 0,
+    marginBottom: 12,
   },
-  segmentedButtonActive: {
+  updateAccountButtonActive: {
     backgroundColor: GRAYSCALE_PRIMARY,
+    borderColor: GRAYSCALE_PRIMARY,
   },
-  segmentedButtonText: {
-    fontSize: 12,
+  updateAccountButtonText: {
+    fontSize: 14,
     color: GRAYSCALE_PRIMARY,
-    fontWeight: '500',
+    fontWeight: '600',
     textAlign: 'center',
   },
-  segmentedButtonTextActive: {
+  updateAccountButtonTextActive: {
     color: '#ffffff',
-    fontWeight: '600',
   },
   itemActionsRow: {
     flexDirection: 'row',
@@ -3179,9 +3456,9 @@ const styles = StyleSheet.create({
   },
   splitItemLeft: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 4,
   },
   splitBadge: {
     backgroundColor: '#f6f6f6',
@@ -3190,13 +3467,43 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
+    alignSelf: 'flex-start',
   },
   splitBadgeText: {
     fontSize: 11,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
   },
+  splitAccountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  splitAccountLabelText: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+  },
   splitItemAccount: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+    textAlign: 'right',
+    flex: 1,
+  },
+  splitVatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  splitVatLabel: {
+    fontSize: 13,
+    color: '#888888',
+    fontWeight: '500',
+  },
+  splitVatAmount: {
     fontSize: 13,
     color: '#888888',
     fontWeight: '500',
@@ -3387,6 +3694,49 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     minWidth: 70,
     textAlign: 'right',
+  },
+  // Explainer Card Styles
+  explainerCard: {
+    backgroundColor: SURFACE_BACKGROUND,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e6e6e6',
+  },
+  explainerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  explainerTextContainer: {
+    flex: 1,
+  },
+  explainerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GRAYSCALE_PRIMARY,
+    marginBottom: 8,
+  },
+  explainerBody: {
+    fontSize: 13,
+    color: GRAYSCALE_SECONDARY,
+    lineHeight: 18,
+  },
+  explainerDismissButton: {
+    marginLeft: 8,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+    paddingTop: 0,
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  explainerDismissIcon: {
+    fontSize: 22,
+    color: GRAYSCALE_SECONDARY,
+    fontWeight: '300',
+    lineHeight: 20,
   },
 })
 

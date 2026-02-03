@@ -32,25 +32,24 @@ export function KPIDetailCard({ title, metricValue, score, label, progress, subt
       <View style={styles.rightContent}>
         <CircularMetric
           value={Math.round(score)}
-          label={label}
+          label=""
           progress={progress}
           size="small"
         />
+        {onPress ? (
+          <TouchableOpacity
+            onPress={onPress}
+            activeOpacity={0.7}
+            style={styles.viewDetailsButton}
+          >
+            <Text style={styles.viewDetailsText}>View details</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.labelText}>{label}</Text>
+        )}
       </View>
     </>
   )
-
-  if (onPress) {
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={onPress}
-        activeOpacity={0.7}
-      >
-        {content}
-      </TouchableOpacity>
-    )
-  }
 
   return (
     <View style={styles.card}>
@@ -98,6 +97,22 @@ const styles = StyleSheet.create({
   rightContent: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  viewDetailsButton: {
+    marginTop: -16,
+    paddingVertical: 0,
+    paddingHorizontal: 8,
+  },
+  viewDetailsText: {
+    fontSize: 13,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  labelText: {
+    fontSize: 11,
+    color: '#666666',
+    textAlign: 'center',
+    marginTop: 8,
   },
 })
 

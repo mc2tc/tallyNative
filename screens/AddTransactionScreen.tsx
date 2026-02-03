@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../lib/auth/AuthContext'
 import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
-import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
+import type { ScaffoldStackParamList } from '../navigation/types/ScaffoldTypes'
 import { transactions2Api } from '../lib/api/transactions2'
 import { AppBarLayout } from '../components/AppBarLayout'
 

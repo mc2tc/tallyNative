@@ -14,7 +14,7 @@ export default function ControlComplianceScreen() {
     navigation.goBack()
   }, [navigation])
 
-  // Calculate control/compliance score
+  // Calculate Control score
   // controlCompliance represents the percentage that overall is of preUnreconciled
   // This shows the impact of unreconciled transactions on the score
   const controlComplianceScore = healthScore?.preUnreconciled && healthScore?.overall
@@ -22,10 +22,10 @@ export default function ControlComplianceScreen() {
     : 100
 
   return (
-    <AppBarLayout title="Control/Compliance" onBackPress={handleGoBack}>
+    <AppBarLayout title="Control" onBackPress={handleGoBack}>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={styles.card}>
-          <Text style={styles.title}>Control/Compliance</Text>
+          <Text style={styles.title}>Control</Text>
           
           <View style={styles.detailsList}>
             <View style={styles.detailRow}>
@@ -54,7 +54,7 @@ export default function ControlComplianceScreen() {
         <View style={[styles.card, styles.secondCard]}>
           <Text style={styles.title}>What This Means</Text>
           <Text style={styles.explanationText}>
-            The Control/Compliance score measures how many of your transactions are validated and authentic. 
+            The Control score measures how many of your transactions are validated and authentic. 
             As a business owner, you can add transactions quickly—sometimes without receipts or full documentation—which is 
             practical for speed and when records are lost. However, transactions that are properly verified and reconciled 
             provide stronger control and better financial standing.

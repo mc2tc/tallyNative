@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import { Searchbar } from 'react-native-paper'
 import { AppBarLayout } from '../components/AppBarLayout'
@@ -201,6 +201,7 @@ export default function ReportingReadyScreen() {
   const [loading, setLoading] = useState(true)
   const [transactions, setTransactions] = useState<TransactionStub[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [infoCardDismissed, setInfoCardDismissed] = useState(false)
 
   const membershipIds = Object.keys(memberships ?? {})
   const nonPersonalMembershipId = membershipIds.find(
@@ -296,19 +297,28 @@ export default function ReportingReadyScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.container}>
-          <View style={styles.infoCard}>
-            <View style={styles.infoContent}>
-              <View style={styles.infoTextContainer}>
-                <Text style={styles.infoTitle}>
-                  Reporting Ready transactions
-                </Text>
-                <Text style={styles.infoBody}>
-                  Verified transactions from all sources (purchases, sales, bank,
-                  and credit cards) that appear in your financial reports.
-                </Text>
+          {!infoCardDismissed && (
+            <View style={styles.infoCard}>
+              <View style={styles.infoContent}>
+                <View style={styles.infoTextContainer}>
+                  <Text style={styles.infoTitle}>
+                    Journal Entries
+                  </Text>
+                  <Text style={styles.infoBody}>
+                    Verified transactions from all sources (purchases, sales, bank,
+                    and credit cards) that appear in your financial reports.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.dismissButton}
+                  onPress={() => setInfoCardDismissed(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.dismissIcon}>×</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          </View>
+          )}
 
           <View style={styles.searchBarContainer}>
             <Searchbar
@@ -470,6 +480,7 @@ const styles = StyleSheet.create({
   searchBarInput: {
     fontSize: 14,
     color: GRAYSCALE_PRIMARY,
+    fontFamily: undefined,
   },
   reportingListContainer: {
     gap: 16,
@@ -566,6 +577,22 @@ const styles = StyleSheet.create({
   },
   outputIndicator: {
     color: GRAYSCALE_PRIMARY,
+  },
+  dismissButton: {
+    marginLeft: 8,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+    paddingTop: 0,
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  dismissIcon: {
+    fontSize: 22,
+    color: GRAYSCALE_SECONDARY,
+    fontWeight: '300',
+    lineHeight: 20,
   },
 })
 

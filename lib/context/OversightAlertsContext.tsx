@@ -5,6 +5,15 @@ interface AssistantContextValue {
   setOversightUnreadCount: (count: number) => void
   insightUnreadCount: number
   setInsightUnreadCount: (count: number) => void
+  // Control Room alert counts
+  securityAlertsCount: number
+  setSecurityAlertsCount: (count: number) => void
+  complianceAlertsCount: number
+  setComplianceAlertsCount: (count: number) => void
+  operationsAlertsCount: number
+  setOperationsAlertsCount: (count: number) => void
+  // Computed total
+  totalControlRoomAlerts: number
   // Legacy support - maps to oversightUnreadCount
   unreadCount: number
   setUnreadCount: (count: number) => void
@@ -15,6 +24,11 @@ const AssistantContext = createContext<AssistantContextValue | undefined>(undefi
 export function OversightAlertsProvider({ children }: { children: ReactNode }) {
   const [oversightUnreadCount, setOversightUnreadCount] = useState(0)
   const [insightUnreadCount, setInsightUnreadCount] = useState(0)
+  const [securityAlertsCount, setSecurityAlertsCount] = useState(0)
+  const [complianceAlertsCount, setComplianceAlertsCount] = useState(0)
+  const [operationsAlertsCount, setOperationsAlertsCount] = useState(0)
+
+  const totalControlRoomAlerts = securityAlertsCount + complianceAlertsCount + operationsAlertsCount
 
   return (
     <AssistantContext.Provider
@@ -23,6 +37,13 @@ export function OversightAlertsProvider({ children }: { children: ReactNode }) {
         setOversightUnreadCount,
         insightUnreadCount,
         setInsightUnreadCount,
+        securityAlertsCount,
+        setSecurityAlertsCount,
+        complianceAlertsCount,
+        setComplianceAlertsCount,
+        operationsAlertsCount,
+        setOperationsAlertsCount,
+        totalControlRoomAlerts,
         // Legacy support
         unreadCount: oversightUnreadCount,
         setUnreadCount: setOversightUnreadCount,

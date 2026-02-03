@@ -124,7 +124,7 @@ export default function HomeScreen() {
   const cashCoverageRatio = healthScore?.rawMetrics.cashCoverageRatio ?? 0
   const currentRatioValue = healthScore?.rawMetrics.currentRatio ?? 0
 
-  // Calculate control/compliance score
+  // Calculate Control score
   // controlCompliance represents the percentage that overall is of preUnreconciled
   // This shows the impact of unreconciled transactions on the score
   const controlComplianceScore = healthScore?.preUnreconciled && healthScore?.overall
@@ -134,7 +134,7 @@ export default function HomeScreen() {
   const businessName = getBusinessNameFromId(businessId)
 
   return (
-    <AppBarLayout title={businessName}>
+    <AppBarLayout title="Finance">
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
@@ -184,6 +184,7 @@ export default function HomeScreen() {
             healthScore={healthScore || undefined}
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
+            businessId={businessId}
           />
         )}
         {!loading && !error && (
@@ -201,10 +202,10 @@ export default function HomeScreen() {
             
             {/* KPI Detail Cards */}
             <KPIDetailCard
-              title="Control/Compliance"
+              title="Control"
               metricValue={`${controlComplianceScore}%`}
               score={controlComplianceScore}
-              label="Control/Compliance"
+              label="Control"
               progress={controlComplianceScore}
               subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
               iconName="assured-workload"

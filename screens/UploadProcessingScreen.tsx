@@ -13,17 +13,11 @@ import { MaterialIcons } from '@expo/vector-icons'
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import type { NavigationProp } from '@react-navigation/native'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
-import type { ScaffoldStackParamList } from '../navigation/ScaffoldNavigator'
 import { uploadReceiptAndGetUrl } from '../lib/utils/storage'
 import { transactions2Api } from '../lib/api/transactions2'
 
-type UploadProcessingNavigationProp =
-  | NavigationProp<TransactionsStackParamList, 'UploadProcessing'>
-  | NavigationProp<ScaffoldStackParamList, 'UploadProcessing'>
-
-type UploadProcessingRouteProp =
-  | RouteProp<TransactionsStackParamList, 'UploadProcessing'>
-  | RouteProp<ScaffoldStackParamList, 'UploadProcessing'>
+type UploadProcessingNavigationProp = NavigationProp<TransactionsStackParamList, 'UploadProcessing'>
+type UploadProcessingRouteProp = RouteProp<TransactionsStackParamList, 'UploadProcessing'>
 
 const GRAYSCALE_PRIMARY = '#4a4a4a'
 const GRAYSCALE_SECONDARY = '#6d6d6d'
@@ -323,31 +317,26 @@ export default function UploadProcessingScreen() {
           navigation.goBack()
           setTimeout(() => {
             if (navigation.canGoBack()) {
-              // Go back from AddTransaction -> TransactionsScaffoldScreen
+              // Go back from AddTransaction -> TransactionsHome
               navigation.goBack()
               // After going back, navigate to the same screen with params to update activeSection
               setTimeout(() => {
                 if (!activeSection) return
                 
-                try {
-                  // Try TransactionsHome first
-                  console.log('UploadProcessing: Navigating to TransactionsHome with activeSection:', activeSection)
-                  ;(navigation as NavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
-                } catch (e1) {
+                if (activeSection) {
                   try {
-                    // Try ScaffoldHome
-                    console.log('UploadProcessing: Navigating to ScaffoldHome with activeSection:', activeSection)
-                    ;(navigation as NavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
-                  } catch (e2) {
-                    console.error('UploadProcessing: Failed to navigate with activeSection:', e2)
+                    console.log('UploadProcessing: Navigating to TransactionsHome with activeSection:', activeSection)
+                    navigation.navigate('TransactionsHome', { activeSection })
+                  } catch (e) {
+                    console.error('UploadProcessing: Failed to navigate with activeSection:', e)
                     // Last resort: try to set params on the current route
                     try {
                       const parent = navigation.getParent()
                       if (parent) {
                         parent.setParams({ activeSection } as never)
                       }
-                    } catch (e3) {
-                      console.error('UploadProcessing: Failed to set params:', e3)
+                    } catch (e2) {
+                      console.error('UploadProcessing: Failed to set params:', e2)
                     }
                   }
                 }
@@ -356,15 +345,11 @@ export default function UploadProcessingScreen() {
           }, 100)
         } else {
           // If we can't go back, try direct navigation
-          if (!activeSection) return
-          
-          try {
-            ;(navigation as NavigationProp<TransactionsStackParamList>).navigate('TransactionsHome', { activeSection })
-          } catch (e1) {
+          if (activeSection) {
             try {
-              ;(navigation as NavigationProp<ScaffoldStackParamList>).navigate('ScaffoldHome', { activeSection })
-            } catch (e2) {
-              console.error('UploadProcessing: Failed to navigate:', e2)
+              navigation.navigate('TransactionsHome', { activeSection })
+            } catch (e) {
+              console.error('UploadProcessing: Failed to navigate:', e)
             }
           }
         }

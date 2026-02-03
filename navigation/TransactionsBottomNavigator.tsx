@@ -1,39 +1,42 @@
 // Bottom tab navigator for Transactions section
-// Tabs: Sales, Purchases, Payroll, Other, Statements
+// Tabs: Sales, Purchases, Other, Statements
 
 import React from 'react'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons'
+import { MaterialIcons, Feather } from '@expo/vector-icons'
 import TransactionsSalesScreen from '../screens/TransactionsSalesScreen'
 import TransactionsPurchasesScreen from '../screens/TransactionsPurchasesScreen'
-import TransactionsPayrollScreen from '../screens/TransactionsPayrollScreen'
 import TransactionsOtherScreen from '../screens/TransactionsOtherScreen'
 import TransactionsStatementsScreen from '../screens/TransactionsStatementsScreen'
+import { semanticColors } from '../lib/utils/semanticColors'
 
 export type TransactionsBottomTabParamList = {
   Sales: undefined
   Purchases: undefined
-  Payroll: undefined
   Other: undefined
   Statements: undefined
 }
 
 const Tab = createBottomTabNavigator<TransactionsBottomTabParamList>()
 
-const getTabIcon = (routeName: keyof TransactionsBottomTabParamList, color: string, size: number) => {
+// Subtle colors for tab icons
+const SUBTLE_SALES_COLOR = '#81c784' // Light green
+const SUBTLE_PURCHASES_COLOR = '#e57373' // Light red
+
+const getTabIcon = (routeName: keyof TransactionsBottomTabParamList, color: string, size: number, focused: boolean) => {
+  const iconSize = size
+  
   switch (routeName) {
     case 'Sales':
-      return <MaterialCommunityIcons name="arrow-up-circle" size={size} color={color} />
+      return <Feather name="arrow-up-circle" size={iconSize} color={focused ? SUBTLE_SALES_COLOR : color} />
     case 'Purchases':
-      return <MaterialCommunityIcons name="arrow-down-circle" size={size} color={color} />
-    case 'Payroll':
-      return <Ionicons name="people-outline" size={size} color={color} />
+      return <Feather name="arrow-down-circle" size={iconSize} color={focused ? SUBTLE_PURCHASES_COLOR : color} />
     case 'Other':
-      return <MaterialIcons name="more-horiz" size={size} color={color} />
+      return <Feather name="divide-circle" size={iconSize} color={focused ? semanticColors.average : color} />
     case 'Statements':
-      return <MaterialCommunityIcons name="file-document-outline" size={size} color={color} />
+      return <Feather name="align-justify" size={iconSize} color={color} />
     default:
-      return <MaterialIcons name="radio-button-unchecked" size={size} color={color} />
+      return <MaterialIcons name="radio-button-unchecked" size={iconSize} color={color} />
   }
 }
 
@@ -49,12 +52,14 @@ export function TransactionsBottomNavigator() {
           backgroundColor: '#f5f5f5',
           borderTopColor: '#e0e0e0',
         },
-        tabBarIcon: ({ color, size }) => getTabIcon(route.name, color, size),
+        tabBarLabelStyle: {
+          fontSize: 12,
+        },
+        tabBarIcon: ({ color, size, focused }) => getTabIcon(route.name, color, size, focused),
       })}
     >
       <Tab.Screen name="Sales" component={TransactionsSalesScreen} options={{ title: 'Sales' }} />
       <Tab.Screen name="Purchases" component={TransactionsPurchasesScreen} options={{ title: 'Purchases' }} />
-      <Tab.Screen name="Payroll" component={TransactionsPayrollScreen} options={{ title: 'Payroll' }} />
       <Tab.Screen name="Other" component={TransactionsOtherScreen} options={{ title: 'Other' }} />
       <Tab.Screen name="Statements" component={TransactionsStatementsScreen} options={{ title: 'Statements' }} />
     </Tab.Navigator>

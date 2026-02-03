@@ -514,7 +514,10 @@ export default function TransactionsStatementsScreen() {
               <View style={styles.infoTextContainer}>
                 <Text style={styles.infoTitle}>Understanding your Bank pipeline</Text>
                 <Text style={styles.infoBody}>
-                  When bank transactions come in, Tally's rules automatically handle transactions that don't need matching—like bank fees and recurring payments. Check that these look right and confirm—they immediately show up in your financial reports. For other transactions, use the reconcile button to match them with your purchase receipts. If you click on a transaction and confirm it couldn't be matched (no receipt or evidence), it's marked as such and appears in your reports.
+                  Tally's rules automatically handle transactions that don't need matching—like bank fees and recurring payments. 
+                  Once confirmed—they immediately show up in the journal and financial reports. 
+                  For other transactions, use the reconcile button to automatically match them with your purchase receipts and sales records. 
+                  If you confirm that a transaction cannot be matched (no receipt or evidence), the transaction is marked accordingly and will appear in your journal and reports.
                 </Text>
               </View>
               <TouchableOpacity

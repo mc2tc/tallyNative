@@ -38,7 +38,7 @@ export default function OversightChatScreen() {
           {businessId && (
             <OversightAlertsCard
               businessId={businessId}
-              onAlertsSummaryChange={({ hasAlerts }) => {
+              onAlertsSummaryChange={({ hasAlerts, alertsCount }) => {
                 if (hasAlerts) {
                   setAssistantIntro(
                     "I've detected some security issues in your Oversight Alerts that need your attention. I can help you review and resolve them.",

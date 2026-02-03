@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { insightsApi } from '../lib/api/transactions2'
 import type { InsightsResponse } from '../lib/api/transactions2'
+import { getLogoGradient } from '../lib/utils/semanticColors'
 
 interface MotivationalCardProps {
   businessId?: string
@@ -65,50 +67,63 @@ export function MotivationalCard({ businessId, timeframe = 'week', onPress }: Mo
     : strategySummary || 'Focus on improving your cash flow and maintaining strong revenue growth to boost your overall health score.'
 
   return (
-    <View style={styles.card}>
-      <View style={styles.content}>
-        <View style={styles.textContainer}>
-          <Text style={styles.title}>Strategic insights for your business</Text>
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#6d6d6d" />
-              <Text style={styles.body}>Loading insights...</Text>
+    <View style={styles.cardContainer}>
+      <LinearGradient
+        colors={getLogoGradient()}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBorder}
+      >
+        <View style={styles.card}>
+          <View style={styles.content}>
+            <View style={styles.textContainer}>
+              <Text style={styles.title}>Strategic insights for your business</Text>
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#6d6d6d" />
+                  <Text style={styles.body}>Loading insights...</Text>
+                </View>
+              ) : (
+                <Text style={styles.body}>{displayText}</Text>
+              )}
             </View>
-          ) : (
-            <Text style={styles.body}>{displayText}</Text>
+            <TouchableOpacity
+              style={styles.dismissButton}
+              onPress={() => setDismissed(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.dismissIcon}>×</Text>
+            </TouchableOpacity>
+          </View>
+          {/* Learn more button */}
+          {!loading && onPress && (
+            <TouchableOpacity
+              style={styles.learnMoreButton}
+              onPress={handleLearnMore}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.learnMoreText}>View details</Text>
+            </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity
-          style={styles.dismissButton}
-          onPress={() => setDismissed(true)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.dismissIcon}>×</Text>
-        </TouchableOpacity>
-      </View>
-      {/* Learn more button */}
-      {!loading && onPress && (
-        <TouchableOpacity
-          style={styles.learnMoreButton}
-          onPress={handleLearnMore}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.learnMoreText}>View details</Text>
-        </TouchableOpacity>
-      )}
+      </LinearGradient>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#f6f6f6',
-    borderRadius: 12,
+  cardContainer: {
     marginHorizontal: 16,
     marginVertical: 12,
+  },
+  gradientBorder: {
+    borderRadius: 12,
+    padding: 2, // This creates the border width
+  },
+  card: {
+    backgroundColor: '#f6f6f6',
+    borderRadius: 10, // Slightly smaller to account for border
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#e6e6e6',
     position: 'relative',
   },
   content: {

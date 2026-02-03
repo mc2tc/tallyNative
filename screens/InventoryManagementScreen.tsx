@@ -417,7 +417,7 @@ export default function InventoryManagementScreen({}: Props) {
 
   return (
     <View style={styles.wrapper}>
-      <AppBarLayout title="Inventory">
+      <AppBarLayout title="Operations">
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           {/* Explainer Card */}
           {!infoCardDismissed && (

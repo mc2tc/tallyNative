@@ -14,10 +14,10 @@ export type TransactionStub = {
   originalTransaction?: Transaction
 }
 
-// Helper function to truncate title to 24 characters
+// Helper function to truncate title to 30 characters
 export function truncateTitle(title: string | undefined | null): string {
   if (!title) return ''
-  return title.length > 24 ? title.substring(0, 24) + '...' : title
+  return title.length > 30 ? title.substring(0, 30) + '...' : title
 }
 
 // Helper function to deduplicate transactions by ID

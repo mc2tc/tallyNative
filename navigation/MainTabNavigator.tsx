@@ -56,6 +56,9 @@ export type MainTabParamList = {
   SettingsUnits: undefined
   SettingsUsers: undefined
   Profile: undefined
+  Security: undefined
+  Compliance: undefined
+  Operations: undefined
 }
 
 const Tab = createBottomTabNavigator<MainTabParamList>()
@@ -106,6 +109,12 @@ const getTabIcon = (routeName: string, color: string, size: number) => {
       return <MaterialIcons name="straighten" size={size} color={color} />
     case 'SettingsUsers':
       return <MaterialIcons name="people" size={size} color={color} />
+    case 'Security':
+      return <MaterialIcons name="shield" size={size} color={color} />
+    case 'Compliance':
+      return <MaterialIcons name="gavel" size={size} color={color} />
+    case 'Operations':
+      return <MaterialIcons name="trending-up" size={size} color={color} />
     default:
       return <MaterialIcons name="radio-button-unchecked" size={size} color={color} />
   }
@@ -145,7 +154,7 @@ export function MainTabNavigator() {
           createTabScreen(
             'Transactions',
             ReportingReadyScreen,
-            { title: 'Reporting ready' },
+            { title: 'Journal' },
           ),
           createTabScreen(
             'Reports',
@@ -153,27 +162,11 @@ export function MainTabNavigator() {
             { title: 'Reports' },
             createTabResetListener('ReportsHome')
           ),
-          createTabScreen('TaxesCompliance', TaxesComplianceScreen, { title: 'Compliance' }),
+          createTabScreen('TaxesCompliance', TaxesComplianceScreen, { title: 'MTD' }),
         ]
 
       case 'Operations':
         return [
-          createTabScreen(
-            'OpsCentre',
-            HelpScreen,
-            {
-              title: 'Control Room',
-              tabBarBadge: 2,
-              tabBarBadgeStyle: {
-                backgroundColor: '#d32f2f',
-                color: '#ffffff',
-                fontSize: 11,
-                minWidth: 18,
-                height: 18,
-                borderRadius: 9,
-              },
-            }
-          ),
           createTabScreen('Inventory', InventoryManagementScreen, { title: 'Inventory' }),
           createTabScreen('Production', ProductionManagementScreen, { title: 'Production' }),
           createTabScreen('PointOfSale', PointOfSaleScreen, { title: 'Point of Sale' }),
@@ -249,6 +242,16 @@ export function MainTabNavigator() {
           title: 'Profile',
           tabBarButton: () => null,
           tabBarItemStyle: { display: 'none' },
+        }}
+      />
+      <Tab.Screen
+        name="OpsCentre"
+        component={HelpScreen}
+        options={{
+          title: 'Control Room',
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
+          tabBarStyle: { display: 'none' },
         }}
       />
       {getTabsForCategory()}

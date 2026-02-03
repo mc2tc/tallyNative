@@ -430,7 +430,7 @@ export default function PointOfSaleScreen() {
   return (
     <View style={styles.wrapper}>
       <AppBarLayout 
-        title={isEditMode ? "Edit Items" : "Point of Sale"}
+        title={isEditMode ? "Edit Items" : "Operations"}
         rightIconName={isEditMode ? "checkmark" : "create-outline"}
         onRightIconPress={handleEditClick}
       >

@@ -8,7 +8,8 @@ import { useAssistant } from '../lib/context/OversightAlertsContext'
 
 interface OversightAlertsCardProps {
   businessId: string
-  onAlertsSummaryChange?: (info: { hasAlerts: boolean; statusMessage?: string | null }) => void
+  title?: string
+  onAlertsSummaryChange?: (info: { hasAlerts: boolean; alertsCount: number; statusMessage?: string | null }) => void
 }
 
 export interface OversightAlertsCardRef {
@@ -16,7 +17,7 @@ export interface OversightAlertsCardRef {
 }
 
 export const OversightAlertsCard = forwardRef<OversightAlertsCardRef, OversightAlertsCardProps>(
-  ({ businessId, onAlertsSummaryChange }, ref) => {
+  ({ businessId, title = 'Oversight Alerts', onAlertsSummaryChange }, ref) => {
   const insets = useSafeAreaInsets()
   // Tab bar height - set to 0 since this component may be used outside tab navigator
   // When used in HelpScreen (tab navigator), the spacing is handled by the ScrollView
@@ -78,6 +79,7 @@ export const OversightAlertsCard = forwardRef<OversightAlertsCardRef, OversightA
       if (onAlertsSummaryChange) {
         onAlertsSummaryChange({
           hasAlerts: response.alerts.length > 0,
+          alertsCount: response.alerts.length,
           statusMessage: combinedStatusMessage,
         })
       }
@@ -91,6 +93,7 @@ export const OversightAlertsCard = forwardRef<OversightAlertsCardRef, OversightA
       if (onAlertsSummaryChange) {
         onAlertsSummaryChange({
           hasAlerts: false,
+          alertsCount: 0,
           statusMessage: null,
         })
       }
@@ -253,7 +256,7 @@ export const OversightAlertsCard = forwardRef<OversightAlertsCardRef, OversightA
   if (loading && !refreshing) {
     return (
       <View style={cardStyle}>
-        <Text style={styles.title}>Oversight Alerts</Text>
+        <Text style={styles.title}>{title}</Text>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#666666" />
           <Text style={styles.loadingText}>Loading alerts...</Text>
@@ -265,7 +268,7 @@ export const OversightAlertsCard = forwardRef<OversightAlertsCardRef, OversightA
   return (
     <View style={cardStyle}>
       <View style={styles.header}>
-        <Text style={styles.title}>Oversight Alerts</Text>
+        <Text style={styles.title}>{title}</Text>
         {unreadCount > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{unreadCount}</Text>

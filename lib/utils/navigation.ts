@@ -11,7 +11,7 @@ export function getFirstTabForCategory(category: DrawerCategory): string {
     case 'Finance':
       return 'Health'
     case 'Operations':
-      return 'OpsCentre'
+      return 'Inventory'
     case 'Marketing':
       return 'Web'
     case 'People':
