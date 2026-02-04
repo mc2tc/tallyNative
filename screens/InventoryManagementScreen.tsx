@@ -426,7 +426,7 @@ export default function InventoryManagementScreen({}: Props) {
                 <View style={styles.infoCardTextContainer}>
                   <Text style={styles.infoCardTitle}>Understanding your Inventory</Text>
                   <Text style={styles.infoCardBody}>
-                    Track items as they come in. First 'Receive items' by confirming details and categorizing as Raw Materials or Finished Goods for stock management.
+                    Track items as they arrive. First 'Receive items' by confirming details and categorizing as Raw Materials or Finished Goods for stock management.
                   </Text>
                 </View>
             <TouchableOpacity
@@ -440,42 +440,44 @@ export default function InventoryManagementScreen({}: Props) {
             </View>
           )}
 
-          {/* Pending Orders Card */}
-          <View style={styles.pipelineCard}>
-            <Text style={styles.pipelineTitle}>Pending Orders</Text>
-            {pendingOrdersItems.length === 0 ? (
-              <View style={styles.emptyCardContainer}>
-                <Text style={styles.emptyCardText}>No pending orders</Text>
-              </View>
-            ) : (
-              <View style={styles.cardList}>
-                {pendingOrdersItems.map((item, index) => {
-                  const currency = item.currency || 'GBP'
-                  return (
-                    <View key={item.id} style={styles.cardListItem}>
-                      <View style={styles.cardTextGroup}>
-                        <Text style={styles.cardTitle}>{item.name}</Text>
+          {/* Pending Orders Card - Only show if there are pending orders */}
+          {allPendingOrdersItems.length > 0 && (
+            <View style={styles.pipelineCard}>
+              <Text style={styles.pipelineTitle}>Pending Orders</Text>
+              {pendingOrdersItems.length === 0 ? (
+                <View style={styles.emptyCardContainer}>
+                  <Text style={styles.emptyCardText}>No pending orders</Text>
+                </View>
+              ) : (
+                <View style={styles.cardList}>
+                  {pendingOrdersItems.map((item, index) => {
+                    const currency = item.currency || 'GBP'
+                    return (
+                      <View key={item.id} style={styles.cardListItem}>
+                        <View style={styles.cardTextGroup}>
+                          <Text style={styles.cardTitle}>{item.name}</Text>
+                        </View>
+                        <Text style={styles.cardAmount}>{formatAmount(item.amount, currency, true)}</Text>
                       </View>
-                      <Text style={styles.cardAmount}>{formatAmount(item.amount, currency, true)}</Text>
-                    </View>
-                  )
-                })}
-              </View>
-            )}
-            {allPendingOrdersItems.length > 0 && (
-              <View style={styles.pipelineActions}>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  style={styles.linkButton}
-                  onPress={() => handleViewAll('Pending Orders')}
-                >
-                  <Text style={styles.linkButtonText}>
-                    {allPendingOrdersItems.length > 3 ? `View all (${allPendingOrdersItems.length})` : 'View all'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+                    )
+                  })}
+                </View>
+              )}
+              {allPendingOrdersItems.length > 0 && (
+                <View style={styles.pipelineActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.linkButton}
+                    onPress={() => handleViewAll('Pending Orders')}
+                  >
+                    <Text style={styles.linkButtonText}>
+                      {allPendingOrdersItems.length > 3 ? `View all (${allPendingOrdersItems.length})` : 'View all'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Receiving Card */}
           <View style={styles.pipelineCard}>

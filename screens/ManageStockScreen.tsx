@@ -958,26 +958,34 @@ export default function ManageStockScreen() {
 
         {/* Total Primary Packages - Prominently Displayed */}
         <View style={styles.totalCard}>
-          <Text style={styles.totalLabel}>
-            Total Primary Packages: {packaging.totalPrimaryPackages.toLocaleString()}
-          </Text>
-          {packaging.primaryPackaging && (
-            <>
-            <Text style={styles.totalAmount}>
-              {(packaging.totalPrimaryPackages * packaging.primaryPackaging.quantity).toLocaleString()}
-              {packaging.primaryPackaging.unit && ` ${packaging.primaryPackaging.unit}`}
-            </Text>
-              {itemAmount !== null && packaging.totalPrimaryPackages > 0 && (
-                <View style={styles.costPerUnitContainer}>
-                  <Text style={styles.costPerUnitLabel}>Cost per primary package:</Text>
-                  <Text style={styles.costPerUnitAmount}>
-                    {formatAmount(itemAmount / packaging.totalPrimaryPackages, currency, true)}
-                  </Text>
-                </View>
-              )}
-              {itemAmount !== null && packaging.totalPrimaryPackages > 0 && packaging.primaryPackaging.quantity > 0 && (
-                <View style={styles.costPerUnitContainer}>
-                  <Text style={styles.costPerUnitLabel}>Cost per {packaging.primaryPackaging.unit || 'unit'}:</Text>
+          <View style={styles.totalCardRow}>
+            <View style={styles.totalCardColumn}>
+              <Text style={styles.totalLabel}>Total Primary Packages</Text>
+              <Text style={styles.totalAmount}>
+                {packaging.totalPrimaryPackages.toLocaleString()}
+              </Text>
+            </View>
+            {packaging.primaryPackaging && (
+              <View style={styles.totalCardColumn}>
+              <Text style={styles.totalLabel}>Total {packaging.primaryPackaging.unit || 'Units'}</Text>
+              <Text style={styles.totalAmount}>
+                {(packaging.totalPrimaryPackages * packaging.primaryPackaging.quantity).toLocaleString()}
+                {packaging.primaryPackaging.unit && ` ${packaging.primaryPackaging.unit}`}
+              </Text>
+            </View>
+            )}
+          </View>
+          {itemAmount !== null && packaging.totalPrimaryPackages > 0 && packaging.primaryPackaging && (
+            <View style={styles.totalCardRow}>
+              <View style={styles.totalCardColumn}>
+                <Text style={styles.costPerUnitLabel}>Cost per package</Text>
+                <Text style={styles.costPerUnitAmount}>
+                  {formatAmount(itemAmount / packaging.totalPrimaryPackages, currency, true)}
+                </Text>
+              </View>
+              {packaging.primaryPackaging.quantity > 0 && (
+                <View style={styles.totalCardColumn}>
+                  <Text style={styles.costPerUnitLabel}>Cost per {packaging.primaryPackaging.unit || 'unit'}</Text>
                   <Text style={styles.costPerUnitAmount}>
                     {new Intl.NumberFormat('en-GB', {
                       minimumFractionDigits: 4,
@@ -986,7 +994,7 @@ export default function ManageStockScreen() {
                   </Text>
                 </View>
               )}
-            </>
+            </View>
           )}
         </View>
 
@@ -1267,34 +1275,39 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+  },
+  totalCardRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 12,
+  },
+  totalCardColumn: {
+    flex: 1,
     alignItems: 'center',
   },
   totalLabel: {
-    fontSize: 14,
-    color: '#888888',
-    marginBottom: 4,
-  },
-  totalAmount: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: GRAYSCALE_PRIMARY,
-  },
-  costPerUnitContainer: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    alignItems: 'center',
-  },
-  costPerUnitLabel: {
     fontSize: 13,
     color: '#888888',
     marginBottom: 4,
+    textAlign: 'center',
+  },
+  totalAmount: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: GRAYSCALE_PRIMARY,
+    textAlign: 'center',
+  },
+  costPerUnitLabel: {
+    fontSize: 12,
+    color: '#888888',
+    marginBottom: 4,
+    textAlign: 'center',
   },
   costPerUnitAmount: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '600',
     color: GRAYSCALE_PRIMARY,
+    textAlign: 'center',
   },
   infoCard: {
     backgroundColor: '#ffffff',

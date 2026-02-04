@@ -26,9 +26,9 @@ function getFontConfig() {
   }
 }
 
-// Create theme with optional Tiempos fonts
-function createTheme(useTiempos: boolean) {
-  const baseTheme = {
+// Create theme (Tiempos fonts are only used in LandingScreen via TiemposText component)
+function createTheme() {
+  return {
     ...MD3LightTheme,
     colors: {
       ...MD3LightTheme.colors,
@@ -39,82 +39,19 @@ function createTheme(useTiempos: boolean) {
       onSurfaceVariant: '#666666',
     },
   }
-
-  if (!useTiempos) {
-    return baseTheme
-  }
-
-  return {
-    ...baseTheme,
-    fonts: {
-      ...MD3LightTheme.fonts,
-      // Set Tiempos as the default font family
-      default: {
-        ...MD3LightTheme.fonts.default,
-        fontFamily: 'TiemposText-Regular',
-      },
-      headlineLarge: {
-        ...MD3LightTheme.fonts.headlineLarge,
-        fontFamily: 'TiemposText-Regular',
-      },
-      headlineMedium: {
-        ...MD3LightTheme.fonts.headlineMedium,
-        fontFamily: 'TiemposText-Regular',
-      },
-      headlineSmall: {
-        ...MD3LightTheme.fonts.headlineSmall,
-        fontFamily: 'TiemposText-Regular',
-      },
-      titleLarge: {
-        ...MD3LightTheme.fonts.titleLarge,
-        fontFamily: 'TiemposText-Bold',
-      },
-      titleMedium: {
-        ...MD3LightTheme.fonts.titleMedium,
-        fontFamily: 'TiemposText-Bold',
-      },
-      titleSmall: {
-        ...MD3LightTheme.fonts.titleSmall,
-        fontFamily: 'TiemposText-Bold',
-      },
-      bodyLarge: {
-        ...MD3LightTheme.fonts.bodyLarge,
-        fontFamily: 'TiemposText-Regular',
-      },
-      bodyMedium: {
-        ...MD3LightTheme.fonts.bodyMedium,
-        fontFamily: 'TiemposText-Regular',
-      },
-      bodySmall: {
-        ...MD3LightTheme.fonts.bodySmall,
-        fontFamily: 'TiemposText-Regular',
-      },
-      labelLarge: {
-        ...MD3LightTheme.fonts.labelLarge,
-        fontFamily: 'TiemposText-Regular',
-      },
-      labelMedium: {
-        ...MD3LightTheme.fonts.labelMedium,
-        fontFamily: 'TiemposText-Regular',
-      },
-      labelSmall: {
-        ...MD3LightTheme.fonts.labelSmall,
-        fontFamily: 'TiemposText-Regular',
-      },
-    },
-  }
 }
 
 export default function App() {
   const fontConfig = getFontConfig()
   const hasFonts = Object.keys(fontConfig).length > 0
   
+  // Load fonts for LandingScreen (TiemposText component)
   const [fontsLoaded] = useFonts(fontConfig)
 
-  // Create theme based on whether fonts are available and loaded
+  // Create theme (Tiempos is not applied to theme, only used in LandingScreen)
   const customTheme = useMemo(() => {
-    return createTheme(hasFonts && fontsLoaded)
-  }, [hasFonts, fontsLoaded])
+    return createTheme()
+  }, [])
 
   // Only show loading indicator if we're actually loading fonts
   if (hasFonts && !fontsLoaded) {
