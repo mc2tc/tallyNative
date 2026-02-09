@@ -5,7 +5,6 @@ import { StyleSheet, Text, View, ScrollView, ActivityIndicator, RefreshControl }
 import { AppBarLayout } from '../components/AppBarLayout'
 import { MetricsCard } from '../components/MetricsCard'
 import { MotivationalCard } from '../components/MotivationalCard'
-import { KPIDetailCard } from '../components/KPIDetailCard'
 import { useAuth } from '../lib/auth/AuthContext'
 import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import type { NavigationProp } from '@react-navigation/native'
@@ -131,10 +130,8 @@ export default function HomeScreen() {
     ? Math.round((healthScore.overall / healthScore.preUnreconciled) * 100)
     : 100
 
-  const businessName = getBusinessNameFromId(businessId)
-
   return (
-    <AppBarLayout title="Finance">
+    <AppBarLayout title="Business Health">
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
@@ -160,7 +157,7 @@ export default function HomeScreen() {
           <MetricsCard
             largeMetric={{
               value: Math.round(overallScore),
-              label: 'Business Health',
+              label: '',
               progress: Math.round(preUnreconciledScore), // Inner circle shows preUnreconciled (performance score)
             }}
             smallMetrics={[
@@ -188,71 +185,17 @@ export default function HomeScreen() {
           />
         )}
         {!loading && !error && (
-          <>
-            <MotivationalCard
-              businessId={businessId}
-              timeframe={timeframe}
-              onPress={() => {
-                navigation.navigate('Insights', { 
-                  healthScore: healthScore || undefined, 
-                  timeframe 
-                })
-              }}
-            />
-            
-            {/* KPI Detail Cards */}
-            <KPIDetailCard
-              title="Control"
-              metricValue={`${controlComplianceScore}%`}
-              score={controlComplianceScore}
-              label="Control"
-              progress={controlComplianceScore}
-              subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
-              iconName="assured-workload"
-              onPress={() => healthScore && navigation.navigate('ControlCompliance', { healthScore })}
-            />
-            <KPIDetailCard
-              title="Revenue Growth"
-              metricValue={`${revenueGrowthPercentage > 0 ? '+' : ''}${revenueGrowthPercentage.toFixed(1)}%`}
-              score={revenueGrowth}
-              label="Rev. Growth"
-              progress={revenueGrowth}
-              subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
-              iconName="trending-up"
-              onPress={() => healthScore && navigation.navigate('RevenueGrowth', { healthScore })}
-            />
-            <KPIDetailCard
-              title="Cash Flow"
-              metricValue={`${(cashCoverageRatio * 100).toFixed(0)}%`}
-              score={cashFlow}
-              label="Cash Flow"
-              progress={cashFlow}
-              subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
-              iconName="account-balance-wallet"
-              onPress={() => healthScore && navigation.navigate('CashFlow', { healthScore })}
-            />
-            <KPIDetailCard
-              title="Net Profit"
-              metricValue={`${netProfitMargin > 0 ? '+' : ''}${netProfitMargin.toFixed(1)}%`}
-              score={netProfit}
-              label="Net Profit"
-              progress={netProfit}
-              subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
-              iconName="account-balance"
-              onPress={() => healthScore && navigation.navigate('NetProfit', { healthScore })}
-            />
-            <KPIDetailCard
-              title="Current Ratio"
-              metricValue={currentRatioValue.toFixed(2)}
-              score={currentRatio}
-              label="Current Ratio"
-              progress={currentRatio}
-              subtitle={timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}
-              iconName="compare-arrows"
-              onPress={() => healthScore && navigation.navigate('CurrentRatio', { healthScore })}
-            />
-          </>
-          )}
+          <MotivationalCard
+            businessId={businessId}
+            timeframe={timeframe}
+            onPress={() => {
+              navigation.navigate('Insights', { 
+                healthScore: healthScore || undefined, 
+                timeframe 
+              })
+            }}
+          />
+        )}
         </ScrollView>
       )}
     </AppBarLayout>
@@ -265,7 +208,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
   },
   contentContainer: {
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   loadingContainer: {
     flex: 1,

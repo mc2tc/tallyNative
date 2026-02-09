@@ -18,9 +18,10 @@ interface CircularMetricProps {
   onSubtitlePress?: () => void
   onPress?: () => void
   controlCompliance?: number // For large circles: control score to adjust the display
+  secondaryValue?: number | string // For small circles: raw KPI value shown under the score
 }
 
-export function CircularMetric({ value, label, progress = 0, size = 'small', subtitle, onSubtitlePress, onPress, controlCompliance }: CircularMetricProps) {
+export function CircularMetric({ value, label, progress = 0, size = 'small', subtitle, onSubtitlePress, onPress, controlCompliance, secondaryValue }: CircularMetricProps) {
   const isLarge = size === 'large'
   const circleSize = isLarge ? 160 : 70
   const strokeWidth = isLarge ? 12 : 6
@@ -208,6 +209,14 @@ export function CircularMetric({ value, label, progress = 0, size = 'small', sub
             )}
           </>
         )}
+        {/* For small circles: show secondary KPI value under the score */}
+        {!isLarge && secondaryValue !== undefined && secondaryValue !== null && (
+          <Text style={styles.valueTextSecondary}>
+            {typeof secondaryValue === 'number'
+              ? secondaryValue.toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : secondaryValue}
+          </Text>
+        )}
         {subtitle && isLarge && (
           <TouchableOpacity onPress={onSubtitlePress} activeOpacity={0.7}>
             <Text style={styles.subtitleText}>{subtitle}</Text>
@@ -305,8 +314,9 @@ export function MetricsCard({
     : controlCompliance
   const SCREEN_HEIGHT = Dimensions.get('window').height
   
-  // State for transaction count
-  const [transactionCount, setTransactionCount] = useState<number | null>(null)
+  // State for transaction counts (transactions3 only)
+  const [transactionCount, setTransactionCount] = useState<number | null>(null) // legacy/fallback
+  const [totalTransactionCount, setTotalTransactionCount] = useState<number | null>(null)
   const [loadingTransactionCount, setLoadingTransactionCount] = useState(false)
   // TranslateY offsets relative to a full-height container (top: 0, bottom: 0)
   // Keep FULL_SHEET_OFFSET slightly below the very top so the drag handle stays reachable
@@ -344,6 +354,30 @@ export function MetricsCard({
   const renderMetric = (metric: { value: number | string; label: string; progress?: number }, index: number) => {
     if (!metric) return null
     const screenName = getScreenName(metric.label)
+    // Map label to raw KPI value for display under the score
+    const normalizedLabel = metric.label.replace(/\n/g, ' ').toLowerCase()
+    let secondaryDisplay: string | undefined
+
+    if (healthScore?.rawMetrics) {
+      if (normalizedLabel.includes('rev') && normalizedLabel.includes('growth')) {
+        const v = healthScore.rawMetrics.revenueGrowthPercentage
+        if (typeof v === 'number') {
+          const sign = v > 0 ? '+' : ''
+          secondaryDisplay = `${sign}${v.toFixed(1)}%`
+        }
+      } else if (normalizedLabel.includes('cash') && normalizedLabel.includes('flow')) {
+        const v = healthScore.rawMetrics.cashCoverageRatio
+        if (typeof v === 'number') {
+          secondaryDisplay = v.toFixed(2)
+        }
+      } else if (normalizedLabel.includes('net') && normalizedLabel.includes('profit')) {
+        const v = healthScore.rawMetrics.netProfitMargin
+        if (typeof v === 'number') {
+          const sign = v > 0 ? '+' : ''
+          secondaryDisplay = `${sign}${v.toFixed(1)}%`
+        }
+      }
+    }
     return (
       <CircularMetric
         key={index}
@@ -351,6 +385,7 @@ export function MetricsCard({
         label={metric.label}
         progress={metric.progress}
         size="small"
+        secondaryValue={secondaryDisplay}
         onPress={
           screenName && healthScore
             ? () => {
@@ -492,28 +527,26 @@ export function MetricsCard({
           }),
         ])
 
-        // Combine all transactions
-        const allTransactions = [
-          ...(pendingResponse.transactions || []),
-          ...(sourceOfTruthResponse.transactions || []),
-        ]
-
-        // Filter by date range
-        const filteredTransactions = allTransactions.filter((tx) => {
+        // Filter source_of_truth collection by date range - this is the transactions3 collection
+        const filteredSourceOfTruth = (sourceOfTruthResponse.transactions || []).filter((tx) => {
           const txDate = tx.summary.transactionDate
           return txDate >= startDate && txDate <= endDate
         })
 
-        // Count unique transactions (deduplicate by ID)
-        const uniqueIds = new Set<string>()
-        filteredTransactions.forEach((tx) => {
+        // Count unique transactions within transactions3 (source_of_truth only)
+        const uniqueTotalIds = new Set<string>()
+        filteredSourceOfTruth.forEach((tx) => {
           const id = tx.id || (tx.metadata as any)?.id
-          if (id) {
-            uniqueIds.add(id)
-          }
+          if (!id) return
+          uniqueTotalIds.add(id)
         })
 
-        setTransactionCount(uniqueIds.size)
+        const totalCount = uniqueTotalIds.size
+
+        // Legacy total count (kept for backward compatibility if needed elsewhere)
+        setTransactionCount(totalCount)
+        // New total count for display
+        setTotalTransactionCount(totalCount)
       } catch (error) {
         console.error('[MetricsCard] Failed to fetch transaction count:', error)
         setTransactionCount(null)
@@ -560,11 +593,13 @@ export function MetricsCard({
         </View>
       )}
       
-      {/* Layout: Business Health label on top, circle below, Transaction Count below circle, KPI circles in a row below */}
+      {/* Layout: optional title on top, circle below, Transaction Count below circle, KPI circles in a row below */}
       <View style={styles.metricsContainer}>
         <View style={styles.metricsLayout}>
-          {/* Business Health label above circle */}
-          <Text style={styles.businessHealthLabel}>{largeMetric.label}</Text>
+          {/* Optional label above circle */}
+          {largeMetric.label ? (
+            <Text style={styles.businessHealthLabel}>{largeMetric.label}</Text>
+          ) : null}
           
           {/* Business Health circle */}
           <CircularMetric
@@ -575,14 +610,23 @@ export function MetricsCard({
             controlCompliance={calculatedControlCompliance}
           />
           
-          {/* Transaction Count below circle */}
+          {/* Compliance Score below circle */}
           <View style={styles.transactionCountContainer}>
-            <Text style={styles.transactionCountText}>Transaction Count: </Text>
+            <Text style={styles.transactionCountText}>Compliance Score: </Text>
             {loadingTransactionCount ? (
               <Text style={styles.transactionCountText}>...</Text>
             ) : (
               <Text style={styles.transactionCountText}>
-                {transactionCount !== null ? transactionCount.toLocaleString() : '—'}
+                {totalTransactionCount !== null && typeof calculatedControlCompliance === 'number'
+                  ? (() => {
+                      const verifiedApprox = Math.round(
+                        (totalTransactionCount * calculatedControlCompliance) / 100
+                      )
+                      return `${verifiedApprox.toLocaleString()} / ${totalTransactionCount.toLocaleString()} = ${calculatedControlCompliance}%`
+                    })()
+                  : transactionCount !== null
+                    ? transactionCount.toLocaleString()
+                    : '—'}
               </Text>
             )}
           </View>
@@ -597,6 +641,11 @@ export function MetricsCard({
               label="Current Ratio"
               progress={currentRatio}
               size="small"
+              secondaryValue={
+                typeof healthScore?.rawMetrics?.currentRatio === 'number'
+                  ? healthScore.rawMetrics.currentRatio.toFixed(2)
+                  : undefined
+              }
               onPress={
                 healthScore
                   ? () => {
@@ -797,7 +846,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 24,
     marginHorizontal: 16,
-    marginVertical: 12,
+    marginVertical: 8,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#cccccc',
@@ -852,7 +901,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#333333',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   valueTextLarge: {
     fontSize: 32,
@@ -871,9 +920,9 @@ const styles = StyleSheet.create({
     marginTop: -8,
   },
   valueTextSecondary: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#666666',
+    fontSize: 11,
+    fontWeight: '400',
+    color: '#aaaaaa',
     marginTop: -4,
   },
   valueTextSecondaryLarge: {
@@ -899,7 +948,7 @@ const styles = StyleSheet.create({
   },
   metricsContainer: {
     width: '100%',
-    paddingBottom: 40, // Add padding to prevent clash with Learn more button
+    paddingBottom: 32, // Slightly reduced padding to bring content closer to Learn more button
   },
   metricsLayout: {
     alignItems: 'center',

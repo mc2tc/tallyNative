@@ -1,8 +1,8 @@
 // Shared types for scaffold-related navigation
 // Extracted from ScaffoldNavigator for use across multiple screens
 
-import type { Transaction } from '../lib/api/transactions2'
-import type { PrimaryPackaging, SecondaryPackaging } from '../lib/api/packaging'
+import type { Transaction } from '../../lib/api/transactions2'
+import type { PrimaryPackaging, SecondaryPackaging } from '../../lib/api/packaging'
 
 export type ScaffoldStackParamList = {
   ScaffoldHome: { activeSection?: 'receipts' | 'purchases3' | 'bank' | 'cards' | 'sales' | 'internal' | 'reporting' }

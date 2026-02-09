@@ -18,14 +18,14 @@ export default function TaxesComplianceScreen() {
       id: 'vat',
       title: 'VAT',
       description: 'Manage VAT registration and returns',
-      icon: 'receipt-text' as keyof typeof MaterialIcons.glyphMap,
+      icon: 'receipt' as keyof typeof MaterialIcons.glyphMap,
       route: 'VAT' as keyof AppDrawerParamList,
     },
     {
       id: 'year-end',
       title: 'Year End Reporting',
       description: 'Annual reports and tax filings',
-      icon: 'file-document-outline' as keyof typeof MaterialIcons.glyphMap,
+      icon: 'description' as keyof typeof MaterialIcons.glyphMap,
       route: 'YearEndReporting' as keyof AppDrawerParamList,
     },
   ]

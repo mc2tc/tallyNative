@@ -231,3 +231,145 @@ export type OversightAlertDismissResponse = {
   message?: string
 }
 
+// Compliance System Types (similar to Oversight but for compliance/audit concerns)
+
+export type ComplianceCheckRequest = {
+  businessId: string
+  transactionId?: string
+  forceRefresh?: boolean
+}
+
+export type ComplianceCheckResponse = {
+  businessId: string
+  checkDate: string
+  rulesChecked: number
+  alertsGenerated: number
+  alerts: string[] // Array of alert IDs
+  processingTime: number // milliseconds
+  message: string // User-friendly status message
+}
+
+export type ComplianceAlert = {
+  id: string
+  businessId: string
+  ruleId: string
+  ruleName: string
+  severity: 'critical' | 'warning' | 'info'
+  message: string
+  evidence?: Record<string, unknown>
+  confidence?: number
+  requiresReview: boolean
+  read: boolean
+  status?: 'active' | 'dismissed'
+  resolvedAt?: string
+  resolvedBy?: string
+  detectedAt?: string // ISO date string when alert was detected
+  createdAt?: string | number | { seconds?: number; nanoseconds?: number; toDate?: () => Date } // Legacy field, use detectedAt
+  updatedAt?: string | number | { seconds?: number; nanoseconds?: number; toDate?: () => Date }
+  // Additional fields from backend
+  category?: string
+  title?: string
+  readBy?: string[]
+  readAt?: string[]
+  actionRequired?: boolean
+  relatedTransactionIds?: string[]
+  relatedAlertIds?: string[]
+  recommendations?: string[]
+}
+
+export type ComplianceAlertsResponse = {
+  alerts: ComplianceAlert[]
+  total: number
+  unreadCount: number
+  message?: string // User-friendly status message
+}
+
+export type ComplianceAlertDetailsResponse = {
+  alert: ComplianceAlert
+  relatedTransactions?: Array<{
+    id: string
+    date: string
+    amount: number
+    description?: string
+  }>
+  evidence?: Record<string, unknown>
+  recommendations?: string[]
+}
+
+export type ComplianceAlertDismissResponse = {
+  success: boolean
+  alertId: string
+  message?: string
+}
+
+// Operational System Types (similar to Compliance but for operational/optimization concerns)
+
+export type OperationalCheckRequest = {
+  businessId: string
+  itemId?: string
+  forceRefresh?: boolean
+}
+
+export type OperationalCheckResponse = {
+  businessId: string
+  checkDate: string
+  rulesChecked: number
+  alertsGenerated: number
+  alerts: string[] // Array of alert IDs
+  processingTime: number // milliseconds
+  message: string // User-friendly status message
+}
+
+export type OperationalAlert = {
+  id: string
+  businessId: string
+  ruleId: string
+  ruleName: string
+  severity: 'critical' | 'warning' | 'info'
+  message: string
+  evidence?: Record<string, unknown>
+  confidence?: number
+  requiresReview: boolean
+  read: boolean
+  status?: 'active' | 'dismissed'
+  resolvedAt?: string
+  resolvedBy?: string
+  detectedAt?: string // ISO date string when alert was detected
+  createdAt?: string | number | { seconds?: number; nanoseconds?: number; toDate?: () => Date } // Legacy field, use detectedAt
+  updatedAt?: string | number | { seconds?: number; nanoseconds?: number; toDate?: () => Date }
+  // Additional fields from backend
+  category?: string
+  title?: string
+  readBy?: string[]
+  readAt?: string[]
+  actionRequired?: boolean
+  relatedItemIds?: string[]
+  relatedAlertIds?: string[]
+  recommendations?: string[]
+}
+
+export type OperationalAlertsResponse = {
+  alerts: OperationalAlert[]
+  total: number
+  unreadCount: number
+  message?: string // User-friendly status message
+}
+
+export type OperationalAlertDetailsResponse = {
+  alert: OperationalAlert
+  relatedItems?: Array<{
+    id: string
+    name: string
+    cost?: number
+    description?: string
+  }>
+  evidence?: Record<string, unknown>
+  recommendations?: string[]
+}
+
+export type OperationalAlertDismissResponse = {
+  success: boolean
+  alertId: string
+  message?: string
+}
+

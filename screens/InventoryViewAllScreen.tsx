@@ -286,14 +286,25 @@ export default function InventoryViewAllScreen() {
       return ''
     }
 
+    const formatStockValue = (value: number | undefined | null) => {
+      if (value === undefined || value === null) return ''
+      const numericValue = Number(value)
+      if (Number.isNaN(numericValue)) return ''
+      return numericValue.toFixed(2)
+    }
+
     // Priority 1: Use currentStockInMetric if available
     if (item.currentStockInMetric) {
-      return `${item.currentStockInMetric.stock} ${item.currentStockInMetric.unit}`
+      const formattedStock = formatStockValue(item.currentStockInMetric.stock)
+      if (!formattedStock) return ''
+      return `${formattedStock} ${item.currentStockInMetric.unit}`
     }
 
     // Priority 2: Use currentStockInPrimaryUnits with primaryPackagingUnit
     if (item.currentStockInPrimaryUnits !== undefined && item.primaryPackagingUnit) {
-      return `${item.currentStockInPrimaryUnits} ${item.primaryPackagingUnit}`
+      const formattedStock = formatStockValue(item.currentStockInPrimaryUnits)
+      if (!formattedStock) return ''
+      return `${formattedStock} ${item.primaryPackagingUnit}`
     }
 
     // No stock data available

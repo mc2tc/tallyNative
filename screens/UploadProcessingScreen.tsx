@@ -362,27 +362,66 @@ export default function UploadProcessingScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.content}>
-        {isPdf && pdfFileName ? (
-          <View style={styles.pdfPreview}>
-            <MaterialIcons name="picture-as-pdf" size={80} color={GRAYSCALE_PRIMARY} />
-            <Text style={styles.pdfFileName} numberOfLines={2}>
-              {pdfFileName}
-            </Text>
-          </View>
-        ) : imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
-        ) : null}
-
         {processing ? (
-          <View style={styles.processingContainer}>
-            <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
-            <Text style={styles.processingText}>Processing...</Text>
+          <View style={styles.processingLayout}>
+            <View style={styles.processingRow}>
+              <View style={styles.processingTextContainer}>
+                <Text style={styles.processingText}>Processing your transaction...</Text>
+              </View>
+            </View>
+
+            <View style={styles.processingRow}>
+              <View style={styles.previewWrapper}>
+                {isPdf && pdfFileName ? (
+                  <View style={styles.pdfPreview}>
+                    <MaterialIcons name="picture-as-pdf" size={80} color={GRAYSCALE_PRIMARY} />
+                    <Text style={styles.pdfFileName} numberOfLines={2}>
+                      {pdfFileName}
+                    </Text>
+                  </View>
+                ) : imageUri ? (
+                  <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
+                ) : null}
+                <View style={styles.processingOverlay}>
+                  <ActivityIndicator size="large" color={GRAYSCALE_PRIMARY} />
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.processingRow}>
+              <View style={styles.motivationalCard}>
+                <Text style={styles.motivationalTitle}>A stitch in time saves nine</Text>
+                <Text style={styles.motivationalPrimaryText}>
+                  It may take 20 seconds (sometimes more) to capture this
+                  transaction, but our study shows that will save you more than 10 minutes later.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.processingRow}>
+              <Text style={styles.motivationalSecondaryText}>
+                Wow — you're on top of things! It looks like this receipt is only 25 minutes old — that's a personal
+                best!
+              </Text>
+            </View>
           </View>
         ) : showSuccess ? (
-          <View style={styles.successContainer}>
-            <MaterialIcons name="check-circle" size={36} />
-            <Text style={styles.successText}>{successMessage || 'Transaction created successfully'}</Text>
-          </View>
+          <>
+            {isPdf && pdfFileName ? (
+              <View style={styles.pdfPreview}>
+                <MaterialIcons name="picture-as-pdf" size={80} color={GRAYSCALE_PRIMARY} />
+                <Text style={styles.pdfFileName} numberOfLines={2}>
+                  {pdfFileName}
+                </Text>
+              </View>
+            ) : imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
+            ) : null}
+            <View style={styles.successContainer}>
+              <MaterialIcons name="check-circle" size={36} />
+              <Text style={styles.successText}>{successMessage || 'Transaction created successfully'}</Text>
+            </View>
+          </>
         ) : null}
       </View>
     </SafeAreaView>
@@ -400,6 +439,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
+  processingLayout: {
+    width: '100%',
+    height: '60%', // 4 equal rows within this band
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+  },
+  processingRow: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  previewWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 0,
+  },
   pdfPreview: {
     width: 280,
     height: 280,
@@ -410,7 +467,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    marginBottom: 48,
+    marginBottom: 0,
   },
   imagePreview: {
     width: 280,
@@ -419,7 +476,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     borderWidth: 1,
     borderColor: '#e5e5e5',
-    marginBottom: 48,
+    marginBottom: 0,
   },
   pdfFileName: {
     marginTop: 16,
@@ -431,12 +488,58 @@ const styles = StyleSheet.create({
   processingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 24,
+  },
+  processingTextContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 0,
   },
   processingText: {
-    marginTop: 16,
+    marginTop: 0,
     fontSize: 16,
     color: GRAYSCALE_SECONDARY,
     fontWeight: '500',
+  },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  motivationalContainer: {
+    maxWidth: 320,
+  },
+  motivationalCard: {
+    maxWidth: 320,
+    backgroundColor: '#eaeaea',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 0,
+    marginBottom: 0,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+  },
+  motivationalTitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: GRAYSCALE_PRIMARY,
+    textAlign: 'center',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  motivationalPrimaryText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: GRAYSCALE_PRIMARY,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  motivationalSecondaryText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: GRAYSCALE_SECONDARY,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   successContainer: {
     alignItems: 'center',

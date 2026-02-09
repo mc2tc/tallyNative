@@ -266,14 +266,25 @@ export default function InventoryManagementScreen({}: Props) {
 
     const inventoryItem = item as InventoryItem
 
+    const formatStockValue = (value: number | undefined | null) => {
+      if (value === undefined || value === null) return ''
+      const numericValue = Number(value)
+      if (Number.isNaN(numericValue)) return ''
+      return numericValue.toFixed(2)
+    }
+
     // Priority 1: Use currentStockInMetric if available
     if (inventoryItem.currentStockInMetric) {
-      return `${inventoryItem.currentStockInMetric.stock} ${inventoryItem.currentStockInMetric.unit}`
+      const formattedStock = formatStockValue(inventoryItem.currentStockInMetric.stock)
+      if (!formattedStock) return ''
+      return `${formattedStock} ${inventoryItem.currentStockInMetric.unit}`
     }
 
     // Priority 2: Use currentStockInPrimaryUnits with primaryPackaging.unit
     if (inventoryItem.currentStockInPrimaryUnits !== undefined && inventoryItem.packaging?.primaryPackaging?.unit) {
-      return `${inventoryItem.currentStockInPrimaryUnits} ${inventoryItem.packaging.primaryPackaging.unit}`
+      const formattedStock = formatStockValue(inventoryItem.currentStockInPrimaryUnits)
+      if (!formattedStock) return ''
+      return `${formattedStock} ${inventoryItem.packaging.primaryPackaging.unit}`
     }
 
     // No stock data available

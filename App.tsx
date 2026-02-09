@@ -11,7 +11,7 @@ import { DrawerCategoryProvider } from './lib/context/DrawerCategoryContext'
 import { RootNavigator } from './navigation/RootNavigator'
 
 // Helper function to safely load fonts
-function getFontConfig() {
+function getFontConfig(): Record<string, any> {
   try {
     return {
       'TiemposText-Regular': require('./assets/fonts/TestTiemposText-Regular-BF66457a50cd521.otf'),

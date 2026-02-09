@@ -29,9 +29,22 @@ export function MotivationalCard({ businessId, timeframe = 'week', onPress }: Mo
         const response = await insightsApi.getInsights(businessId, timeframe)
         
         // API returns data directly (not wrapped in success/data)
-        if (response && response.strategy && response.strategy.title) {
+        if (response && response.strategy) {
           setInsights(response)
-          setStrategySummary(response.strategy.title)
+
+          // Build a richer roadmap summary using available fields
+          const parts: string[] = []
+          if (response.strategy.title) {
+            parts.push(response.strategy.title)
+          }
+          if (response.strategy.description) {
+            parts.push(response.strategy.description)
+          } else if (response.summary) {
+            parts.push(response.summary)
+          }
+
+          const combined = parts.join(' — ').trim()
+          setStrategySummary(combined || null)
         } else {
           console.warn('[MotivationalCard] Could not extract insights data from response:', response)
           setStrategySummary(null)
@@ -77,11 +90,11 @@ export function MotivationalCard({ businessId, timeframe = 'week', onPress }: Mo
         <View style={styles.card}>
           <View style={styles.content}>
             <View style={styles.textContainer}>
-              <Text style={styles.title}>Strategic insights for your business</Text>
+              <Text style={styles.title}>Roadmap</Text>
               {loading ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="small" color="#6d6d6d" />
-                  <Text style={styles.body}>Loading insights...</Text>
+                  <Text style={styles.body}>Loading roadmap...</Text>
                 </View>
               ) : (
                 <Text style={styles.body}>{displayText}</Text>
@@ -114,7 +127,7 @@ export function MotivationalCard({ businessId, timeframe = 'week', onPress }: Mo
 const styles = StyleSheet.create({
   cardContainer: {
     marginHorizontal: 16,
-    marginVertical: 12,
+    marginVertical: 8,
   },
   gradientBorder: {
     borderRadius: 12,
@@ -129,7 +142,7 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingBottom: 24, // Add padding to prevent clash with Learn more button
+    paddingBottom: 12, // Reduced space between summary text and Learn more button
   },
   textContainer: {
     flex: 1,
@@ -168,7 +181,7 @@ const styles = StyleSheet.create({
   },
   learnMoreButton: {
     position: 'absolute',
-    bottom: 16,
+    bottom: 8, // Reduce gap between button and bottom of card
     right: 16,
     paddingVertical: 6,
     paddingHorizontal: 12,

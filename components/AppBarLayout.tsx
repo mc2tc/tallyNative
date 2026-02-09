@@ -35,7 +35,7 @@ export function AppBarLayout({
   const navigation = useNavigation<NavigationProp<any>>()
   const drawerNavigation = useNavigation<DrawerNavigationProp<AppDrawerParamList>>()
   const route = useRoute()
-  const { user } = useAuth()
+  const { user, businessUser } = useAuth()
   const { selectedCategory } = useDrawerCategory()
   const borderColor = debugBorders ? '#ff0000' : 'transparent'
   const insets = useSafeAreaInsets()
@@ -67,6 +67,30 @@ export function AppBarLayout({
   }
   
   const userName = getUserFirstName()
+
+  // Helper function to extract and format business name from business ID
+  const getBusinessNameFromId = (businessId: string | undefined): string => {
+    if (!businessId) return ''
+    
+    const lastUnderscoreIndex = businessId.lastIndexOf('_')
+    if (lastUnderscoreIndex === -1) {
+      return businessId.replace(/([A-Z])/g, ' $1').trim() || ''
+    }
+    
+    const businessNamePart = businessId.substring(0, lastUnderscoreIndex)
+    const formatted = businessNamePart
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim()
+    
+    return formatted
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ') || ''
+  }
+
+  const businessName = getBusinessNameFromId(businessUser?.businessId)
 
   // Get display name for category
   const getCategoryDisplayName = (category: string): string => {
@@ -292,9 +316,16 @@ export function AppBarLayout({
         </View>
         <View style={[styles.titleContainer, { borderColor }]}>
           {displayTitle ? (
-            <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
-              {(displayTitle.length > 19 ? displayTitle.substring(0, 19) + '...' : displayTitle).toUpperCase()}
-            </Text>
+            <View style={styles.titleWrapper}>
+              {businessName ? (
+                <Text style={styles.businessNameText} numberOfLines={1} ellipsizeMode="tail">
+                  {businessName}
+                </Text>
+              ) : null}
+              <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
+                {(displayTitle.length > 19 ? displayTitle.substring(0, 19) + '...' : displayTitle).toUpperCase()}
+              </Text>
+            </View>
           ) : null}
         </View>
         <View style={styles.rightSection}>
@@ -369,7 +400,7 @@ export function AppBarLayout({
                         <Ionicons 
                           name="sparkles-sharp" 
                           size={16} 
-                          color="#666666" 
+                          color="#df41baff" 
                           style={styles.assistantIcon}
                         />
                         <View style={styles.aiMessageBubble}>
@@ -470,10 +501,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 0,
   },
+  titleWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+  },
   titleText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333333',
+    lineHeight: 18,
+  },
+  businessNameText: {
+    fontSize: 10,
+    fontWeight: '400',
+    color: '#999999',
+    lineHeight: 11,
+    marginBottom: 2,
   },
   avatarContainer: {
     marginLeft: 12,

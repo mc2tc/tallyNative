@@ -1134,12 +1134,17 @@ export default function TransactionDetailScreen() {
       const splitFromItemId = originalItem.splitFromItemId || `local-${splittingItemIndex}`
 
       // Calculate VAT allocation:
-      // - Personal expenses (Drawings) cannot reclaim VAT, so vatAmount = 0
+      // - Personal expenses cannot reclaim VAT, so vatAmount = 0
       // - Business portion gets all VAT proportionally based on business amount ratio
       const originalVatAmount = originalItem.vatAmount || 0
       const businessVatAmount = originalAmount !== 0 
         ? Number((originalVatAmount * businessRatio).toFixed(2))
         : 0
+      
+      // Determine the account for personal expenses based on business entity
+      const personalExpenseAccount = businessEntity === 'sole_trader' || businessEntity === 'partnership'
+        ? 'Drawings'
+        : "Director's Loan Account"
       
       // Personal portion: no VAT reclaimable, full amount is net
       // Business portion: gets proportional VAT, net = amount - VAT
@@ -1160,7 +1165,7 @@ export default function TransactionDetailScreen() {
         amountExcluding: personalAmount, // Full amount is net (no VAT reclaimable)
         vatAmount: 0, // Personal expenses cannot reclaim VAT
         isBusinessExpense: false,
-        debitAccount: 'Drawings',
+        debitAccount: personalExpenseAccount,
         splitFromItemId,
         isActive: true,
       }
@@ -1198,7 +1203,7 @@ export default function TransactionDetailScreen() {
     } finally {
       setSavingSplit(false)
     }
-  }, [splittingItemIndex, businessId, transaction?.id, transaction?.details, splitBusinessAmount, splitPersonalAmount, formatItemAmount, handleCloseSplitModal])
+  }, [splittingItemIndex, businessId, transaction?.id, transaction?.details, splitBusinessAmount, splitPersonalAmount, formatItemAmount, handleCloseSplitModal, businessEntity])
 
   // Handler for updating split amounts (auto-adjust one when other changes)
   const handleSplitAmountChange = useCallback((type: 'business' | 'personal', value: string) => {
@@ -1866,7 +1871,7 @@ export default function TransactionDetailScreen() {
                             {item.vatAmount !== undefined && item.vatAmount > 0 && (
                               <View style={styles.vatRow}>
                                 <Text style={styles.vatLabel}>VAT:</Text>
-                                <Text style={styles.vatAmount}>
+                                <Text style={styles.itemVatAmount}>
                                   {currencySymbol}{formatItemAmount(item.vatAmount)}
                                 </Text>
                               </View>
@@ -1920,7 +1925,7 @@ export default function TransactionDetailScreen() {
 
                                     // Store the current account before setting to Inventory
                                     const currentAccount = editedItemDebitAccounts.has(index) 
-                                      ? editedItemDebitAccounts.get(index) 
+                                      ? (editedItemDebitAccounts.get(index) || '') 
                                       : (item.debitAccount || '')
                                     
                                     // Only store if it's not already Inventory
@@ -2973,7 +2978,7 @@ const styles = StyleSheet.create({
     color: '#888888',
     fontWeight: '500',
   },
-  vatAmount: {
+  itemVatAmount: {
     fontSize: 13,
     color: '#888888',
     fontWeight: '500',
