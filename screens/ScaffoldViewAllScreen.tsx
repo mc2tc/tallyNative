@@ -6,7 +6,7 @@ import type { NavigationProp } from '@react-navigation/native'
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import { api } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
-import type { Transaction } from '../lib/api/transactions2'
+import type { Transaction, ForeignCurrencyDetail } from '../lib/api/transactions2'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import type { ScaffoldStackParamList } from '../navigation/types/ScaffoldTypes'
 import DragDropReconciliationScreen from './DragDropReconciliationScreen'
@@ -303,15 +303,18 @@ export default function ScaffoldViewAllScreen() {
                       ) : item.subtitle ? (
                         <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
                       ) : null}
-                      {item.originalTransaction && item.originalTransaction.summary.currency !== group.currency && (
-                        <Text style={styles.foreignCurrency}>
-                          {formatAmount(
-                            Math.abs(item.originalTransaction.summary.totalAmount),
-                            item.originalTransaction.summary.currency,
-                            false
-                          )}
-                        </Text>
-                      )}
+                      {(() => {
+                        const tx = item.originalTransaction
+                        const fc = tx && (tx.details as { foreignCurrency?: ForeignCurrencyDetail } | undefined)?.foreignCurrency
+                        return fc ? (
+                          <Text style={styles.foreignCurrency}>
+                            Paid {formatAmount(fc.originalAmount, fc.originalCurrency, false)}
+                            {' ≈ '}
+                            {formatAmount(fc.convertedAmount, tx.summary.currency, false)}
+                            {fc.exchangeRateSource === 'fallback' && ' (rate approximate)'}
+                          </Text>
+                        ) : null
+                      })()}
                     </View>
                     <View style={styles.itemAmountContainer}>
                       {isReportingSection && (

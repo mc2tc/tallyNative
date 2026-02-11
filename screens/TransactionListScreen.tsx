@@ -5,7 +5,7 @@ import { useNavigation } from '@react-navigation/native'
 import type { NavigationProp } from '@react-navigation/native'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
-import { transactions2Api, type Transaction } from '../lib/api/transactions2'
+import { transactions2Api, type Transaction, type ForeignCurrencyDetail } from '../lib/api/transactions2'
 import { formatAmount } from '../lib/utils/currency'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
@@ -103,6 +103,9 @@ export default function TransactionListScreen() {
 
   const isDefaultCurrency = (currency: string) => currency.toUpperCase() === DEFAULT_CURRENCY
 
+  const getForeignCurrency = (tx: Transaction): ForeignCurrencyDetail | undefined =>
+    (tx.details as { foreignCurrency?: ForeignCurrencyDetail } | undefined)?.foreignCurrency
+
   const goToTransactionDetail = useCallback(
     (transaction: Transaction) => {
       navigation.navigate('TransactionDetail', { transaction })
@@ -112,6 +115,7 @@ export default function TransactionListScreen() {
 
   const renderTransaction = ({ item: tx }: { item: Transaction }) => {
     const isDefault = isDefaultCurrency(tx.summary.currency)
+    const foreign = getForeignCurrency(tx)
     return (
       <TouchableOpacity
         style={styles.transactionRow}
@@ -125,11 +129,14 @@ export default function TransactionListScreen() {
           <Text style={styles.thirdPartyName} numberOfLines={1}>
             {tx.summary.thirdPartyName}
           </Text>
-          {!isDefault && (
+          {foreign ? (
             <Text style={styles.foreignCurrency}>
-              {formatAmount(tx.summary.totalAmount, tx.summary.currency, false)}
+              Paid {formatAmount(foreign.originalAmount, foreign.originalCurrency, false)}
+              {' ≈ '}
+              {formatAmount(foreign.convertedAmount, tx.summary.currency, isDefault)}
+              {foreign.exchangeRateSource === 'fallback' && ' (rate approximate)'}
             </Text>
-          )}
+          ) : null}
         </View>
         <Text style={styles.amount}>
           {formatAmount(tx.summary.totalAmount, tx.summary.currency, isDefault)}

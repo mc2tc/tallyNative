@@ -16,7 +16,7 @@ import AnimatedReanimated, {
 } from 'react-native-reanimated'
 import type { TransactionsStackParamList } from '../navigation/TransactionsNavigator'
 import type { ScaffoldStackParamList } from '../navigation/types/ScaffoldTypes'
-import type { Transaction } from '../lib/api/transactions2'
+import type { Transaction, ForeignCurrencyDetail } from '../lib/api/transactions2'
 import { transactions2Api } from '../lib/api/transactions2'
 import { chartAccountsApi } from '../lib/api/chartAccounts'
 import { paymentMethodsApi, type PaymentMethodOption } from '../lib/api/paymentMethods'
@@ -57,6 +57,7 @@ type TransactionItem = {
 
 type TransactionDetails = {
   itemList?: TransactionItem[]
+  foreignCurrency?: ForeignCurrencyDetail
 }
 
 type TransactionClassification = {
@@ -309,10 +310,9 @@ export default function TransactionDetailScreen() {
   const transactionAmount = transactionSummary?.totalAmount || 0
   
   // Get item list from details - safely access with optional chaining
-  const details = transaction?.details as {
-    itemList?: TransactionItem[]
+  const details = transaction?.details as (TransactionDetails & {
     paymentBreakdown?: Array<{ type?: string; amount?: number }>
-  } | undefined
+  }) | undefined
 
   // Format item amounts (without currency symbol, as it's shown in header)
   // Defined early so it can be used in callbacks
@@ -426,10 +426,15 @@ export default function TransactionDetailScreen() {
 
         if (isUnverified) {
         // Pending transactions: use verify endpoint (moves to source_of_truth)
+          // Include existing details (e.g. foreignCurrency) so multi-currency is preserved when moving to source_of_truth
+          const verifyPayload: Parameters<typeof transactions2Api.verifyTransaction>[2] = { ...updateOptions }
+          if (transaction.details != null && typeof transaction.details === 'object' && Object.keys(transaction.details as object).length > 0) {
+            verifyPayload.details = transaction.details as Record<string, unknown>
+          }
           const verifyResponse = await transactions2Api.verifyTransaction(
             transaction.id,
             businessId!,
-            Object.keys(updateOptions).length > 0 ? updateOptions : undefined,
+            Object.keys(verifyPayload).length > 0 ? verifyPayload : undefined,
           )
 
           console.log('TransactionDetailScreen: verifyTransaction response', {
@@ -632,15 +637,19 @@ export default function TransactionDetailScreen() {
         },
       ]
 
+      const unreconcilablePayload: Parameters<typeof transactions2Api.verifyTransaction>[2] = {
+        markAsUnreconcilable: true,
+        description: unreconcilableDescription || transaction.summary?.description,
+        itemList: itemList,
+        unreconcilableReason: unreconcilableReason || undefined,
+      }
+      if (transaction.details != null && typeof transaction.details === 'object' && Object.keys(transaction.details as object).length > 0) {
+        unreconcilablePayload.details = transaction.details as Record<string, unknown>
+      }
       const verifyResponse = await transactions2Api.verifyTransaction(
         transaction.id,
         businessId,
-        {
-          markAsUnreconcilable: true,
-          description: unreconcilableDescription || transaction.summary?.description,
-          itemList: itemList,
-          unreconcilableReason: unreconcilableReason || undefined,
-        },
+        unreconcilablePayload,
       )
 
       console.log('TransactionDetailScreen: verifyTransaction (unreconcilable) response', {
@@ -1718,11 +1727,14 @@ export default function TransactionDetailScreen() {
               </TouchableOpacity>
             </View>
           )}
-          {!isDefault && (
+          {details?.foreignCurrency ? (
             <Text style={styles.foreignCurrency}>
-              {formatAmount(transactionAmount, transactionCurrency, false)}
+              Paid {formatAmount(details.foreignCurrency.originalAmount, details.foreignCurrency.originalCurrency, false)}
+              {' ≈ '}
+              {formatAmount(details.foreignCurrency.convertedAmount, transactionCurrency, isDefault)}
+              {details.foreignCurrency.exchangeRateSource === 'fallback' && ' (rate approximate)'}
             </Text>
-          )}
+          ) : null}
         </Animated.View>
 
         {/* General Expense Fallback Warning */}

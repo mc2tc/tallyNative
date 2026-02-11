@@ -52,6 +52,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'quarter'>('quarter')
+  const [roadmapRefreshKey, setRoadmapRefreshKey] = useState(0)
   // Use ref to track if we have cached data without adding to dependencies
   const hasCachedDataRef = useRef(false)
 
@@ -106,6 +107,7 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(() => {
     fetchHealthScore(true)
+    setRoadmapRefreshKey(k => k + 1)
   }, [fetchHealthScore])
 
 
@@ -188,6 +190,7 @@ export default function HomeScreen() {
           <MotivationalCard
             businessId={businessId}
             timeframe={timeframe}
+            refreshTrigger={roadmapRefreshKey}
             onPress={() => {
               navigation.navigate('Insights', { 
                 healthScore: healthScore || undefined, 

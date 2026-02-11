@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { Searchbar } from 'react-native-paper'
 import { AppBarLayout } from '../components/AppBarLayout'
 import { useAuth } from '../lib/auth/AuthContext'
-import { transactions2Api, type Transaction } from '../lib/api/transactions2'
+import { transactions2Api, type Transaction, type ForeignCurrencyDetail } from '../lib/api/transactions2'
 import { formatAmount } from '../lib/utils/currency'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 
@@ -384,18 +384,17 @@ export default function ReportingReadyScreen() {
                             {item.title}
                           </Text>
                         </View>
-                        {item.originalTransaction.summary.currency !==
-                          group.currency && (
-                          <Text style={styles.foreignCurrency}>
-                            {formatAmount(
-                              Math.abs(
-                                item.originalTransaction.summary.totalAmount,
-                              ),
-                              item.originalTransaction.summary.currency,
-                              false,
-                            )}
-                          </Text>
-                        )}
+                        {(() => {
+                          const fc = (item.originalTransaction.details as { foreignCurrency?: ForeignCurrencyDetail } | undefined)?.foreignCurrency
+                          return fc ? (
+                            <Text style={styles.foreignCurrency}>
+                              Paid {formatAmount(fc.originalAmount, fc.originalCurrency, false)}
+                              {' ≈ '}
+                              {formatAmount(fc.convertedAmount, item.originalTransaction.summary.currency, false)}
+                              {fc.exchangeRateSource === 'fallback' && ' (rate approximate)'}
+                            </Text>
+                          ) : null
+                        })()}
                       </View>
                       <View style={styles.reportingItemAmountContainer}>
                         <Text

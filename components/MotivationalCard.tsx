@@ -9,9 +9,11 @@ interface MotivationalCardProps {
   businessId?: string
   timeframe?: 'week' | 'month' | 'quarter'
   onPress?: () => void
+  /** When this value changes, the Roadmap insights are refetched (e.g. from pull-to-refresh). */
+  refreshTrigger?: number
 }
 
-export function MotivationalCard({ businessId, timeframe = 'week', onPress }: MotivationalCardProps) {
+export function MotivationalCard({ businessId, timeframe = 'week', onPress, refreshTrigger }: MotivationalCardProps) {
   const [dismissed, setDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [strategySummary, setStrategySummary] = useState<string | null>(null)
@@ -63,7 +65,7 @@ export function MotivationalCard({ businessId, timeframe = 'week', onPress }: Mo
     }
 
     fetchInsights()
-  }, [businessId, timeframe])
+  }, [businessId, timeframe, refreshTrigger])
 
   if (dismissed) {
     return null

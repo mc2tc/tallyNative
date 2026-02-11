@@ -54,6 +54,16 @@ export type TransactionSummary = {
 	description?: string
 }
 
+/** Present when receipt was in a different currency; summary amounts are already in business currency. */
+export type ForeignCurrencyDetail = {
+	originalCurrency: string
+	originalAmount: number
+	exchangeRate: number
+	convertedAmount: number
+	exchangeRateSource?: string // e.g. 'receipt' | 'api' | 'fallback'
+	exchangeRateDate?: string
+}
+
 export type TransactionMetadata = {
 	businessId: string
 	businessLocation?: string
@@ -451,6 +461,7 @@ export const transactions2Api = {
 	},
 
 	// Transactions3 verify endpoint - verify a pending transaction
+	// Pass details (e.g. foreignCurrency) so multi-currency and other detail fields are preserved when moving to source_of_truth
 	verifyTransaction: async (
 		transactionId: string,
 		businessId: string,
@@ -471,6 +482,8 @@ export const transactions2Api = {
 			markAsUnreconcilable?: boolean
 			description?: string
 			unreconcilableReason?: string
+			/** Preserve details (e.g. foreignCurrency) when moving pending → source_of_truth */
+			details?: Record<string, unknown>
 		},
 	): Promise<Transaction> => {
 		const params = new URLSearchParams({
@@ -493,6 +506,7 @@ export const transactions2Api = {
 			markAsUnreconcilable?: boolean
 			description?: string
 			unreconcilableReason?: string
+			details?: Record<string, unknown>
 		} = {}
 		if (options?.paymentBreakdown) {
 			body.paymentBreakdown = options.paymentBreakdown
@@ -508,6 +522,9 @@ export const transactions2Api = {
 		}
 		if (options?.unreconcilableReason) {
 			body.unreconcilableReason = options.unreconcilableReason
+		}
+		if (options?.details != null && Object.keys(options.details).length > 0) {
+			body.details = options.details
 		}
 		const response = await api.patch<UnifiedTransactionResponse>(
 			`/authenticated/transactions3/api/transactions/${transactionId}/verify?${params.toString()}`,
